@@ -151,7 +151,7 @@ export class BitArray {
         return parseInt(this.toString(2), 2)
     }
 
-    toString(radix = 10) {
+    toString(radix = 2) {
         let bitString = "";
         for (let v of this.array) {
             bitString += v ? "1" : "0";
