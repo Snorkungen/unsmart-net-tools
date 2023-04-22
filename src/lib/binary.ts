@@ -56,9 +56,15 @@ export class BitArray {
      * @param start 
      * @param deleteCount 
      */
-    splice(start: number, deleteCount?: number): BitArray["array"];
-    splice(start: number, deleteCount: number, ...items: BitArray["array"]): BitArray["array"] {
-        return this.array.splice(start, deleteCount, ...items);
+
+    splice(start: number, deleteCount?: number): BitArray;
+    splice(start: number, deleteCount: number, ...items: BitArray[]): BitArray;
+    splice(start: number, deleteCount: number, ...items: BitArray[]): BitArray {
+        return new BitArray(
+            this.array.splice(start, deleteCount, ...items.reduce((vals, { array }) => {
+                vals.push(...array)
+                return vals;
+            }, new Array<boolean>())))
     }
 
     concat(...items: BitArray[]) {

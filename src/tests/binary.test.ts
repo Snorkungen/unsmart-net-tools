@@ -80,10 +80,16 @@ describe("Slice & Dice", () => {
 
 
 
-    test ("splice", () => {
-        let removed = bitArray.splice(0,2);
-    
-        expect(removed.length).toBe(2);
+    test("splice", () => {
+         bitArray.splice(0);
+        let removed = bitArray.splice(0, 2);
+
+        expect(removed.size).toBe(2);
         expect(bitArray.toString(2)).toBe("11001101")
+
+        // add removed to end
+
+        bitArray.splice(bitArray.size, 2, removed)
+        expect(bitArray.toString(2)).toBe("11001101" + removed.toString(2))
     })
 })
