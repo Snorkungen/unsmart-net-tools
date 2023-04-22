@@ -10,20 +10,20 @@ describe("Binary parses input correctly", () => {
     })
 
     test("bit string", () => {
-        let bits = new BitArray("1111");
+        let bits = new BitArray("1111", 2);
         expect(bits.toString(2)).toBe("1111")
 
-        bits = new BitArray("1111");
+        bits = new BitArray("1111", 2);
         expect(bits.toString(2)).toBe("1111")
     })
-    
+
     test("hex string", () => {
-        let bits = new BitArray("FF");
+        let bits = new BitArray("FF", 16);
         expect(bits.toString(16)).toBe("ff")
-    
-        bits = new BitArray("f2");
+
+        bits = new BitArray("f2", 16);
         expect(bits.toString(2)).toBe("11110010")
-        
+
     })
 })
 
@@ -59,21 +59,21 @@ describe("bitwise operations", () => {
 });
 
 describe("Slice & Dice", () => {
-    let bitArray = new BitArray("0011001101");
+    let bitArray = new BitArray("0011001101", 2);
 
     test("slice", () => {
         let slice = bitArray.slice(0, 3),
-            expected = new BitArray("001");
+            expected = new BitArray("001", 2);
         expect(slice.toString()).toBe(expected.toString())
 
-        slice = bitArray.slice(1), expected = new BitArray("011001101");
+        slice = bitArray.slice(1), expected = new BitArray("011001101", 2);
 
         expect(slice.toString(2)).toBe(expected.toString(2))
     })
 
     test("concat", () => {
-        let concatenated = bitArray.concat(new BitArray("101")),
-            expected = new BitArray("0011001101101")
+        let concatenated = bitArray.concat(new BitArray("101", 2)),
+            expected = new BitArray("0011001101101", 2)
 
         expect(concatenated.toString(2)).toBe(expected.toString(2))
     })
