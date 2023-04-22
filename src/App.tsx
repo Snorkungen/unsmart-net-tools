@@ -1,5 +1,6 @@
 import { Button, Container, Form, Nav, Navbar, Card } from 'solid-bootstrap';
 import type { Component } from 'solid-js';
+import { BitArray } from './lib/binary';
 import { Address, calculateSubnet, SubnetMask } from './lib/subnet-calculator';
 
 
@@ -8,6 +9,9 @@ const App: Component = () => {
     address: new Address("172.16.40.1"),
     mask: new SubnetMask(16)
   })
+
+  new BitArray(10)
+
   return (
     <div>
       <Navbar bg="dark" variant="dark">
