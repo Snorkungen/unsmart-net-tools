@@ -79,4 +79,11 @@ describe("Slice & Dice", () => {
     })
 
 
+
+    test ("splice", () => {
+        let removed = bitArray.splice(0,2);
+    
+        expect(removed.length).toBe(2);
+        expect(bitArray.toString(2)).toBe("11001101")
+    })
 })

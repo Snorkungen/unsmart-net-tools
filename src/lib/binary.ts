@@ -51,6 +51,16 @@ export class BitArray {
         return new BitArray(this.array.slice(start, end));
     }
 
+    /**
+     *  only way to modify the data
+     * @param start 
+     * @param deleteCount 
+     */
+    splice(start: number, deleteCount?: number): BitArray["array"];
+    splice(start: number, deleteCount: number, ...items: BitArray["array"]): BitArray["array"] {
+        return this.array.splice(start, deleteCount, ...items);
+    }
+
     concat(...items: BitArray[]) {
         return new BitArray(this.array.concat(...items.map(({ array }) => array)))
     }
