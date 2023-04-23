@@ -1,16 +1,13 @@
 import { Button, Container, Form, Nav, Navbar, Card } from 'solid-bootstrap';
 import type { Component } from 'solid-js';
-import { BitArray } from './lib/binary';
-import { Address, calculateSubnet, SubnetMask } from './lib/subnet-calculator';
-
+import { AddressV4, calculateSubnetV4, SubnetMaskV4 } from './lib/ip/v4';
 
 const App: Component = () => {
-  let subnet = calculateSubnet({
-    address: new Address("172.16.40.1"),
-    mask: new SubnetMask(16)
+  let subnet = calculateSubnetV4({
+    address: new AddressV4("172.16.40.1"),
+    mask: new SubnetMaskV4(19)
   })
 
-  new BitArray(10)
 
   return (
     <div>
