@@ -63,12 +63,14 @@ export class SubnetMaskV6 {
 
     get length() {
         let bitString = this.bits.toString(2)
-
+        let len = ADDRESS_LENGTH;
         for (let i = 0; i < bitString.length; i++) {
-            if (bitString[i] == "0") return i;
+            if (bitString[i] == "0") {
+                len = i; break
+            }
         }
 
-        return 0;
+        return len;
     }
     
     toString(simplify?: Parameters<typeof colonNotateBitArray>[1]) {
@@ -76,6 +78,11 @@ export class SubnetMaskV6 {
     }
 }
 
+/**
+ * I'm unsure as to how ipv6 works so this is exists
+ * @param options
+ * @returns 
+ */
 export function calculateSubnetV6({ address, mask }: {
     address: AddressV6,
     mask: SubnetMaskV6

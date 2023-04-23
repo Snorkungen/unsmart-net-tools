@@ -1,9 +1,9 @@
 import { BitArray } from "../binary";
 
 const DOT_NOTATED_ADDRESS_REGEX = /^(\b2^[0-5]|\b2[0-4][0-9]|\b[01]?[0-9][0-9]?)(\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}$/i
-
+const ADDRESS_LENGTH = 32;
 export class AddressV4 {
-    bits: BitArray = new BitArray(0, 32);
+    bits: BitArray = new BitArray(0, ADDRESS_LENGTH);
 
     constructor(input: string);
     constructor(input: BitArray);
@@ -14,7 +14,7 @@ export class AddressV4 {
             this.bits = parseDotNotated(input);
         }
 
-        if (input instanceof BitArray && input.size == 32) {
+        if (input instanceof BitArray && input.size == ADDRESS_LENGTH) {
             this.bits = input;
         }
 
@@ -30,7 +30,7 @@ export class AddressV4 {
 }
 
 export class SubnetMaskV4 {
-    bits: BitArray = new BitArray(0, 32);
+    bits: BitArray = new BitArray(0, ADDRESS_LENGTH);
 
     constructor(input: string);
     constructor(input: BitArray);
@@ -44,11 +44,11 @@ export class SubnetMaskV4 {
             }
         }
 
-        if (typeof input == "number" && !isNaN(input) && input <= 32 && input >= 0) {
+        if (typeof input == "number" && !isNaN(input) && input <= ADDRESS_LENGTH && input >= 0) {
             this.bits.splice(0, input, new BitArray(1, input))
         }
 
-        if (input instanceof BitArray && input.size == 32) {
+        if (input instanceof BitArray && input.size == ADDRESS_LENGTH) {
             if (validateMaskBits(input)) {
                 this.bits = input;
             }
@@ -65,12 +65,14 @@ export class SubnetMaskV4 {
 
     get length() {
         let bitString = this.bits.toString(2)
-
+        let len = ADDRESS_LENGTH;
         for (let i = 0; i < bitString.length; i++) {
-            if (bitString[i] == "0") return i;
+            if (bitString[i] == "0") {
+                len = i; break
+            }
         }
 
-        return 0;
+        return len;
     }
 
     toString() {
@@ -99,7 +101,7 @@ export function calculateSubnetV4({ address, mask }: {
         broadcastAddress: new AddressV4(broadcastBitArray),
 
         hosts: {
-            count: 2 ** (32 - mask.length) - 2,
+            count: 2 ** (ADDRESS_LENGTH - mask.length) - 2,
             min: new AddressV4(minHostBitArray),
             max: new AddressV4(maxHostBitArray)
         }
@@ -107,7 +109,7 @@ export function calculateSubnetV4({ address, mask }: {
 }
 
 function parseDotNotated(input: string) {
-    let bitArray = new BitArray(0, 32);
+    let bitArray = new BitArray(0, ADDRESS_LENGTH);
     input = input.trim()
     // this should not probly be done here
     if (!DOT_NOTATED_ADDRESS_REGEX.test(input)) return bitArray;
