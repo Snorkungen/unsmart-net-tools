@@ -106,7 +106,6 @@ export function calculateSubnetV4({ address, mask }: {
     }
 }
 
-
 function parseDotNotated(input: string) {
     let bitArray = new BitArray(0, 32);
     input = input.trim()
@@ -133,7 +132,7 @@ function dotNotateBitArray(bits: BitArray) {
     ].join(".");
 }
 
-function validateMaskBits(bits: BitArray) {
+export function validateMaskBits(bits: BitArray) {
     let bitString = bits.toString(2);
 
     for (let i = 0; i < bitString.length; i++) {
