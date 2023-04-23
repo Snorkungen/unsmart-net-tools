@@ -1,6 +1,6 @@
 import { BitArray } from "../binary";
 
-const DOT_NOTATED_ADDRESS_REGEX = /^(\b2^[0-5]|\b2[0-4][0-9]|\b[01]?[0-9][0-9]?)(\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}$/i
+const DOT_NOTATED_ADDRESS_REGEX = /^(\b25[0-5]|\b2[0-4][0-9]|\b[01]?[0-9][0-9]?)(\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}$/
 const ADDRESS_LENGTH = 32;
 export class AddressV4 {
     bits: BitArray = new BitArray(0, ADDRESS_LENGTH);
@@ -113,7 +113,6 @@ function parseDotNotated(input: string) {
     input = input.trim()
     // this should not probly be done here
     if (!DOT_NOTATED_ADDRESS_REGEX.test(input)) return bitArray;
-
     // This looks cool & all but this is so abstracted i have no clue what's going on below
     input.split(".").forEach((n, i) => {
         bitArray.splice(i * 8, i * 8 + 8,
@@ -144,4 +143,8 @@ export function validateMaskBits(bits: BitArray) {
     }
 
     return true;
+}
+
+export function validateDotNotated(input: string) {
+    return DOT_NOTATED_ADDRESS_REGEX.test(input.trim())
 }
