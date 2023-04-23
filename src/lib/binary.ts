@@ -23,7 +23,9 @@ export class BitArray {
         // JavaScript has some idiosyncrasies
         if (typeof input == "number" && !isNaN(input)) {
             // create a repeating data 1111111
-            if (num > 0 && input == 0 || input == 1) this.array = new Array<boolean>(num).fill(!!input)
+            if (num > 0 && (input == 0 || input == 1)) {
+                this.array = new Array<boolean>(num).fill(!!input)
+            }
             else this.array = numberToArrayOfBooleans(input)
         } else if (typeof input == "string") {
             // radix enforces the encoding of the input string
