@@ -16,22 +16,37 @@ export type ViewRouterProps = {
 
 let viewRouterIsInitialized = false;
 let viewOptions: Array<View & { name: string }> = [];
-let viewFallbackView: undefined| JSX.Element = undefined;
+let viewFallbackView: undefined | JSX.Element = undefined;
 
 const [viewStore, setViewStore] = createStore<Partial<View & { data: unknown }>>();
 
-const handleSetView = () => {
+const getHashData = () => {
     let hash = location.hash.substring(1);
 
     if (hash.slice(0, VIEW_ROUTER_SEARCH_NAME.length) != VIEW_ROUTER_SEARCH_NAME) {
-        return;
+        return null;
     }
 
     if (!viewOptions.length) {
+        return null;
+    }
+
+    let [name,/* data */] = hash.split("=")[1].split(",");
+
+    return {
+        name: decodeURIComponent(name),
+        data: null
+    }
+}
+
+const handleSetView = () => {
+    let hashData = getHashData();
+
+    if (!hashData) {
         return;
     }
 
-    let [name] = hash.split("=")[1].split(",");
+    let { name } = hashData;
     let view = viewOptions.find((view) => view.name == name);
 
     if (!view && viewFallbackView) {
@@ -73,7 +88,7 @@ const ViewRouter: Component<ViewRouterProps> = ({ children, views, fallback }) =
     let searchParams = new URLSearchParams(location.hash);
     let query = searchParams.get(VIEW_ROUTER_SEARCH_NAME);
 
-    if (query == null) {
+    if (!getHashData()) {
         setViewHash(views[0].name!)
     }
 
