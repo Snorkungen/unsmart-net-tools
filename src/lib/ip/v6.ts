@@ -72,7 +72,7 @@ export class SubnetMaskV6 {
 
         return len;
     }
-    
+
     toString(simplify?: Parameters<typeof colonNotateBitArray>[1]) {
         return colonNotateBitArray(this.bits, simplify)
     }
@@ -197,6 +197,11 @@ function colonNotateBitArray(bitArray: BitArray, simplify = 4) {
 
             a.splice(longestSequnce[0], longestSequnce[1], (longestSequnce[0] == 0 || longestSequnce[0] + longestSequnce[1] == a.length) ? ":" : "")
         }
+    }
+
+    // not so smart bug fix
+    if (a.length == 1) {
+        return "::"
     }
 
     return a.join(":")
