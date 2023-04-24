@@ -1,9 +1,7 @@
-import { Button, Container, Form, Nav, Navbar, Card } from 'solid-bootstrap';
+import { Button, Container, Form, Nav, Navbar, Card, NavLink } from 'solid-bootstrap';
 import type { Component } from 'solid-js';
 import CalculatorSubnetV4 from './components/calculator-subnet';
-import { BitArray } from './lib/binary';
-import { AddressV4, calculateSubnetV4, SubnetMaskV4 } from './lib/ip/v4';
-import { AddressV6, calculateSubnetV6, SubnetMaskV6 } from './lib/ip/v6';
+import ViewRouter, { createViewHref } from './components/view-router';
 
 const App: Component = () => {
   return (
@@ -12,14 +10,26 @@ const App: Component = () => {
         <Container>
           <Navbar.Brand href="#home">Navbar</Navbar.Brand>
           <Nav class="me-auto">
-
+            <NavLink href={createViewHref("subnet-calculator-v4")}>Subnet calculator v4</NavLink>
+            <NavLink href={createViewHref("suitable-address-calculator-v4")}>suitable</NavLink>
           </Nav>
         </Container>
       </Navbar>
       <Container>
         <Card bg='dark' text='light' class='mt-4'>
           <Card.Body>
-            <CalculatorSubnetV4 />
+            <ViewRouter views={[
+              {
+                element: (
+                  <CalculatorSubnetV4 />
+                ),
+                name: "subnet-calculator-v4"
+              }
+            ]} 
+              fallback={(
+                <h1>View not found</h1>
+              )}
+            />
           </Card.Body>
         </Card>
       </Container>
