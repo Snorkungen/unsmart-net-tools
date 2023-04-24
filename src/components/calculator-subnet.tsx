@@ -1,7 +1,7 @@
 import { Button, Col, Form, InputGroup, Row, Table } from "solid-bootstrap";
 import { Component, createSignal, For, JSX, Show } from "solid-js";
 import { AddressV4, calculateSubnetV4, SubnetMaskV4, validateDotNotated } from "../lib/ip/v4";
-console.log(new SubnetMaskV4("255.255.255.0"))
+
 const CalculatorSubnetV4: Component = () => {
     const [enabled, setEnabled] = createSignal(true)
     let [subnet, setSubnet] = createSignal<ReturnType<typeof calculateSubnetV4> | null>(null);
@@ -11,9 +11,7 @@ const CalculatorSubnetV4: Component = () => {
         let formData = new FormData(event.currentTarget)
         let address = new AddressV4(formData.get("address") as string);
         let mask = new SubnetMaskV4(formData.get("mask") as string);
-
-        console.log(formData.get("mask"))
-
+        
         setSubnet(
             calculateSubnetV4({ address, mask })
         )

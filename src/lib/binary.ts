@@ -187,5 +187,3 @@ function bitStringToArrayOfBooleans(bitString: string): BitArray["array"] {
 
     return array;
 }
-
-new BitArray("1", 2)
