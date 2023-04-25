@@ -1,4 +1,4 @@
-import { Component, JSX, Show, children, createSignal } from "solid-js"
+import { Component, JSX, Show } from "solid-js"
 import { createStore } from "solid-js/store";
 
 const VIEW_ROUTER_SEARCH_NAME = encodeURIComponent("VR:NAME")

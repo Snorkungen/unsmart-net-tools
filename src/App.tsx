@@ -11,8 +11,8 @@ const App: Component = () => {
         <Container>
           <Navbar.Brand href="#home">Navbar</Navbar.Brand>
           <Nav class="me-auto">
-            <NavLink href={createViewHref("subnet-calculator-v4")}>Subnet calculator v4</NavLink>
-            <NavLink href={createViewHref("suitable-address-calculator-v4")}>suitable</NavLink>
+            <NavLink href={createViewHref(CalculatorSubnetV4.name)}>Subnet calculator v4</NavLink>
+            <NavLink href={createViewHref(CalculatorSuitableAddressV4.name)}>suitable</NavLink>
           </Nav>
         </Container>
       </Navbar>
@@ -24,13 +24,13 @@ const App: Component = () => {
                 element: (
                   <CalculatorSubnetV4 />
                 ),
-                name: "subnet-calculator-v4"
+                name: CalculatorSubnetV4.name
               },
               {
                 element: (
                   <CalculatorSuitableAddressV4 />
                 ),
-                name: "suitable-address-calculator-v4"
+                name: CalculatorSuitableAddressV4.name
               }
             ]}
               fallback={(
