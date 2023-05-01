@@ -2,7 +2,12 @@ import { BitArray } from "../binary";
 
 const DOT_NOTATED_ADDRESS_REGEX = /^(\b25[0-5]|\b2[0-4][0-9]|\b[01]?[0-9][0-9]?)(\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}$/
 const ADDRESS_LENGTH = 32;
+
+// <https://www.meridianoutpost.com/resources/articles/IP-classes.php/>
+export type IpV4Class = "A" | "B" | "C" | "D" | "E";
 export class AddressV4 {
+    static address_length = ADDRESS_LENGTH;
+
     bits: BitArray = new BitArray(0, ADDRESS_LENGTH);
 
     constructor(input: string);
@@ -26,6 +31,15 @@ export class AddressV4 {
 
     toString() {
         return dotNotateBitArray(this.bits);
+    }
+
+    get class(): IpV4Class {
+        let octet = this.bits.slice(0, 8).toNumber();
+        if (octet <= 127) return "A"
+        else if (octet <= 191) return "B"
+        else if (octet <= 223) return "C"
+        else if (octet <= 239) return "D"
+        else return "E"
     }
 }
 

@@ -1,0 +1,32 @@
+form {
+
+    section {
+        display: flex;
+        justify-content: space-around;
+        margin-top: 1em;
+    }
+
+    fieldset {
+        padding: 0 1em;
+    }
+
+    section>* {
+        flex-grow: 1;
+    }
+
+    label {
+        text-align: center;
+    }
+
+    label>input {
+        margin-left: 0.1em;
+    }
+
+    input[type="text"] {
+        width: 100%;
+    }
+}
+
+.text-center {
+    text-align: center;
+}
