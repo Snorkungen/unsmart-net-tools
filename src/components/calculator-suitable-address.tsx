@@ -1,7 +1,7 @@
 import { Component, createSignal, JSX, Show } from "solid-js";
 import { BitArray } from "../lib/binary";
 import { AddressV4, calculateSubnetV4, SubnetMaskV4 } from "../lib/ip/v4";
-import { reservedAddresses } from "../lib/ip/v4.reserved";
+import { reservedAddresses } from "../lib/ip/v4/reserved";
 
 
 

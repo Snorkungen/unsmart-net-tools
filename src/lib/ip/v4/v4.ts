@@ -1,10 +1,9 @@
-import { BitArray } from "../binary";
+import { BitArray } from "../../binary";
+import { ClassAddressV4, classesV4 } from "./class";
 
 const DOT_NOTATED_ADDRESS_REGEX = /^(\b25[0-5]|\b2[0-4][0-9]|\b[01]?[0-9][0-9]?)(\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}$/
 const ADDRESS_LENGTH = 32;
 
-// <https://www.meridianoutpost.com/resources/articles/IP-classes.php/>
-export type IpV4Class = "A" | "B" | "C" | "D" | "E";
 export class AddressV4 {
     static address_length = ADDRESS_LENGTH;
 
@@ -33,13 +32,14 @@ export class AddressV4 {
         return dotNotateBitArray(this.bits);
     }
 
-    get class(): IpV4Class {
-        let octet = this.bits.slice(0, 8).toNumber();
-        if (octet <= 127) return "A"
-        else if (octet <= 191) return "B"
-        else if (octet <= 223) return "C"
-        else if (octet <= 239) return "D"
-        else return "E"
+    get class(): ClassAddressV4 {
+        for (let c of classesV4) {
+            if (c.test(this)) {
+                return c;
+            }
+        }
+
+        throw new Error("classifying address failed");
     }
 }
 
