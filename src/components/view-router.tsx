@@ -16,7 +16,6 @@ export type ViewRouterProps = {
 
 let viewRouterIsInitialized = false;
 let viewOptions: Array<View & { name: string }> = [];
-let viewFallbackView: undefined | JSX.Element = undefined;
 
 const [viewStore, setViewStore] = createStore<Partial<View & { data: unknown }>>();
 
@@ -31,17 +30,22 @@ const getHashData = () => {
         return null;
     }
 
-    let [name,/* data */] = hash.split("=")[1].split(",");
+    let [, value] = hash.split("=")
+
+    if (!value) {
+        return null
+    }
+
+    let [name, data] = value.split(",");
 
     return {
         name: decodeURIComponent(name),
-        data: null
+        data: decodeURIComponent(data)
     }
 }
 
 const handleSetView = () => {
     let hashData = getHashData();
-
     if (!hashData) {
         return;
     }
@@ -49,19 +53,13 @@ const handleSetView = () => {
     let { name } = hashData;
     let view = viewOptions.find((view) => view.name == name);
 
-    if (!view && viewFallbackView) {
-        setViewStore({
-            element: viewFallbackView
-        })
-    } else if (view) {
-        setViewStore(view);
-    };
+    setViewStore(view || {});
 }
 
 window.addEventListener("hashchange", handleSetView)
 
-function setViewHash(name: string, data = null) {
-    location.hash = VIEW_ROUTER_SEARCH_NAME + "=" + encodeURIComponent(name) + ","
+function setViewHash(name: string, data?: string) {
+    location.hash = createViewHref(name, data)
 }
 
 const ViewRouter: Component<ViewRouterProps> = ({ children, views, fallback }) => {
@@ -81,13 +79,6 @@ const ViewRouter: Component<ViewRouterProps> = ({ children, views, fallback }) =
         return view as View;
     });
 
-    // set view fallback
-    viewFallbackView = fallback;
-
-    // init view
-    let searchParams = new URLSearchParams(location.hash);
-    let query = searchParams.get(VIEW_ROUTER_SEARCH_NAME);
-
     if (!getHashData()) {
         setViewHash(views[0].name!)
     }
@@ -95,21 +86,20 @@ const ViewRouter: Component<ViewRouterProps> = ({ children, views, fallback }) =
     handleSetView();
 
     return <>
-        <Show when={viewStore.element} >
+        <Show when={viewStore.element} fallback={fallback} >
             {viewStore.element}
         </Show>
         {children}
     </>
 }
 
-export function createViewHref(name: string | number, data = null) {
+export function createViewHref(name: string | number, data?: string) {
     if (typeof name == "number") {
         let view = viewOptions[name];
         if (view) name = view.name
         else name = name.toString(16)
     }
-    let encodeData = (data = null) => data + "";
-    return `#${VIEW_ROUTER_SEARCH_NAME}=${encodeURIComponent(name)},${encodeData(data)}`
+    return `#${VIEW_ROUTER_SEARCH_NAME}=${encodeURIComponent(name)},${encodeURIComponent(data || "")}`
 };
 
 export default ViewRouter;
