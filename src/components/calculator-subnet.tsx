@@ -145,7 +145,7 @@ const CalculatorSubnetV4: Component = () => {
     const randomizeAddress = () => {
         setState(prev => {
             let hostBits = AddressV4.address_length - prev.mask.length;
-            let n = Math.round(Math.random() * (2 ** hostBits -2))
+            let n = Math.round(Math.random() * (2 ** hostBits - 2))
             prev.address = new AddressV4(prev.address.bits.xor(new BitArray(n)))
             return prev;
         })
@@ -186,7 +186,12 @@ const CalculatorSubnetV4: Component = () => {
                 </fieldset>
                 <fieldset>
                     <legend>Subnet Mask</legend>
-                    <input type="text" name="mask" value={state().mask.toString()} onInput={handleMask} />
+                    <input type="text" name="mask" list="subnet-mask-list" value={state().mask.toString()} onInput={handleMask} />
+                    <datalist id="subnet-mask-list">
+                        <For each={state().maskBitOptions}>{(bits) => (
+                            <option value={new SubnetMaskV4(bits).toString()} />
+                        )}</For>
+                    </datalist>
                 </fieldset>
             </section>
             <section>
@@ -226,8 +231,8 @@ const CalculatorSubnetV4: Component = () => {
                     </select>
                 </fieldset>
                 <fieldset>
-                    <legend>Hosts **</legend>
-                    <input type="number"inputMode="numeric" list="host-options"  min={0} max={2 ** (32 - 8) - 2} value={state().hosts.count} onInput={handleHosts} />
+                    <legend>Hosts</legend>
+                    <input type="number" inputMode="numeric" list="host-options" min={0} max={2 ** (32 - 8) - 2} value={state().hosts.count} onInput={handleHosts} />
                     <datalist id="host-options">
                         <For each={state().hostOptions}>
                             {(val) => (
