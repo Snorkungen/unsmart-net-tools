@@ -113,6 +113,13 @@ export class IPPacketV4 {
         return this.bits.slice(72, 72 + PROTOCOL_BITS.size).toNumber();
     }
 
+    get source(): AddressV4 {
+        return new AddressV4(this.bits.slice(96, 96 + AddressV4.address_length));
+    }
+    get destination(): AddressV4 {
+        return new AddressV4(this.bits.slice(128, 128 + AddressV4.address_length));
+    }
+
     get payload(): BitArray {
         return this.bits.slice(this.ihl * 32);
     }
