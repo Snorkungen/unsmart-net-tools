@@ -2,19 +2,17 @@ import { Component } from "solid-js";
 import { EthernetFrame, Ethertype, MACAddress } from "../lib/ethernet";
 import { BitArray } from "../lib/binary";
 import { VLANTag } from "../lib/ethernet/vlan";
+import { IPPacketV4 } from "../lib/ip/v4/packet";
+import { AddressV4 } from "../lib/ip/v4";
 
 
 export const TestingComponent: Component = () => {
 
     let macAddress = new MACAddress("00:1f:19:ba:20:39");
     let ethernetPacket = new EthernetFrame(macAddress, new MACAddress("00:1f:19:ba:20:37"), new Ethertype(0x500), new BitArray(1, 46 * 8));
+    let ipPacket = new IPPacketV4(new AddressV4("192.168.1.2"), new AddressV4("192.168.1.2"), 1, new BitArray(0, 1000))
 
-    ethernetPacket.vlan = new VLANTag(10)
-    console.log(ethernetPacket.vlan.vid.toNumber())
-    console.log(ethernetPacket.source.toString())
-    ethernetPacket.source = new MACAddress("10:ff:10:22:32:1f")
-    console.log(ethernetPacket.source.toString())
-    console.log(ethernetPacket)
+    console.log(ipPacket)
 
     return (
         <div>
