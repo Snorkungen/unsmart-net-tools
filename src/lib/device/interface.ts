@@ -2,8 +2,6 @@ import { EthernetFrame, MACAddress } from "../ethernet";
 import { VID, VLANTag } from "../ethernet/vlan";
 import { AddressV4, SubnetMaskV4 } from "../ip/v4";
 import { AddressV6, SubnetMaskV6 } from "../ip/v6";
-
-
 export class Interface {
     private target: Interface | null = null;
 
@@ -19,7 +17,7 @@ export class Interface {
     ipAddressV6?: AddressV6;
     subnetMaskV6?: SubnetMaskV6;
 
-    constructor(public ifID: string, macAddress: MACAddress, public forwardCallback: (frame: EthernetFrame) => EthernetFrame | null) {
+    constructor(public ifID: number, macAddress: MACAddress, public forwardCallback: (frame: EthernetFrame, iface: Interface) => void) {
         this.macAddress = macAddress;
     }
 
@@ -39,7 +37,7 @@ export class Interface {
     send(frame: EthernetFrame) {
         if (!this.isConnected) {
             // should probabky return an error
-            return null;
+            return;
         }
 
         if (this.vlan && this.vlan.vids.length > 0) {
@@ -60,13 +58,13 @@ export class Interface {
     recieve(frame: EthernetFrame) {
         if (!this.isConnected) {
             // should probabky return an error
-            return null;
+            return;
         }
 
         if (frame.destination.toString() != this.macAddress.toString()) {
             if (!frame.destination.isBroadcast) {
                 // meant for wrong interface
-                return null;
+                return;
             }
         }
 
@@ -74,7 +72,7 @@ export class Interface {
             if (this.vlan.type == "access") {
                 if (frame.vlan && !this.vlan.vids.find(vid => vid.toNumber() == frame.vlan!.vid.toNumber())) {
                     // frame not in vlan list
-                    return null;
+                    return;
                 } else if (!frame.vlan) {
                     // add tag
                     frame.vlan = new VLANTag(this.vlan.vids[0]);
@@ -84,14 +82,15 @@ export class Interface {
 
                 if (!frame.vlan) {
                     // discard frame no vlan tag
-                    return null;
+                    return;
                 } else if (!this.vlan.vids.find(vid => vid.toNumber() == frame.vlan!.vid.toNumber())) {
                     // discard frame not in list
-                    return null;
+                    return;
                 }
             }
         }
 
-        return this.forwardCallback(frame);
+        // recieve doesn't return anything 
+        return this.forwardCallback(frame, this);
     }
 }
