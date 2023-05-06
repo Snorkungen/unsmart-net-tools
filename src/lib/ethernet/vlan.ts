@@ -60,9 +60,9 @@ export class VLANTag {
 
     bits: BitArray;
 
-    constructor(vid: number | VLANTag, pcp: number | PCP = 0, dei: 0 | 1 = 0) {
+    constructor(vid: number | VID | BitArray, pcp: number | PCP = 0, dei: 0 | 1 = 0) {
         if (typeof vid == "number") {
-            vid = new VLANTag(vid)
+            vid = new VID(vid)
         }
 
         if (typeof pcp == "number") {
@@ -70,7 +70,14 @@ export class VLANTag {
         }
 
 
-        this.bits = VLANTag.TPID.concat(pcp.bits, new BitArray(dei), vid.bits)
+        if (vid instanceof BitArray && vid.size == VLANTag.length) {
+            this.bits = vid;
+        } else if (vid instanceof VID) {
+            this.bits = VLANTag.TPID.concat(pcp.bits, new BitArray(dei), vid.bits)
+        } else {
+            this.bits = VLANTag.TPID.concat(pcp.bits, new BitArray(dei), vid)
+        }
+
     }
 
     get pcp(): PCP {
