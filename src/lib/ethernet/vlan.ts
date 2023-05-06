@@ -69,15 +69,13 @@ export class VLANTag {
             pcp = new PCP(pcp);
         }
 
-
-        if (vid instanceof BitArray && vid.size == VLANTag.length) {
+        if (vid instanceof BitArray && vid.size == VLANTag.address_length) {
             this.bits = vid;
         } else if (vid instanceof VID) {
             this.bits = VLANTag.TPID.concat(pcp.bits, new BitArray(dei), vid.bits)
         } else {
             this.bits = VLANTag.TPID.concat(pcp.bits, new BitArray(dei), vid)
         }
-
     }
 
     get pcp(): PCP {

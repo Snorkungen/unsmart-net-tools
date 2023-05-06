@@ -74,9 +74,18 @@ export class EthernetFrame {
         return new MACAddress(this.bits.slice(0, MACAddress.address_length));
     }
 
+    set destination(address: MACAddress) {
+        this.bits.splice(0, MACAddress.address_length, address.bits);
+    }
+
     get source(): MACAddress {
         return new MACAddress(this.bits.slice(MACAddress.address_length, MACAddress.address_length * 2));
     }
+
+    set source(address: MACAddress) {
+        this.bits.splice(MACAddress.address_length, MACAddress.address_length, address.bits);
+    }
+
 
     get type(): Ethertype {
         let ethertype = new Ethertype(
@@ -99,8 +108,21 @@ export class EthernetFrame {
         if (ethertype.value != VLANTag.TPID.toNumber()) {
             return null;
         }
-
+        let tag = new VLANTag(this.bits.slice(MACAddress.address_length * 2, MACAddress.address_length * 2 + VLANTag.address_length))
         return new VLANTag(this.bits.slice(MACAddress.address_length * 2, MACAddress.address_length * 2 + VLANTag.address_length))
+    }
+
+    set vlan(vlan: VLANTag | null) {
+        if (this.vlan && vlan) {
+            // edit vlan        
+            this.bits.splice(MACAddress.address_length * 2, VLANTag.address_length, vlan.bits);
+        } else if (!this.vlan && vlan) {
+            this.bits.splice(MACAddress.address_length * 2, 0, vlan.bits);
+            // add vlan
+        } else if (this.vlan && !vlan) {
+            // remove vlan
+            this.bits.splice(MACAddress.address_length * 2, VLANTag.address_length);
+        }
     }
 
     get payload(): BitArray {
