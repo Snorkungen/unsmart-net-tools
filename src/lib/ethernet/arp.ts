@@ -91,22 +91,22 @@ export class ARPPacket {
     }
 
     get senderHardware(): BitArray {
-        let offset = HARDWARE_TYPE_BITS.size + PROTOCOL_TYPE_BITS.size + HARDWARE_LENGTH_BITS.size + OPERATION_BITS.size;
+        let offset = HARDWARE_TYPE_BITS.size + PROTOCOL_TYPE_BITS.size + HARDWARE_LENGTH_BITS.size + PROTOCOL_LENGTH_BITS.size + OPERATION_BITS.size;
         return this.bits.slice(offset, offset + (this.hardwareLength * 8))
     }
 
     get senderProtocol(): BitArray {
-        let offset = HARDWARE_TYPE_BITS.size + PROTOCOL_TYPE_BITS.size + HARDWARE_LENGTH_BITS.size + OPERATION_BITS.size + (this.hardwareLength * 8);
+        let offset = HARDWARE_TYPE_BITS.size + PROTOCOL_TYPE_BITS.size + HARDWARE_LENGTH_BITS.size + PROTOCOL_LENGTH_BITS.size + OPERATION_BITS.size + (this.hardwareLength * 8);
         return this.bits.slice(offset, offset + (this.protocolLength * 8))
     }
 
     get targetHardware(): BitArray {
-        let offset = HARDWARE_TYPE_BITS.size + PROTOCOL_TYPE_BITS.size + HARDWARE_LENGTH_BITS.size + OPERATION_BITS.size + (this.hardwareLength * 8) + (this.protocolLength * 8);
+        let offset = HARDWARE_TYPE_BITS.size + PROTOCOL_TYPE_BITS.size + HARDWARE_LENGTH_BITS.size + PROTOCOL_LENGTH_BITS.size + OPERATION_BITS.size + (this.hardwareLength * 8) + (this.protocolLength * 8);
         return this.bits.slice(offset, offset + (this.hardwareLength * 8))
     }
 
     get targetProtocol(): BitArray {
-        let offset = HARDWARE_TYPE_BITS.size + PROTOCOL_TYPE_BITS.size + HARDWARE_LENGTH_BITS.size + OPERATION_BITS.size + (this.hardwareLength * 8) + (this.protocolLength * 8) + (this.hardwareLength * 8);
+        let offset = HARDWARE_TYPE_BITS.size + PROTOCOL_TYPE_BITS.size + HARDWARE_LENGTH_BITS.size + PROTOCOL_LENGTH_BITS.size + OPERATION_BITS.size + (this.hardwareLength * 8) + (this.protocolLength * 8) + (this.hardwareLength * 8);
         return this.bits.slice(offset, offset + (this.protocolLength * 8))
     }
 

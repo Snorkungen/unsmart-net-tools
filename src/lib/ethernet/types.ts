@@ -6,6 +6,9 @@ export type EtherType = readonly [type: number, protocol: string];
 export const ETHERNET_I_MAX_SIZE = 0x600; // bytes
 export const MIN_PAYLOAD_LENGTH = 0X2E; // 46;
 
+
+// this should be an enum
+
 export const ETHER_TYPES = [
     [0x0800, "IPv4"],
     [0x0806, "ARP"],
