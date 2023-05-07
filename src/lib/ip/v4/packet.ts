@@ -40,18 +40,23 @@ const HEADER_CHEKSUM_BITS = new BitArray(0, 16)
 
 export class IPPacketV4 {
 
-    // ihl header length
+    // ihl internet header length
     // total length
 
     bits: BitArray;
 
-    constructor(source: AddressV4 | BitArray, destination: AddressV4, protocol: number, payload: BitArray, ttl = 255) {
+    constructor(source: BitArray)
+    constructor(source: AddressV4, destination: AddressV4, protocol: number, payload: BitArray, ttl?: number)
+    constructor(source: AddressV4 | BitArray, destination?: AddressV4, protocol?: number, payload?: BitArray, ttl = 255) {
 
         if (source instanceof BitArray) {
             this.bits = source;
             return;
         }
 
+        if (!destination || !protocol || !payload) {
+            throw new Error("invalid input for ip packet v4")
+        }
 
         assertFitsInBitArray(protocol, PROTOCOL_BITS);
         assertFitsInBitArray(ttl, TTL_BITS);

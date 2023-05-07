@@ -17,7 +17,20 @@ export class ICMPPacketV4 {
 
     bits: BitArray;
 
-    constructor(type: number, code: number, ...content: BitArray[]) {
+
+    constructor(bits: BitArray);
+    constructor(type: number, code: number, ...content: BitArray[]);
+    constructor(type: number | BitArray, code?: number, ...content: BitArray[]) {
+
+        if (type instanceof BitArray) {
+            this.bits = type;
+            return;
+        }
+
+        if (code == undefined) {
+            throw new Error("input incorrect")
+        }
+
         this.bits = TYPE_BITS.or(new BitArray(type)).concat(
             CODE_BITS.or(new BitArray(code)),
             CHECKSUM_BITS, // always ignore checksum
