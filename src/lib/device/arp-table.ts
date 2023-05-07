@@ -14,7 +14,9 @@ export class ARPTable {
     table: Array<TableEntry> = [];
 
     get(query: AddressV4): TableEntry[] {
-        return this.table.filter((entry) => entry.address.toString() == query.toString());
+        return this.table.filter((entry) => {
+            return entry.neighbour.toString() == query.toString()
+        });
     }
 
     add(neighbour: AddressV4, address: MACAddress, ifID: number) {
