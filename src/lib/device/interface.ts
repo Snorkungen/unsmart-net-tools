@@ -26,12 +26,15 @@ export class Interface {
     }
 
     connect(target: Interface) {
-        if (target.isConnected && target.target != this) {
-            throw new Error("target is already connected to another device");
+        if (this == target) {
+            throw new Error("cannot connect to self")
         }
 
+        if (this.target) {
+            this.target.target = null;
+        }
+        target.target = this;
         this.target = target;
-        target.connect(this);
     }
 
     send(frame: EthernetFrame) {
