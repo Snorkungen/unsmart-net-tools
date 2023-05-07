@@ -2,6 +2,8 @@ import { BitArray } from "../binary";
 import { EthernetFrame, Ethertype, MACAddress } from "../ethernet";
 import { ARPPacket } from "../ethernet/arp";
 import { AddressV4 } from "../ip/v4";
+import { ICMPPacketV4 } from "../ip/v4/icmp";
+import { IPPacketV4 } from "../ip/v4/packet";
 import { ARPTable } from "./arp-table";
 import { Interface } from "./interface";
 
@@ -25,10 +27,37 @@ export class Device {
         // inform about request
         console.info(`${this.name} recieved on interface: ${iface.ifID}, from ${frame.source.toString()}`)
 
-
         if (frame.type.value == 0x0800) {
             // ipv4 packet
+            let ipPacket = new IPPacketV4(frame.payload);
 
+            if (ipPacket.destination.toString() != iface.ipAddressV4?.toString()) {
+                // ignore, wrong destination
+                return;
+            }
+
+            if (ipPacket.protocol == 0x01) {
+                // icmp packet
+                let icmpPacket = new ICMPPacketV4(ipPacket.payload);
+                console.info(`packet is an ICMP packet(${icmpPacket.type == 0 && "Reply" || icmpPacket.type == 8 && "Request" || icmpPacket.type})`)
+
+                if (icmpPacket.type == 0) {
+                    // icmp reply
+
+                    console.log("%c ECHO Reply recieved", ['background: green', 'color: white', 'display: block', 'text-align: center', 'font-size: 24px'].join(';'))
+                    return;
+                } else if (icmpPacket.type == 8) {
+                    // icmp request
+
+                    // reply to request
+                    let replyICMPPacket = new ICMPPacketV4(0, 0, ICMPPacketV4.getIPPacketBits(ipPacket));
+                    // protocol should be an enum
+                    let replyIPPacket = new IPPacketV4(iface.ipAddressV4!, ipPacket.source, 0x01, replyICMPPacket.bits);
+                    let ethernetFrame = new EthernetFrame(frame.source, iface.macAddress, new Ethertype(0x0800/* <- this should be an enum*/), replyIPPacket.bits);
+
+                    return iface.send(ethernetFrame);
+                }
+            }
 
         } else if (frame.type.value == 0x0806) {
             // handle an arp packet

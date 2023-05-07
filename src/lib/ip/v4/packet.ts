@@ -45,8 +45,8 @@ export class IPPacketV4 {
 
     bits: BitArray;
 
-    constructor(source: BitArray)
     constructor(source: AddressV4, destination: AddressV4, protocol: number, payload: BitArray, ttl?: number)
+    constructor(source: BitArray)
     constructor(source: AddressV4 | BitArray, destination?: AddressV4, protocol?: number, payload?: BitArray, ttl = 255) {
 
         if (source instanceof BitArray) {

@@ -18,8 +18,8 @@ export class ICMPPacketV4 {
     bits: BitArray;
 
 
-    constructor(bits: BitArray);
     constructor(type: number, code: number, ...content: BitArray[]);
+    constructor(bits: BitArray);
     constructor(type: number | BitArray, code?: number, ...content: BitArray[]) {
 
         if (type instanceof BitArray) {
