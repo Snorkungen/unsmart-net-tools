@@ -4,9 +4,10 @@ import { ARPPacket } from "../ethernet/arp";
 import { ETHER_TYPES } from "../ethernet/types";
 import { AddressV4 } from "../ip/v4";
 import { ICMPPacketV4 } from "../ip/v4/icmp";
-import { IPPacketV4 } from "../ip/v4/packet";
+import { IPPacketV4 } from "../ip/packet/v4";
 import { ARPTable } from "./arp-table";
 import { Interface } from "./interface";
+import { PROTOCOLS } from "../ip/packet/protocols";
 
 let macAddressCount = 0;
 let startBits = new BitArray(0, 24).or(new BitArray("fa20f0", 16));
@@ -37,7 +38,7 @@ export class Device {
                 return;
             }
 
-            if (ipPacket.protocol == 0x01) {
+            if (ipPacket.protocol == PROTOCOLS.ICMP) {
                 // icmp packet
                 let icmpPacket = new ICMPPacketV4(ipPacket.payload);
                 console.info(`packet is an ICMP packet(${icmpPacket.type == 0 && "Reply" || icmpPacket.type == 8 && "Request" || icmpPacket.type})`)

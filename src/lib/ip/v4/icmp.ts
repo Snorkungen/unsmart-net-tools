@@ -1,7 +1,7 @@
 // <https://en.wikipedia.org/wiki/Internet_Control_Message_Protocol>
 
 import { BitArray } from "../../binary";
-import { IPPacketV4 } from "./packet";
+import { IPPacketV4 } from "../packet/v4";
 
 
 const TYPE_BITS = new BitArray(0, 8);

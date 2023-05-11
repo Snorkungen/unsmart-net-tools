@@ -1,7 +1,8 @@
 // <https://en.wikipedia.org/wiki/Internet_Protocol_version_4#Packet_structure>
 
 import { BitArray } from "../../binary";
-import { AddressV4 } from "./v4";
+import { AddressV4 } from "../v4/v4";
+import { PROTOCOL } from "./protocols";
 
 const assertFitsInBitArray = (n: number, bitArray: BitArray) => {
     if (n < 0 || n >= 2 ** bitArray.size) {
@@ -45,9 +46,9 @@ export class IPPacketV4 {
 
     bits: BitArray;
 
-    constructor(source: AddressV4, destination: AddressV4, protocol: number, payload: BitArray, ttl?: number)
+    constructor(source: AddressV4, destination: AddressV4, protocol: PROTOCOL, payload: BitArray, ttl?: number)
     constructor(source: BitArray)
-    constructor(source: AddressV4 | BitArray, destination?: AddressV4, protocol?: number, payload?: BitArray, ttl = 255) {
+    constructor(source: AddressV4 | BitArray, destination?: AddressV4, protocol?: PROTOCOL, payload?: BitArray, ttl = 255) {
 
         if (source instanceof BitArray) {
             this.bits = source;

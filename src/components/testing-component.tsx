@@ -2,13 +2,14 @@ import { Component } from "solid-js";
 import { EthernetFrame, MACAddress } from "../lib/ethernet";
 import { BitArray } from "../lib/binary";
 import { VLANTag } from "../lib/ethernet/vlan";
-import { IPPacketV4 } from "../lib/ip/v4/packet";
+import { IPPacketV4 } from "../lib/ip/packet/v4";
 import { AddressV4, SubnetMaskV4 } from "../lib/ip/v4";
 import { ICMPPacketV4 } from "../lib/ip/v4/icmp";
 import { Device } from "../lib/device/device";
 import { ARPPacket } from "../lib/ethernet/arp";
 import { Interface } from "../lib/device/interface";
 import { ETHER_TYPES } from "../lib/ethernet/types";
+import { PROTOCOLS } from "../lib/ip/packet/protocols";
 
 const DeviceComponent: Component<{ device: Device }> = ({ device }) => {
 
@@ -127,7 +128,7 @@ export const TestingComponent: Component = () => {
         // i don't remember why i created content
         let icmpPacket = new ICMPPacketV4(8, 0,)
         // protocol should be an enum
-        let ipPacket = new IPPacketV4(iface.ipAddressV4, targetIp, 0x01, icmpPacket.bits);
+        let ipPacket = new IPPacketV4(iface.ipAddressV4, targetIp, PROTOCOLS.ICMP, icmpPacket.bits);
         let ethernetFrame = new EthernetFrame(targetMACAddress, iface.macAddress, ETHER_TYPES.IPv4, ipPacket.bits);
 
         iface.send(ethernetFrame); 
