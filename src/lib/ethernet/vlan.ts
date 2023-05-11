@@ -1,93 +1,41 @@
 // <https://en.wikipedia.org/wiki/IEEE_802.1Q>
 
 import { BitArray } from "../binary";
+import { ETHER_TYPES } from "./types";
 
-export class VID {
-    static address_length = 12;
-    bits = new BitArray(0, VID.address_length);
-
-    constructor(input: number | BitArray = 0) {
-        // invalid input defaults to vid 0
-        if (input instanceof BitArray) {
-            if (input.size != VID.address_length) return;
-        } else if (input < 1 || input > 4094) {
-            return;
-        }
-
-        this.bits = this.bits.or(new BitArray(input));
-    }
-
-    toNumber() {
-        return this.bits.toNumber()
-    }
-    toString(radix?: number) {
-        return this.bits.toString(radix)
-    }
-}
-
-// <https://en.wikipedia.org/wiki/IEEE_P802.1p>
-export class PCP {
-    static address_length = 3;
-    bits = new BitArray(0, PCP.address_length);
-
-    constructor(input: number | BitArray = 0) {
-        if (input instanceof BitArray) {
-            if (input.size != VID.address_length) return;
-        } else if (input < 0 || input > 7) {
-            // invalid input defaults to 0
-            return;
-        }
-
-        this.bits = this.bits.or(new BitArray(input));
-    }
-
-    toNumber() {
-        return this.bits.toNumber()
-    }
-    toString(radix?: number) {
-        return this.bits.toString(radix)
-    }
-}
-
-// Drop eligible indicator default to zero i have no clue what i'm doing.
-const DEI = new BitArray(0);
-
+const TPID_BITS = new BitArray(0, 16).or(new BitArray(ETHER_TYPES.VLAN)) // Tag protocol identifier
+const PCP_BITS = new BitArray(0, 3) // <https://en.wikipedia.org/wiki/IEEE_P802.1p>
+const DEI_BITS = new BitArray(0, 1)
+const VID_BITS = new BitArray(0, 12)
 
 export class VLANTag {
-    static address_length = 32;
-    // Tag protocol identifier
-    static TPID = new BitArray(0, 16).or(new BitArray(0x8100)); // 16 bits 0x8100
-
+    static address_length = TPID_BITS.size + PCP_BITS.size + DEI_BITS.size + VID_BITS.size;
     bits: BitArray;
 
-    constructor(vid: number | VID | BitArray, pcp: number | PCP = 0, dei: 0 | 1 = 0) {
-        if (typeof vid == "number") {
-            vid = new VID(vid)
-        }
-
-        if (typeof pcp == "number") {
-            pcp = new PCP(pcp);
-        }
-
+    constructor(vid: number | BitArray, pcp: number = 0, dei: 0 | 1 = 0) {
         if (vid instanceof BitArray && vid.size == VLANTag.address_length) {
             this.bits = vid;
-        } else if (vid instanceof VID) {
-            this.bits = VLANTag.TPID.concat(pcp.bits, new BitArray(dei), vid.bits)
-        } else {
-            this.bits = VLANTag.TPID.concat(pcp.bits, new BitArray(dei), vid)
+        } else if (typeof vid == "number" && vid >= 1 && vid <= 9094 && pcp >= 0 && vid <= 7) {
+            this.bits = TPID_BITS.concat(
+                PCP_BITS.or(new BitArray(pcp)),
+                DEI_BITS.or(new BitArray(pcp)),
+                VID_BITS.or(new BitArray(vid)),
+            )
         }
+
+        throw new Error("failed to create VLANTag")
     }
 
-    get pcp(): PCP {
-        return new PCP(this.bits.slice(16, 16 + PCP.address_length));
+    get pcp(): number {
+        return this.bits.slice(TPID_BITS.size, TPID_BITS.size + DEI_BITS.size).toNumber();
     }
 
     get dei(): boolean {
         return !!this.bits.slice(18, 19).toNumber(); // 0 | 1
     }
 
-    get vid(): VID {
-        return new VID(this.bits.slice(20));
+    get vid(): number {
+        return this.bits.slice(20).toNumber();
     }
 }
 

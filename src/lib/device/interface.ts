@@ -1,5 +1,5 @@
 import { EthernetFrame, MACAddress } from "../ethernet";
-import { VID, VLANTag } from "../ethernet/vlan";
+import { VLANTag } from "../ethernet/vlan";
 import { AddressV4, SubnetMaskV4 } from "../ip/v4";
 import { AddressV6, SubnetMaskV6 } from "../ip/v6";
 export class Interface {
@@ -7,7 +7,7 @@ export class Interface {
 
     vlan?: {
         // first id default
-        vids: VID[];
+        vids: number[];
         type: "access" | "trunk"
     }
 
@@ -73,7 +73,7 @@ export class Interface {
 
         if (this.vlan && this.vlan.vids.length > 0) {
             if (this.vlan.type == "access") {
-                if (frame.vlan && !this.vlan.vids.find(vid => vid.toNumber() == frame.vlan!.vid.toNumber())) {
+                if (frame.vlan && !this.vlan.vids.find(vid => vid == frame.vlan!.vid)) {
                     // frame not in vlan list
                     return;
                 } else if (!frame.vlan) {
@@ -86,7 +86,7 @@ export class Interface {
                 if (!frame.vlan) {
                     // discard frame no vlan tag
                     return;
-                } else if (!this.vlan.vids.find(vid => vid.toNumber() == frame.vlan!.vid.toNumber())) {
+                } else if (!this.vlan.vids.find(vid => vid == frame.vlan!.vid)) {
                     // discard frame not in list
                     return;
                 }

@@ -1,6 +1,7 @@
 import { BitArray } from "../binary";
-import { EthernetFrame, Ethertype, MACAddress } from "../ethernet";
+import { EthernetFrame, MACAddress } from "../ethernet";
 import { ARPPacket } from "../ethernet/arp";
+import { ETHER_TYPES } from "../ethernet/types";
 import { AddressV4 } from "../ip/v4";
 import { ICMPPacketV4 } from "../ip/v4/icmp";
 import { IPPacketV4 } from "../ip/v4/packet";
@@ -27,7 +28,7 @@ export class Device {
         // inform about request
         console.info(`${this.name} recieved on interface: ${iface.ifID}, from ${frame.source.toString()}`)
 
-        if (frame.type.value == 0x0800) {
+        if (frame.type == ETHER_TYPES.IPv4) {
             // ipv4 packet
             let ipPacket = new IPPacketV4(frame.payload);
 
@@ -53,13 +54,13 @@ export class Device {
                     let replyICMPPacket = new ICMPPacketV4(0, 0, ICMPPacketV4.getIPPacketBits(ipPacket));
                     // protocol should be an enum
                     let replyIPPacket = new IPPacketV4(iface.ipAddressV4!, ipPacket.source, 0x01, replyICMPPacket.bits);
-                    let ethernetFrame = new EthernetFrame(frame.source, iface.macAddress, new Ethertype(0x0800/* <- this should be an enum*/), replyIPPacket.bits);
+                    let ethernetFrame = new EthernetFrame(frame.source, iface.macAddress, ETHER_TYPES.IPv4, replyIPPacket.bits);
 
                     return iface.send(ethernetFrame);
                 }
             }
 
-        } else if (frame.type.value == 0x0806) {
+        } else if (frame.type == ETHER_TYPES.ARP) {
             // handle an arp packet
             let arpPacket = new ARPPacket(frame.payload);
 
@@ -77,7 +78,7 @@ export class Device {
                 // reply to request
                 let replyARPPacket = new ARPPacket(2, arpPacket.senderHardware, arpPacket.senderProtocol, iface.macAddress.bits, iface.ipAddressV4!.bits);
                 // ethertype should be an enum
-                let ethernetFrame = new EthernetFrame(frame.source, iface.macAddress, new Ethertype(0x0806), replyARPPacket.bits);
+                let ethernetFrame = new EthernetFrame(frame.source, iface.macAddress, ETHER_TYPES.ARP, replyARPPacket.bits);
                 iface.send(ethernetFrame);
 
                 // idk know if i should add an entry to the arp table

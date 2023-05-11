@@ -1,5 +1,5 @@
 import { Component } from "solid-js";
-import { EthernetFrame, Ethertype, MACAddress } from "../lib/ethernet";
+import { EthernetFrame, MACAddress } from "../lib/ethernet";
 import { BitArray } from "../lib/binary";
 import { VLANTag } from "../lib/ethernet/vlan";
 import { IPPacketV4 } from "../lib/ip/v4/packet";
@@ -8,6 +8,7 @@ import { ICMPPacketV4 } from "../lib/ip/v4/icmp";
 import { Device } from "../lib/device/device";
 import { ARPPacket } from "../lib/ethernet/arp";
 import { Interface } from "../lib/device/interface";
+import { ETHER_TYPES } from "../lib/ethernet/types";
 
 const DeviceComponent: Component<{ device: Device }> = ({ device }) => {
 
@@ -55,7 +56,7 @@ function sendARPRequest(targetIp: AddressV4, device: Device) {
 
     // wrap packet in ethernet frame
     // ether type should be an enum
-    let ethernetFrame = new EthernetFrame(broadcastMACAddress, iface.macAddress, new Ethertype(0x0806), arpPacket.bits)
+    let ethernetFrame = new EthernetFrame(broadcastMACAddress, iface.macAddress, ETHER_TYPES.ARP, arpPacket.bits)
     iface.send(ethernetFrame)
     // true means no problems as of what it knows
     return true;
@@ -127,7 +128,7 @@ export const TestingComponent: Component = () => {
         let icmpPacket = new ICMPPacketV4(8, 0,)
         // protocol should be an enum
         let ipPacket = new IPPacketV4(iface.ipAddressV4, targetIp, 0x01, icmpPacket.bits);
-        let ethernetFrame = new EthernetFrame(targetMACAddress, iface.macAddress, new Ethertype(0x0800 /* SHOULD be an enum */), ipPacket.bits);
+        let ethernetFrame = new EthernetFrame(targetMACAddress, iface.macAddress, ETHER_TYPES.IPv4, ipPacket.bits);
 
         iface.send(ethernetFrame); 
     }
