@@ -19,34 +19,33 @@ function createMacAddress() {
     ))
 }
 
-export async function resolveMACAddress(device: Device, address: AddressV4 | AddressV6) {
+export async function resolveSendingInformation(device: Device, address: AddressV4 | AddressV6) {
     try {
         if (address instanceof AddressV6) {
             throw new Error("ipv6 not implemented")
         } else {
             // address is v4
-    
-            let iface: Interface | null = null;
+
             // check if inside subnet   
-    
             for (let opt of device.interfaces) {
                 if (!opt.ipAddressV4 || !opt.subnetMaskV4) {
                     continue;
                 }
-    
+
                 if (address.bits.and(opt.subnetMaskV4.bits).toNumber() == opt.ipAddressV4.bits.and(opt.subnetMaskV4.bits).toNumber()) {
                     // interface address is in the same subnet
-                    return await device.arpTable.getSend(address)
+                    let entry = await device.arpTable.getSend(address)
+                    return { destination: entry.neighbour, macAddress: entry.address, iface: entry.iface }
                 }
             }
-    
-    
+
+
             throw new Error("Default gateway logic not implemented")
-    
+
         }
     } catch (err) {
         // handle logic where no mac address found
-        console.error(err)
+        throw err;
     }
 }
 

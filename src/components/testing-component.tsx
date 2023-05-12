@@ -1,12 +1,9 @@
 import { Component } from "solid-js";
 import { EthernetFrame, MACAddress } from "../lib/ethernet";
-import { BitArray } from "../lib/binary";
 import { IPPacketV4 } from "../lib/ip/packet/v4";
 import { AddressV4, SubnetMaskV4 } from "../lib/ip/v4";
 import { ICMPPacketV4 } from "../lib/ip/v4/icmp";
-import { Device, resolveMACAddress } from "../lib/device/device";
-import { ARPPacket } from "../lib/ethernet/arp";
-import { Interface } from "../lib/device/interface";
+import { Device, resolveSendingInformation } from "../lib/device/device";
 import { ETHER_TYPES } from "../lib/ethernet/types";
 import { PROTOCOLS } from "../lib/ip/packet/protocols";
 
@@ -31,66 +28,6 @@ const DeviceComponent: Component<{ device: Device }> = ({ device }) => {
     </div>
 }
 
-
-
-let broadcastMACAddress = new MACAddress(new BitArray(1, 6 * 8))
-
-function sendARPRequest(targetIp: AddressV4, device: Device) {
-    // iface_pc1 send arp looking for iface_pc 2
-
-    // just because this is the testing component i know what interface to use
-    let iface = device.interfaces[0];
-    if (!iface.isConnected || !iface.ipAddressV4) {
-        return null;
-    }
-
-    // sender is iface_pc1
-
-    let arpPacket = new ARPPacket(
-        1, // request
-        iface.macAddress.bits,
-        iface.ipAddressV4!.bits,
-        broadcastMACAddress.bits,
-        targetIp.bits
-    )
-
-    // wrap packet in ethernet frame
-    // ether type should be an enum
-    let ethernetFrame = new EthernetFrame(broadcastMACAddress, iface.macAddress, ETHER_TYPES.ARP, arpPacket.bits)
-    iface.send(ethernetFrame)
-    // true means no problems as of what it knows
-    return true;
-}
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-async function getMACAddressForTargetIP(targetIp: AddressV4, device: Device): Promise<[MACAddress, Interface]> {
-    return await new Promise(async (resolve, reject) => {
-        // first check arp table
-        let arpEntry = device.arpTable.get(targetIp);
-
-        if (arpEntry) {
-            // should rename theese its a confusion
-            let macAddress = arpEntry.address;
-
-            let iface = arpEntry.iface
-            if (!iface) {
-                // failed because interface doesnt exist
-                return reject()
-            }
-            return resolve([macAddress, iface]);
-        }
-
-        // now send an arp request
-        if (!sendARPRequest(targetIp, device)) {
-            // this case meanse there was problem
-            return reject()
-        }
-
-        // wait a few milliseconds to resend again
-        await sleep(100);
-        return resolve(await getMACAddressForTargetIP(targetIp, device))
-    })
-}
-
 export const TestingComponent: Component = () => {
 
     let pc1 = new Device();
@@ -109,28 +46,29 @@ export const TestingComponent: Component = () => {
 
     iface_pc2.connect(iface_pc1)
 
-    resolveMACAddress(pc1, new AddressV4("192.168.1.11")).then(r => console.log(r))
-
     async function sendFirstICMPV4Packet() {
         let targetIp = iface_pc2.ipAddressV4!
-        let senderDevice = pc1;
 
-        let [targetMACAddress, iface] = await getMACAddressForTargetIP(targetIp, senderDevice);
+        try {
+            let { macAddress, iface } = await resolveSendingInformation(pc1, targetIp)
 
-        if (!iface.isConnected || !iface.ipAddressV4 || !iface.subnetMaskV4) {
-            // failed because interface does not have ipv4 configured
-            return;
+            if (!iface.isConnected || !iface.ipAddressV4 || !iface.subnetMaskV4) {
+                // failed because interface does not have ipv4 configured
+                return;
+            }
+
+            // create ping packet
+            // the code should also be an enum 
+            // i don't remember why i created content
+            let icmpPacket = new ICMPPacketV4(8, 0,)
+            // protocol should be an enum
+            let ipPacket = new IPPacketV4(iface.ipAddressV4, targetIp, PROTOCOLS.ICMP, icmpPacket.bits);
+            let ethernetFrame = new EthernetFrame(macAddress, iface.macAddress, ETHER_TYPES.IPv4, ipPacket.bits);
+
+            iface.send(ethernetFrame);
+        } catch (err) {
+
         }
-
-        // create ping packet
-        // the code should also be an enum 
-        // i don't remember why i created content
-        let icmpPacket = new ICMPPacketV4(8, 0,)
-        // protocol should be an enum
-        let ipPacket = new IPPacketV4(iface.ipAddressV4, targetIp, PROTOCOLS.ICMP, icmpPacket.bits);
-        let ethernetFrame = new EthernetFrame(targetMACAddress, iface.macAddress, ETHER_TYPES.IPv4, ipPacket.bits);
-
-        iface.send(ethernetFrame);
     }
 
     return (
