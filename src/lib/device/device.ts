@@ -1,13 +1,13 @@
 import { BitArray } from "../binary";
 import { EthernetFrame, MACAddress } from "../ethernet";
-import { ARPPacket } from "../ethernet/arp";
+import { ARPPacket, OPCODES } from "../ethernet/arp";
 import { ETHER_TYPES } from "../ethernet/types";
 import { AddressV4 } from "../ip/v4";
 import { ICMPPacketV4 } from "../ip/v4/icmp";
 import { IPPacketV4 } from "../ip/packet/v4";
 import { ARPTable } from "./arp-table";
 import { Interface } from "./interface";
-import { PROTOCOLS } from "../ip/packet/protocols";
+import { PROTOCOL, PROTOCOLS } from "../ip/packet/protocols";
 import { AddressV6 } from "../ip/v6";
 
 let macAddressCount = 0;
@@ -30,6 +30,11 @@ export async function resolveSendingInformation(device: Device, address: Address
             for (let opt of device.interfaces) {
                 if (!opt.ipAddressV4 || !opt.subnetMaskV4) {
                     continue;
+                }
+
+                if (opt.ipAddressV4.toString() == address.toString()) {
+                    // return if the destination is itself
+                    return { destination: opt.ipAddressV4, macAddress: opt.macAddress, iface: opt }
                 }
 
                 if (address.bits.and(opt.subnetMaskV4.bits).toNumber() == opt.ipAddressV4.bits.and(opt.subnetMaskV4.bits).toNumber()) {
@@ -99,10 +104,9 @@ export class Device {
 
             console.info(`packet is an ARP(${arpPacket.operation == 1 && "Request" || arpPacket.operation == 2 && "Reply"})`)
 
-            if (arpPacket.operation == 1) {
+            if (arpPacket.operation == OPCODES.REQUEST) {
                 // request
 
-                // console.log(new AddressV4(arpPacket.targetProtocol).toString(), iface.ipAddressV4?.toString())
                 if (arpPacket.targetProtocol.toNumber() != iface.ipAddressV4?.bits.toNumber()) {
                     // ignore if not intended target
                     return;
@@ -110,12 +114,11 @@ export class Device {
 
                 // reply to request
                 let replyARPPacket = new ARPPacket(2, arpPacket.senderHardware, arpPacket.senderProtocol, iface.macAddress.bits, iface.ipAddressV4!.bits);
-                // ethertype should be an enum
                 let ethernetFrame = new EthernetFrame(frame.source, iface.macAddress, ETHER_TYPES.ARP, replyARPPacket.bits);
                 iface.send(ethernetFrame);
 
                 // idk know if i should add an entry to the arp table
-            } else if (arpPacket.operation == 2) {
+            } else if (arpPacket.operation == OPCODES.REPLY) {
                 // reply
 
                 // add to arp table
@@ -124,6 +127,26 @@ export class Device {
 
                 this.arpTable.add(neighbour, macAddress, iface);
             }
+        }
+    }
+
+    async send(destination: AddressV4 | AddressV6, protocol: PROTOCOL, packet: { bits: BitArray }) {
+        try {
+            let { iface, macAddress } = await resolveSendingInformation(this, destination);
+            if (destination instanceof AddressV4) {
+                if (!iface.isConnected || !iface.ipAddressV4 || !iface.subnetMaskV4) {
+                    // failed because interface does not have ipv4 configured
+                    // return;
+                    // Do nothing because i haven't decided if the device should have an async send function. So thats why this allows me to have an device ping it self
+                }
+                let ipPacket = new IPPacketV4(iface.ipAddressV4!, destination, protocol, packet.bits);
+                let ethernetFrame = new EthernetFrame(macAddress, iface.macAddress, ETHER_TYPES.IPv4, ipPacket.bits);
+                iface.send(ethernetFrame);
+            }
+        } catch (error) {
+            console.error(error)
+            // Here i should return ICMP host unreachaple or network unreachable depending on error code
+            throw new Error("Failed to send packet to: " + destination.toString()) // figuring out how is an obstacle
         }
     }
 

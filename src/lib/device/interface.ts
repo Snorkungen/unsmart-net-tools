@@ -38,6 +38,11 @@ export class Interface {
     }
 
     send(frame: EthernetFrame) {
+        if (frame.destination.toString() == this.macAddress.toString()) {
+            // allow for sending packets to itself
+            return this.recieve(frame)
+        }
+
         if (!this.isConnected) {
             // should probabky return an error
             return;
