@@ -8,6 +8,7 @@ import { IPPacketV4 } from "../ip/packet/v4";
 import { ARPTable } from "./arp-table";
 import { Interface } from "./interface";
 import { PROTOCOLS } from "../ip/packet/protocols";
+import { AddressV6 } from "../ip/v6";
 
 let macAddressCount = 0;
 let startBits = new BitArray(0, 24).or(new BitArray("fa20f0", 16));
@@ -17,11 +18,43 @@ function createMacAddress() {
         new BitArray(0, 10).or(new BitArray(Math.floor(Math.random() * (2 ** 10 - 1)))),
     ))
 }
+
+export async function resolveMACAddress(device: Device, address: AddressV4 | AddressV6) {
+    try {
+        if (address instanceof AddressV6) {
+            throw new Error("ipv6 not implemented")
+        } else {
+            // address is v4
+    
+            let iface: Interface | null = null;
+            // check if inside subnet   
+    
+            for (let opt of device.interfaces) {
+                if (!opt.ipAddressV4 || !opt.subnetMaskV4) {
+                    continue;
+                }
+    
+                if (address.bits.and(opt.subnetMaskV4.bits).toNumber() == opt.ipAddressV4.bits.and(opt.subnetMaskV4.bits).toNumber()) {
+                    // interface address is in the same subnet
+                    return await device.arpTable.getSend(address)
+                }
+            }
+    
+    
+            throw new Error("Default gateway logic not implemented")
+    
+        }
+    } catch (err) {
+        // handle logic where no mac address found
+        console.error(err)
+    }
+}
+
 export class Device {
     name = Math.floor(Math.random() * 10_000).toString() + "A";
     interfaces: Interface[] = [];
 
-    arpTable = new ARPTable();
+    arpTable = new ARPTable(this);
 
     listener(frame: EthernetFrame, iface: Interface) {
         // magic function that interperets and responds to packets
@@ -90,7 +123,7 @@ export class Device {
                 let neighbour = new AddressV4(arpPacket.targetProtocol);
                 let macAddress = new MACAddress(arpPacket.targetHardware);
 
-                this.arpTable.add(neighbour, macAddress, iface.ifID);
+                this.arpTable.add(neighbour, macAddress, iface);
             }
         }
     }

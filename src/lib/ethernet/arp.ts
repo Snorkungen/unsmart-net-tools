@@ -22,12 +22,17 @@ const PROTOCOL_LENGTH_BITS = new BitArray(0, 8)
 const OPERATION_BITS = new BitArray(0, 16);
 // 1 = request | 2 = reply
 
+export type Opcode = typeof OPCODES[keyof typeof OPCODES];
+export const OPCODES = {
+    REQUEST: 1,
+    REPLY: 2
+} as const;
 
 export class ARPPacket {
     bits: BitArray;
 
     constructor(operation: BitArray);
-    constructor(operation: 1 | 2, senderHardwareBits: BitArray, senderProtocolBits: BitArray, targetHardwareBits: BitArray, targetProtocolBits: BitArray);
+    constructor(operation: Opcode, senderHardwareBits: BitArray, senderProtocolBits: BitArray, targetHardwareBits: BitArray, targetProtocolBits: BitArray);
     constructor(operation: unknown, senderHardwareBits?: BitArray, senderProtocolBits?: BitArray, targetHardwareBits?: BitArray, targetProtocolBits?: BitArray
     ) {
         if (operation instanceof BitArray) {
@@ -109,5 +114,4 @@ export class ARPPacket {
         let offset = HARDWARE_TYPE_BITS.size + PROTOCOL_TYPE_BITS.size + HARDWARE_LENGTH_BITS.size + PROTOCOL_LENGTH_BITS.size + OPERATION_BITS.size + (this.hardwareLength * 8) + (this.protocolLength * 8) + (this.hardwareLength * 8);
         return this.bits.slice(offset, offset + (this.protocolLength * 8))
     }
-
 }

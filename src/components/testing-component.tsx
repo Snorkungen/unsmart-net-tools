@@ -1,11 +1,10 @@
 import { Component } from "solid-js";
 import { EthernetFrame, MACAddress } from "../lib/ethernet";
 import { BitArray } from "../lib/binary";
-import { VLANTag } from "../lib/ethernet/vlan";
 import { IPPacketV4 } from "../lib/ip/packet/v4";
 import { AddressV4, SubnetMaskV4 } from "../lib/ip/v4";
 import { ICMPPacketV4 } from "../lib/ip/v4/icmp";
-import { Device } from "../lib/device/device";
+import { Device, resolveMACAddress } from "../lib/device/device";
 import { ARPPacket } from "../lib/ethernet/arp";
 import { Interface } from "../lib/device/interface";
 import { ETHER_TYPES } from "../lib/ethernet/types";
@@ -66,15 +65,13 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function getMACAddressForTargetIP(targetIp: AddressV4, device: Device): Promise<[MACAddress, Interface]> {
     return await new Promise(async (resolve, reject) => {
         // first check arp table
-        let arpTableQuery = device.arpTable.get(targetIp);
+        let arpEntry = device.arpTable.get(targetIp);
 
-        if (arpTableQuery.length) {
-            // just return first answer
-            let q = arpTableQuery[0];
+        if (arpEntry) {
             // should rename theese its a confusion
-            let macAddress = q.address;
+            let macAddress = arpEntry.address;
 
-            let iface = device.interfaces[q.ifID];
+            let iface = arpEntry.iface
             if (!iface) {
                 // failed because interface doesnt exist
                 return reject()
@@ -112,6 +109,8 @@ export const TestingComponent: Component = () => {
 
     iface_pc2.connect(iface_pc1)
 
+    resolveMACAddress(pc1, new AddressV4("192.168.1.11")).then(r => console.log(r))
+
     async function sendFirstICMPV4Packet() {
         let targetIp = iface_pc2.ipAddressV4!
         let senderDevice = pc1;
@@ -131,7 +130,7 @@ export const TestingComponent: Component = () => {
         let ipPacket = new IPPacketV4(iface.ipAddressV4, targetIp, PROTOCOLS.ICMP, icmpPacket.bits);
         let ethernetFrame = new EthernetFrame(targetMACAddress, iface.macAddress, ETHER_TYPES.IPv4, ipPacket.bits);
 
-        iface.send(ethernetFrame); 
+        iface.send(ethernetFrame);
     }
 
     return (
