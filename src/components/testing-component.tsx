@@ -2,7 +2,7 @@ import { Component } from "solid-js";
 import { EthernetFrame, MACAddress } from "../lib/ethernet";
 import { IPPacketV4 } from "../lib/ip/packet/v4";
 import { AddressV4, SubnetMaskV4, validateDotNotated } from "../lib/ip/v4";
-import { ICMPPacketV4 } from "../lib/ip/v4/icmp";
+import { ICMPPacketV4, ICMP_TYPES } from "../lib/ip/v4/icmp";
 import { Device, resolveSendingInformation } from "../lib/device/device";
 import { ETHER_TYPES } from "../lib/ethernet/types";
 import { PROTOCOLS } from "../lib/ip/packet/protocols";
@@ -30,7 +30,7 @@ const DeviceComponent: Component<{ device: Device }> = ({ device }) => {
 
 async function ping(device: Device, destination: AddressV4) {
     try {
-        let icmpPacket = new ICMPPacketV4(8, 0,)
+        let icmpPacket = new ICMPPacketV4(ICMP_TYPES.ECHO_REQUEST, 0, null)
 
         // before sending i should create some type of device level hook that would respond to this packet
 
@@ -74,7 +74,7 @@ export const TestingComponent: Component = () => {
                     let ip = prompt("Please enter a destination ip, from: " + device.name)
 
                     if (ip && validateDotNotated(ip)) {
-                        ping (device, new AddressV4(ip))
+                        ping(device, new AddressV4(ip))
                     }
 
 

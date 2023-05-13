@@ -3,7 +3,7 @@ import { EthernetFrame, MACAddress } from "../ethernet";
 import { ARPPacket, OPCODES } from "../ethernet/arp";
 import { ETHER_TYPES } from "../ethernet/types";
 import { AddressV4 } from "../ip/v4";
-import { ICMPPacketV4 } from "../ip/v4/icmp";
+import { ICMPPacketV4, ICMP_TYPES } from "../ip/v4/icmp";
 import { IPPacketV4 } from "../ip/packet/v4";
 import { ARPTable } from "./arp-table";
 import { Interface } from "./interface";
@@ -78,14 +78,14 @@ export class Device {
             if (ipPacket.protocol == PROTOCOLS.ICMP) {
                 // icmp packet
                 let icmpPacket = new ICMPPacketV4(ipPacket.payload);
-                console.info(`packet is an ICMP packet(${icmpPacket.type == 0 && "Reply" || icmpPacket.type == 8 && "Request" || icmpPacket.type})`)
+                console.info(`packet is an ICMP packet(${icmpPacket.type == ICMP_TYPES.ECHO_REPLY && "Reply" || icmpPacket.type == ICMP_TYPES.ECHO_REQUEST && "Request" || icmpPacket.type})`)
 
-                if (icmpPacket.type == 0) {
+                if (icmpPacket.type == ICMP_TYPES.ECHO_REPLY) {
                     // icmp reply
 
                     console.log("%c ECHO Reply recieved", ['background: green', 'color: white', 'display: block', 'text-align: center', 'font-size: 24px'].join(';'))
                     return;
-                } else if (icmpPacket.type == 8) {
+                } else if (icmpPacket.type == ICMP_TYPES.ECHO_REQUEST) {
                     // icmp request
 
                     // reply to request
