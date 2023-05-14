@@ -10,7 +10,7 @@ const CODE_BITS = new BitArray(0, 8);
 // I dont do checksum
 const CHECKSUM_BITS = new BitArray(0, 16);
 // ROH Rest Of Header
-const ROH_BITS = new BitArray(0, 4 * 8); // 32 bits
+const ROH_BITS = new BitArray(0, 32); // 32 bits
 
 export class ICMPPacketV4 {
     static getIPPacketBits(packet: IPPacketV4) {
@@ -46,20 +46,25 @@ export class ICMPPacketV4 {
     }
 
     get type(): ICMP_Type {
-        return this.bits.slice(0, TYPE_BITS.size).toNumber() as ICMP_Type; 
+        return this.bits.slice(0, TYPE_BITS.size).toNumber() as ICMP_Type;
     }
 
     get code(): number {
         return this.bits.slice(8, 8 + CODE_BITS.size).toNumber();
     }
 
-    get roh(): BitArray {
+    get checksum(): BitArray {
         let offset = TYPE_BITS.size + CODE_BITS.size;
+        return this.bits.slice(offset, offset + CHECKSUM_BITS.size)
+    }
+
+    get roh(): BitArray {
+        let offset = TYPE_BITS.size + CODE_BITS.size + CHECKSUM_BITS.size;
         return this.bits.slice(offset, offset + ROH_BITS.size)
     }
 
     get content(): BitArray {
-        let offset = TYPE_BITS.size + CODE_BITS.size + ROH_BITS.size;
+        let offset = TYPE_BITS.size + CODE_BITS.size + CHECKSUM_BITS.size + ROH_BITS.size;
         return this.bits.slice(offset)
     }
 }
@@ -140,3 +145,17 @@ export const ICMP_CODES = {
         MULTIPLE_INTERFACES: 4
     },
 } as const;
+
+
+export function createROHEcho(identifier: number, sequence: number) {
+    return new BitArray(0, 16).or(new BitArray(identifier)).concat(
+        new BitArray(0, 16).or(new BitArray(sequence))
+    )
+}
+
+export function readROHEcho(roh: BitArray) {
+    return {
+        identifier: roh.slice(0, 16).toNumber(),
+        sequence: roh.slice(16, 32).toNumber()
+    }
+}
