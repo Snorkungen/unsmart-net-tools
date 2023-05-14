@@ -1,7 +1,7 @@
 import { BitArray } from "../binary";
 import { EthernetFrame, MACAddress } from "../ethernet";
 import { ARPPacket, OPCODES } from "../ethernet/arp";
-import { ETHER_TYPES } from "../ethernet/types";
+import { ETHER_TYPES, EtherType } from "../ethernet/types";
 import { AddressV4 } from "../ip/v4";
 import { ICMPPacketV4, ICMP_TYPES } from "../ip/v4/icmp";
 import { IPPacketV4 } from "../ip/packet/v4";
@@ -62,7 +62,7 @@ export class Device {
 
     listener(frame: EthernetFrame, iface: Interface) {
         // magic function that interperets and responds to packets
-
+        this.statefulRecv(frame, iface)
         // inform about request
         console.info(`${this.name} recieved on interface: ${iface.ifID}, from ${frame.source.toString()}`)
 
@@ -148,6 +148,63 @@ export class Device {
             // Here i should return ICMP host unreachaple or network unreachable depending on error code
             throw new Error("Failed to send packet to: " + destination.toString()) // figuring out how is an obstacle
         }
+    }
+
+    state: ({ type: EtherType, cb: (frame: EthernetFrame, iface: Interface) => void } & Record<string, unknown>)[] = []
+
+    statefulRecv(frame: EthernetFrame, iface: Interface) {
+        for (let i = 0; i < this.state.length; i++) {
+            let s = this.state.at(i);
+
+            if (!s) {
+                continue;
+            }
+
+            if (s.type == ETHER_TYPES.ARP && frame.type == s.type) {
+                let arpPacket = new ARPPacket(frame.payload);
+                // only care about arp replies
+                if (arpPacket.operation != OPCODES.REPLY) {
+                    continue;
+                }
+                if (s.targetP != arpPacket.targetProtocol.toNumber()) {
+                    continue;
+                }
+
+                s.cb(frame, iface);
+                return this.statefulClose(i);
+            }
+        }
+    }
+
+    statefulSend(frame: EthernetFrame, cb: (frame: EthernetFrame, iface: Interface)=> void) {
+        let iface = this.interfaces.find(({ macAddress }) => macAddress.toString() == frame.source.toString());
+        if (!iface) {
+            throw new Error("No interface for source address")
+        }
+
+        // first only support arp
+        if (frame.type == ETHER_TYPES.ARP) {
+            let arpPacket = new ARPPacket(frame.payload);
+            // only care about arp requests
+            if (arpPacket.operation == OPCODES.REQUEST) {
+                let sidx = this.state.push({
+                    type: frame.type,
+                    cb,
+                    targetP: arpPacket.targetProtocol.toNumber()
+                })
+
+                iface.send(frame);
+                return sidx;
+            }
+        }
+
+
+        throw new Error("cannot send frame!")
+    }
+
+    /** sidx "state index" */
+    statefulClose(sidx: number) {
+        delete this.state[sidx];
     }
 
     createInterface(): Interface {

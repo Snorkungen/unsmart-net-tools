@@ -15,7 +15,7 @@ type TableEntry = {
     iface: Interface;
 }
 
-function sendARPRequest(query: AddressV4, iface: Interface) {
+function createARPRequest(query: AddressV4, iface: Interface): EthernetFrame | null {
     if (!iface.isConnected || !iface.ipAddressV4) {
         return null;
     }
@@ -29,10 +29,8 @@ function sendARPRequest(query: AddressV4, iface: Interface) {
     )
 
     // wrap packet in ethernet frame
-    let ethernetFrame = new EthernetFrame(new MACAddress(new BitArray(1, MACAddress.address_length)), iface.macAddress, ETHER_TYPES.ARP, arpPacket.bits)
-    iface.send(ethernetFrame)
-    // true means no problems as of what it knows
-    return true;
+    return new EthernetFrame(new MACAddress(new BitArray(1, MACAddress.address_length)), iface.macAddress, ETHER_TYPES.ARP, arpPacket.bits)
+
 }
 
 export const ARP_QUERY_ERRORS = {
@@ -41,7 +39,6 @@ export const ARP_QUERY_ERRORS = {
 
 export class ARPTable {
     table: Array<TableEntry> = [];
-    sent = new Array<[AddressV4, ...((val: TableEntry) => void)[]]>();
 
     constructor(private device: Device, private timeout = 100) {
 
@@ -63,16 +60,24 @@ export class ARPTable {
         }
 
         return new Promise<TableEntry>((resolve, reject) => {
-            let idx = this.sent.findIndex(([addr]) => addr.toString() == query.toString())
-            if (idx >= 0) {
-                this.sent[idx].push(resolve)
-            } else {
-                this.sent.push([query, resolve])
-            }
+            let indices: Array<number> = []
             for (let iface of this.device.interfaces) {
-                sendARPRequest(query, iface)
-            }
-            setTimeout(() => {
+                let f = createARPRequest(query, iface)
+                if (f) {
+                    indices.push(
+                        this.device.statefulSend(f, (frame, iface) => {
+                            let arpPacket = new ARPPacket(frame.payload);
+                            this.add(new AddressV4(arpPacket.targetProtocol), new MACAddress(arpPacket.targetHardware), iface)
+                            // clean up
+                            indices.forEach(sidx => this.device.statefulClose(sidx))
+                            resolve(this.get(query)!)
+                        })
+                        )
+                    }
+                }
+                setTimeout(() => {
+                // clean up
+                indices.forEach(sidx => this.device.statefulClose(sidx))
                 reject(ARP_QUERY_ERRORS.TIMEOUT)
             }, this.timeout);
         })
@@ -85,17 +90,5 @@ export class ARPTable {
             created: Date.now(),
             iface
         });
-
-        let idx = this.sent.findIndex(([addr]) => addr.toString() == neighbour.toString())
-        if (idx >= 0) {
-            let entry = this.get(neighbour);
-            if (!entry) {
-                return
-            }
-            for (let cb of this.sent[idx].slice(1) as Array<((e: TableEntry) => void)>) {
-                cb(entry)
-            }
-            delete this.sent[idx];
-        }
     }
 }

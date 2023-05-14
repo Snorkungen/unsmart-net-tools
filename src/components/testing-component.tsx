@@ -6,6 +6,8 @@ import { ICMPPacketV4, ICMP_TYPES } from "../lib/ip/v4/icmp";
 import { Device, resolveSendingInformation } from "../lib/device/device";
 import { ETHER_TYPES } from "../lib/ethernet/types";
 import { PROTOCOLS } from "../lib/ip/packet/protocols";
+import { ARPPacket, OPCODES } from "../lib/ethernet/arp";
+import { BitArray } from "../lib/binary";
 
 const DeviceComponent: Component<{ device: Device }> = ({ device }) => {
 
@@ -30,6 +32,8 @@ const DeviceComponent: Component<{ device: Device }> = ({ device }) => {
 
 async function ping(device: Device, destination: AddressV4) {
     try {
+
+        let seq = 0;
         let icmpPacket = new ICMPPacketV4(ICMP_TYPES.ECHO_REQUEST, 0, null)
 
         // before sending i should create some type of device level hook that would respond to this packet
@@ -58,6 +62,18 @@ export const TestingComponent: Component = () => {
 
     iface_pc2.connect(iface_pc1)
 
+    const sendARP = () => {
+
+        // Story: pc1 if1 request pc2 if2 hwAddress
+
+        // first construct frame
+        let arpPacket = new ARPPacket(OPCODES.REQUEST, iface_pc1.macAddress.bits, iface_pc1.ipAddressV4!.bits, new BitArray(0, MACAddress.address_length), iface_pc2.ipAddressV4!.bits)
+        let frame = new EthernetFrame(new MACAddress("ff-ff-ff-ff-ff-ff"), iface_pc1.macAddress, ETHER_TYPES.ARP, arpPacket.bits);
+        pc1.statefulSend(frame,(r)=> {
+            console.info(r)
+        })
+    }
+
     return (
         <div>
             <header>
@@ -80,6 +96,10 @@ export const TestingComponent: Component = () => {
 
                 }}>Ping from: {device.name}</button>
             ))}
+
+            <div>
+                <button onClick={sendARP}>Send ARP</button>
+            </div>
 
         </div>
     )
