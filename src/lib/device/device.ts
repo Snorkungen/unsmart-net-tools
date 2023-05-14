@@ -3,7 +3,7 @@ import { EthernetFrame, MACAddress } from "../ethernet";
 import { ARPPacket, OPCODES } from "../ethernet/arp";
 import { ETHER_TYPES, EtherType } from "../ethernet/types";
 import { AddressV4 } from "../ip/v4";
-import { ICMPPacketV4, ICMP_TYPES } from "../ip/v4/icmp";
+import { ICMPPacketV4, ICMP_TYPES, readROHEcho } from "../ip/v4/icmp";
 import { IPPacketV4 } from "../ip/packet/v4";
 import { ARPTable } from "./arp-table";
 import { Interface } from "./interface";
@@ -61,10 +61,16 @@ export class Device {
     arpTable = new ARPTable(this);
 
     listener(frame: EthernetFrame, iface: Interface) {
-        // magic function that interperets and responds to packets
-        this.statefulRecv(frame, iface)
+
         // inform about request
         console.info(`${this.name} recieved on interface: ${iface.ifID}, from ${frame.source.toString()}`)
+
+        /* 
+
+        This function only replies to requests for now
+        It might not in the future
+
+        */
 
         if (frame.type == ETHER_TYPES.IPv4) {
             // ipv4 packet
@@ -78,20 +84,13 @@ export class Device {
             if (ipPacket.protocol == PROTOCOLS.ICMP) {
                 // icmp packet
                 let icmpPacket = new ICMPPacketV4(ipPacket.payload);
-                console.info(`packet is an ICMP packet(${icmpPacket.type == ICMP_TYPES.ECHO_REPLY && "Reply" || icmpPacket.type == ICMP_TYPES.ECHO_REQUEST && "Request" || icmpPacket.type})`)
-
-                if (icmpPacket.type == ICMP_TYPES.ECHO_REPLY) {
-                    // icmp reply
-
-                    console.log("%c ECHO Reply recieved", ['background: green', 'color: white', 'display: block', 'text-align: center', 'font-size: 24px'].join(';'))
-                    return;
-                } else if (icmpPacket.type == ICMP_TYPES.ECHO_REQUEST) {
+                // console.info(`packet is an ICMP packet(${icmpPacket.type == ICMP_TYPES.ECHO_REPLY && "Reply" || icmpPacket.type == ICMP_TYPES.ECHO_REQUEST && "Request" || icmpPacket.type})`)
+                if (icmpPacket.type == ICMP_TYPES.ECHO_REQUEST) {
                     // icmp request
-
                     // reply to request
-                    let replyICMPPacket = new ICMPPacketV4(0, 0, ICMPPacketV4.getIPPacketBits(ipPacket));
+                    let replyICMPPacket = new ICMPPacketV4(ICMP_TYPES.ECHO_REPLY, 0, icmpPacket.roh, ICMPPacketV4.getIPPacketBits(ipPacket));
                     // protocol should be an enum
-                    let replyIPPacket = new IPPacketV4(iface.ipAddressV4!, ipPacket.source, 0x01, replyICMPPacket.bits);
+                    let replyIPPacket = new IPPacketV4(iface.ipAddressV4!, ipPacket.source, PROTOCOLS.ICMP, replyICMPPacket.bits);
                     let ethernetFrame = new EthernetFrame(frame.source, iface.macAddress, ETHER_TYPES.IPv4, replyIPPacket.bits);
 
                     return iface.send(ethernetFrame);
@@ -102,7 +101,7 @@ export class Device {
             // handle an arp packet
             let arpPacket = new ARPPacket(frame.payload);
 
-            console.info(`packet is an ARP(${arpPacket.operation == 1 && "Request" || arpPacket.operation == 2 && "Reply"})`)
+            // console.info(`packet is an ARP(${arpPacket.operation == 1 && "Request" || arpPacket.operation == 2 && "Reply"})`)
 
             if (arpPacket.operation == OPCODES.REQUEST) {
                 // request
@@ -118,16 +117,10 @@ export class Device {
                 iface.send(ethernetFrame);
 
                 // idk know if i should add an entry to the arp table
-            } else if (arpPacket.operation == OPCODES.REPLY) {
-                // reply
-
-                // add to arp table
-                let neighbour = new AddressV4(arpPacket.targetProtocol);
-                let macAddress = new MACAddress(arpPacket.targetHardware);
-
-                this.arpTable.add(neighbour, macAddress, iface);
             }
         }
+
+        this.statefulRecv(frame, iface)
     }
 
     async send(destination: AddressV4 | AddressV6, protocol: PROTOCOL, packet: { bits: BitArray }) {
@@ -172,11 +165,39 @@ export class Device {
 
                 s.cb(frame, iface);
                 return this.statefulClose(i);
+            } else if (s.type == ETHER_TYPES.IPv4) {
+                let ipPacket = new IPPacketV4(frame.payload);
+
+                if (ipPacket.source.toString() != s.destinationP) {
+                    continue;
+                }
+
+                if (ipPacket.protocol == PROTOCOLS.ICMP) {
+                    let icmpPacket = new ICMPPacketV4(ipPacket.payload);
+                    let contentIPPacket = new IPPacketV4(icmpPacket.content);
+                    if (contentIPPacket.protocol != s.protocol) {
+                        continue;
+                    }
+
+                    // In here i can respond to icmp replies for ipv4 messages
+
+                    if (contentIPPacket.protocol == PROTOCOLS.ICMP) {
+                        let contentICMPPacket = new ICMPPacketV4(contentIPPacket.payload);
+                        if (contentICMPPacket.type == ICMP_TYPES.ECHO_REQUEST) {
+                            let { identifier } = readROHEcho(contentICMPPacket.roh);
+                            if (s.identifier == identifier) {
+                                // this is a response to my ping request
+                                s.cb(frame, iface);
+                                return this.statefulClose(i);
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 
-    statefulSend(frame: EthernetFrame, cb: (frame: EthernetFrame, iface: Interface)=> void) {
+    statefulSend(frame: EthernetFrame, cb: (frame: EthernetFrame, iface: Interface) => void) {
         let iface = this.interfaces.find(({ macAddress }) => macAddress.toString() == frame.source.toString());
         if (!iface) {
             throw new Error("No interface for source address")
@@ -195,6 +216,27 @@ export class Device {
 
                 iface.send(frame);
                 return sidx;
+            }
+        } else if (frame.type == ETHER_TYPES.IPv4) {
+            let ipPacket = new IPPacketV4(frame.payload);
+            // only support icmp first
+            if (ipPacket.protocol == PROTOCOLS.ICMP) {
+                let icmpPacket = new ICMPPacketV4(ipPacket.payload);
+
+                // first only care about echo requests
+                if (icmpPacket.type == ICMP_TYPES.ECHO_REQUEST) {
+                    let { identifier } = readROHEcho(icmpPacket.roh);
+                    let sidx = this.state.push({
+                        type: frame.type,
+                        cb,
+                        destinationP: ipPacket.destination.toString(),
+                        protocol: ipPacket.protocol,
+                        identifier: identifier
+                    })
+
+                    iface.send(frame);
+                    return sidx;
+                }
             }
         }
 

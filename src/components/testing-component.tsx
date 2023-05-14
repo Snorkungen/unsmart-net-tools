@@ -2,7 +2,7 @@ import { Component } from "solid-js";
 import { EthernetFrame, MACAddress } from "../lib/ethernet";
 import { IPPacketV4 } from "../lib/ip/packet/v4";
 import { AddressV4, SubnetMaskV4, validateDotNotated } from "../lib/ip/v4";
-import { ICMPPacketV4, ICMP_TYPES } from "../lib/ip/v4/icmp";
+import { ICMPPacketV4, ICMP_CODES, ICMP_TYPES, createROHEcho, readROHEcho } from "../lib/ip/v4/icmp";
 import { Device, resolveSendingInformation } from "../lib/device/device";
 import { ETHER_TYPES } from "../lib/ethernet/types";
 import { PROTOCOLS } from "../lib/ip/packet/protocols";
@@ -62,15 +62,19 @@ export const TestingComponent: Component = () => {
 
     iface_pc2.connect(iface_pc1)
 
-    const sendARP = () => {
-
-        // Story: pc1 if1 request pc2 if2 hwAddress
+    const sendPing = async () => {
+        // Story: pc1 ping pc2 
 
         // first construct frame
-        let arpPacket = new ARPPacket(OPCODES.REQUEST, iface_pc1.macAddress.bits, iface_pc1.ipAddressV4!.bits, new BitArray(0, MACAddress.address_length), iface_pc2.ipAddressV4!.bits)
-        let frame = new EthernetFrame(new MACAddress("ff-ff-ff-ff-ff-ff"), iface_pc1.macAddress, ETHER_TYPES.ARP, arpPacket.bits);
-        pc1.statefulSend(frame,(r)=> {
-            console.info(r)
+        let n = Math.floor(Math.random() * 1_000)
+        let icmpPacket = new ICMPPacketV4(ICMP_TYPES.ECHO_REQUEST, 0, createROHEcho(n, 0))
+        let ipv4Packet = new IPPacketV4(iface_pc1.ipAddressV4!, iface_pc2.ipAddressV4!, PROTOCOLS.ICMP, icmpPacket.bits);
+        let entry = await pc1.arpTable.getSend(iface_pc2.ipAddressV4!);
+        let frame = new EthernetFrame(entry.address, iface_pc1.macAddress, ETHER_TYPES.IPv4, ipv4Packet.bits)
+
+        pc1.statefulSend(frame,(frame) => {
+            console.log("%c ECHO Reply recieved", ['background: green', 'color: white', 'display: block', 'text-align: center', 'font-size: 24px'].join(';'))
+            return;
         })
     }
 
@@ -98,7 +102,7 @@ export const TestingComponent: Component = () => {
             ))}
 
             <div>
-                <button onClick={sendARP}>Send ARP</button>
+                <button onClick={sendPing}>Send Ping</button>
             </div>
 
         </div>
