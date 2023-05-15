@@ -60,6 +60,13 @@ export class Host extends Device {
 
         */
 
+        if (frame.destination.toString() != iface.macAddress.toString()) {
+            if (!frame.destination.isBroadcast) {
+                // meant for wrong interface
+                return;
+            }
+        }
+
         if (frame.type == ETHER_TYPES.IPv4) {
             // ipv4 packet
             let ipPacket = new IPPacketV4(frame.payload);

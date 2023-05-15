@@ -1,3 +1,7 @@
+//
+// The question is. That should the intrefaces determine if a frame should be discarded.
+//
+
 import { EthernetFrame, MACAddress } from "../ethernet";
 import { VLANTag } from "../ethernet/vlan";
 import { AddressV4, SubnetMaskV4 } from "../ip/v4";
@@ -25,16 +29,28 @@ export class Interface {
         return !!this.target;
     }
 
+    disconnect(): boolean {
+        if (!this.target) {
+            return true;
+        }
+
+        let disconnect = this.target.disconnect.bind(this.target);
+        this.target = null;
+        return disconnect();
+    }
+
     connect(target: Interface) {
         if (this == target) {
             throw new Error("cannot connect to self")
         }
 
-        if (this.target) {
-            this.target.target = null;
+        if (this.target == target) {
+            return true;
         }
-        target.target = this;
+
+        this.disconnect();
         this.target = target;
+        target.connect(this)
     }
 
     send(frame: EthernetFrame) {
@@ -63,17 +79,10 @@ export class Interface {
         return this.target!.recieve(frame);
     }
 
-    recieve(frame: EthernetFrame) {
+    private recieve(frame: EthernetFrame) {
         if (!this.isConnected) {
-            // should probabky return an error
+            // should probably return an error
             return;
-        }
-
-        if (frame.destination.toString() != this.macAddress.toString()) {
-            if (!frame.destination.isBroadcast) {
-                // meant for wrong interface
-                return;
-            }
         }
 
         if (this.vlan && this.vlan.vids.length > 0) {
