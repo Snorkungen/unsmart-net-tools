@@ -34,8 +34,8 @@ function createARPRequest(query: AddressV4, iface: Interface): EthernetFrame | n
 }
 
 export const ARP_QUERY_ERRORS = {
-    TIMEOUT: 0
-}
+    TIMEOUT: "ARP QUERY TIMED OUT!"
+} as const;
 
 export class ARPTable {
     table: Array<TableEntry> = [];

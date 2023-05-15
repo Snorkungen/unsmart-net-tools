@@ -33,12 +33,22 @@ const DeviceComponent: Component<{ device: Device }> = ({ device }) => {
 async function ping(device: Device, destination: AddressV4) {
     try {
 
-        let seq = 0;
-        let icmpPacket = new ICMPPacketV4(ICMP_TYPES.ECHO_REQUEST, 0, null)
+        let n = Math.floor(Math.random() * 1_000)
+        let icmpPacket = new ICMPPacketV4(ICMP_TYPES.ECHO_REQUEST, 0, createROHEcho(n, 0))
 
-        // before sending i should create some type of device level hook that would respond to this packet
+        let entry = await resolveSendingInformation(device, destination);
+        if (!entry.iface.isConnected || !entry.iface.ipAddressV4 || !entry.iface.subnetMaskV4) {
+            // failed because interface does not have ipv4 configured
+            // return;
+            // Do nothing because i haven't decided if the device should have an async send function. So thats why this allows me to have an device ping it self
+        }
 
-        device.send(destination, PROTOCOLS.ICMP, icmpPacket)
+        let ipv4Packet = new IPPacketV4(entry.iface.ipAddressV4!, destination, PROTOCOLS.ICMP, icmpPacket.bits);
+        let frame = new EthernetFrame(entry.macAddress, entry.iface.macAddress, ETHER_TYPES.IPv4, ipv4Packet.bits)
+
+        device.statefulSend(frame, () => {
+            console.log("%c ECHO Reply recieved: " + device.name, ['background: green', 'color: white', 'display: block', 'text-align: center', 'font-size: 24px'].join(';'))
+        })
     } catch (error) {
         console.error(error)
     }
@@ -62,22 +72,6 @@ export const TestingComponent: Component = () => {
 
     iface_pc2.connect(iface_pc1)
 
-    const sendPing = async () => {
-        // Story: pc1 ping pc2 
-
-        // first construct frame
-        let n = Math.floor(Math.random() * 1_000)
-        let icmpPacket = new ICMPPacketV4(ICMP_TYPES.ECHO_REQUEST, 0, createROHEcho(n, 0))
-        let ipv4Packet = new IPPacketV4(iface_pc1.ipAddressV4!, iface_pc2.ipAddressV4!, PROTOCOLS.ICMP, icmpPacket.bits);
-        let entry = await pc1.arpTable.getSend(iface_pc2.ipAddressV4!);
-        let frame = new EthernetFrame(entry.address, iface_pc1.macAddress, ETHER_TYPES.IPv4, ipv4Packet.bits)
-
-        pc1.statefulSend(frame,(frame) => {
-            console.log("%c ECHO Reply recieved", ['background: green', 'color: white', 'display: block', 'text-align: center', 'font-size: 24px'].join(';'))
-            return;
-        })
-    }
-
     return (
         <div>
             <header>
@@ -96,15 +90,8 @@ export const TestingComponent: Component = () => {
                     if (ip && validateDotNotated(ip)) {
                         ping(device, new AddressV4(ip))
                     }
-
-
                 }}>Ping from: {device.name}</button>
             ))}
-
-            <div>
-                <button onClick={sendPing}>Send Ping</button>
-            </div>
-
         </div>
     )
 }
