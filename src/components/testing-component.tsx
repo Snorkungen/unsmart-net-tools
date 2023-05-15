@@ -1,14 +1,20 @@
-import { Component } from "solid-js";
-import { EthernetFrame, MACAddress } from "../lib/ethernet";
+import { Component, JSX } from "solid-js";
+import { EthernetFrame } from "../lib/ethernet";
 import { IPPacketV4 } from "../lib/ip/packet/v4";
 import { AddressV4, SubnetMaskV4, validateDotNotated } from "../lib/ip/v4";
-import { ICMPPacketV4, ICMP_CODES, ICMP_TYPES, createROHEcho, readROHEcho } from "../lib/ip/v4/icmp";
+import { ICMPPacketV4, ICMP_TYPES, createROHEcho } from "../lib/ip/v4/icmp";
 import { Device } from "../lib/device/device";
 import { ETHER_TYPES } from "../lib/ethernet/types";
 import { PROTOCOLS } from "../lib/ip/packet/protocols";
-import { ARPPacket, OPCODES } from "../lib/ethernet/arp";
-import { BitArray } from "../lib/binary";
 import { Host, resolveSendingInformation } from "../lib/device/host";
+import { NetworkSwitch } from "../lib/device/network-switch";
+
+const selectContents = (ev: MouseEvent) => {
+    if (!(ev.currentTarget instanceof HTMLElement)) return;
+    let range = document.createRange();
+    range.selectNode(ev.currentTarget);
+    window.getSelection()?.addRange(range);
+}
 
 const DeviceComponent: Component<{ device: Device }> = ({ device }) => {
 
@@ -20,9 +26,9 @@ const DeviceComponent: Component<{ device: Device }> = ({ device }) => {
             {device.interfaces.map((iface) => (
                 <div>
                     <h5>{iface.ifID}</h5>
-                    <p>MAC address: <span>{iface.macAddress.toString()}</span></p>
+                    <p>MAC address: <span onClick={selectContents}>{iface.macAddress.toString()}</span></p>
                     {iface.ipAddressV4 && iface.subnetMaskV4 && (
-                        <p>IPv4 address: <span>{iface.ipAddressV4.toString()}</span>/<span>{iface.subnetMaskV4.length}</span></p>
+                        <p>IPv4 address: <span onClick={selectContents}>{iface.ipAddressV4.toString()}</span>/<span>{iface.subnetMaskV4.length}</span></p>
                     )}
                     <p>is connected: {iface.isConnected + ""}</p>
                 </div>
@@ -56,6 +62,11 @@ async function ping(device: Host, destination: AddressV4) {
 }
 
 export const TestingComponent: Component = () => {
+    let networkSwitch = new NetworkSwitch();
+    networkSwitch.name = "SW1"
+
+    let swIface_pc1 = networkSwitch.createInterface();
+    let swIface_pc2 = networkSwitch.createInterface();
 
     let pc1 = new Host();
     let pc2 = new Host();
@@ -71,7 +82,8 @@ export const TestingComponent: Component = () => {
     iface_pc2.ipAddressV4 = new AddressV4("192.168.1.20")
     iface_pc2.subnetMaskV4 = new SubnetMaskV4(24);
 
-    iface_pc2.connect(iface_pc1)
+    swIface_pc1.connect(iface_pc1);
+    swIface_pc2.connect(iface_pc2);
 
     return (
         <div>
