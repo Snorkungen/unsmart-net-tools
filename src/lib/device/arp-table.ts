@@ -5,7 +5,7 @@ import { EthernetFrame, MACAddress } from "../ethernet";
 import { ARPPacket, OPCODES } from "../ethernet/arp";
 import { ETHER_TYPES } from "../ethernet/types";
 import { AddressV4 } from "../ip/v4"
-import { Device } from "./device";
+import { Host } from "./host";
 import { Interface } from "./interface";
 
 type TableEntry = {
@@ -40,7 +40,7 @@ export const ARP_QUERY_ERRORS = {
 export class ARPTable {
     table: Array<TableEntry> = [];
 
-    constructor(private device: Device, private timeout = 100) {
+    constructor(private host: Host, private timeout = 100) {
 
         // Here i should create an interval that then deletes old arp entries
 
@@ -61,15 +61,15 @@ export class ARPTable {
 
         return new Promise<TableEntry>((resolve, reject) => {
             let indices: Array<number> = []
-            for (let iface of this.device.interfaces) {
+            for (let iface of this.host.interfaces) {
                 let f = createARPRequest(query, iface)
                 if (f) {
                     indices.push(
-                        this.device.statefulSend(f, (frame, iface) => {
+                        this.host.statefulSend(f, (frame, iface) => {
                             let arpPacket = new ARPPacket(frame.payload);
                             this.add(new AddressV4(arpPacket.targetProtocol), new MACAddress(arpPacket.targetHardware), iface)
                             // clean up
-                            indices.forEach(sidx => this.device.statefulClose(sidx))
+                            indices.forEach(sidx => this.host.statefulClose(sidx))
                             resolve(this.get(query)!)
                         })
                         )
@@ -77,7 +77,7 @@ export class ARPTable {
                 }
                 setTimeout(() => {
                 // clean up
-                indices.forEach(sidx => this.device.statefulClose(sidx))
+                indices.forEach(sidx => this.host.statefulClose(sidx))
                 reject(ARP_QUERY_ERRORS.TIMEOUT)
             }, this.timeout);
         })

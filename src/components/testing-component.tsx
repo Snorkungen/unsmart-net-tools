@@ -3,11 +3,12 @@ import { EthernetFrame, MACAddress } from "../lib/ethernet";
 import { IPPacketV4 } from "../lib/ip/packet/v4";
 import { AddressV4, SubnetMaskV4, validateDotNotated } from "../lib/ip/v4";
 import { ICMPPacketV4, ICMP_CODES, ICMP_TYPES, createROHEcho, readROHEcho } from "../lib/ip/v4/icmp";
-import { Device, resolveSendingInformation } from "../lib/device/device";
+import { Device } from "../lib/device/device";
 import { ETHER_TYPES } from "../lib/ethernet/types";
 import { PROTOCOLS } from "../lib/ip/packet/protocols";
 import { ARPPacket, OPCODES } from "../lib/ethernet/arp";
 import { BitArray } from "../lib/binary";
+import { Host, resolveSendingInformation } from "../lib/device/host";
 
 const DeviceComponent: Component<{ device: Device }> = ({ device }) => {
 
@@ -30,7 +31,7 @@ const DeviceComponent: Component<{ device: Device }> = ({ device }) => {
     </div>
 }
 
-async function ping(device: Device, destination: AddressV4) {
+async function ping(device: Host, destination: AddressV4) {
     try {
 
         let n = Math.floor(Math.random() * 1_000)
@@ -56,8 +57,8 @@ async function ping(device: Device, destination: AddressV4) {
 
 export const TestingComponent: Component = () => {
 
-    let pc1 = new Device();
-    let pc2 = new Device();
+    let pc1 = new Host();
+    let pc2 = new Host();
     pc1.name = "PC1"
     pc2.name = "PC2"
 
