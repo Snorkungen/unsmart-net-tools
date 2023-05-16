@@ -93,6 +93,7 @@ export const TestingComponent: Component = () => {
 
             <div>
                 <DeviceComponent device={pc1} />
+                <DeviceComponent device={networkSwitch} />
                 <DeviceComponent device={pc2} />
             </div>
 

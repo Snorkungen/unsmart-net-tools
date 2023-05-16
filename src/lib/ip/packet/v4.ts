@@ -4,7 +4,7 @@ import { BitArray } from "../../binary";
 import { AddressV4 } from "../v4/v4";
 import { PROTOCOL } from "./protocols";
 
-const assertFitsInBitArray = (n: number, bitArray: BitArray) => {
+export const assertFitsInBitArray = (n: number, bitArray: BitArray) => {
     if (n < 0 || n >= 2 ** bitArray.size) {
         throw new Error("this number incorrect for slot in packet")
     }

@@ -3,7 +3,8 @@ import { validateMaskBits } from "./v4";
 
 const ADDRESS_LENGTH = 128;
 
-export class AddressV6 {
+export class AddressV6 {    
+    static address_length = ADDRESS_LENGTH;
     bits: BitArray = new BitArray(0, ADDRESS_LENGTH);
 
     constructor(input: string);
