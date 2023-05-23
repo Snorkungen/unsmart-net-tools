@@ -1,9 +1,11 @@
-import { BitArray } from "../binary";
-import { validateMaskBits } from "./v4";
+import { BitArray } from "../../binary";
+import { validateMaskBits } from "../v4";
 
 const ADDRESS_LENGTH = 128;
 
-export class AddressV6 {    
+
+
+export class AddressV6 {
     static address_length = ADDRESS_LENGTH;
     bits: BitArray = new BitArray(0, ADDRESS_LENGTH);
 
@@ -25,6 +27,11 @@ export class AddressV6 {
             // copy create new address
             this.bits = input.bits.slice();
         }
+    }
+
+    get isMulticast(): boolean {
+        // binary 11111111 at the start of the address identifies the address as being a multicast address.
+        return this.bits.slice(0,8).toNumber() == 0xff;
     }
 
     toString(simplify?: Parameters<typeof colonNotateBitArray>[1]) {

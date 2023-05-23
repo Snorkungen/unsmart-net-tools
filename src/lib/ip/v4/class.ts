@@ -3,7 +3,7 @@
 
 
 import { BitArray } from "../../binary";
-import { AddressV4 } from "./v4";
+import { AddressV4 } from "./address";
 
 /*
     2.3 Paragraph 4

@@ -5,7 +5,7 @@
 import { EthernetFrame, MACAddress } from "../ethernet";
 import { VLANTag } from "../ethernet/vlan";
 import { AddressV4, SubnetMaskV4 } from "../ip/v4";
-import { AddressV6, SubnetMaskV6 } from "../ip/v6";
+import { AddressV6, SubnetMaskV6 } from "../ip/v6/address";
 export class Interface {
     private target: Interface | null = null;
 

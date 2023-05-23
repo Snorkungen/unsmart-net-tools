@@ -1,5 +1,5 @@
 import { BitArray } from "../../binary";
-import { AddressV6 } from "../v6";
+import { AddressV6 } from "../v6/address";
 import { PROTOCOL } from "./protocols";
 import { assertFitsInBitArray } from "./v4";
 

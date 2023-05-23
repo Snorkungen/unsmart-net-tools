@@ -8,7 +8,7 @@ import { IPPacketV4 } from "../ip/packet/v4";
 import { ARPTable } from "./arp-table";
 import { Interface } from "./interface";
 import { PROTOCOL, PROTOCOLS } from "../ip/packet/protocols";
-import { AddressV6 } from "../ip/v6";
+import { AddressV6 } from "../ip/v6/address";
 import { Device } from "./device";
 
 export async function resolveSendingInformation(device: Host, address: AddressV4 | AddressV6) {

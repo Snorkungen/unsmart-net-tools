@@ -1,7 +1,7 @@
 // <https://en.wikipedia.org/wiki/Internet_Protocol_version_4#Packet_structure>
 
 import { BitArray } from "../../binary";
-import { AddressV4 } from "../v4/v4";
+import { AddressV4 } from "../v4/address";
 import { PROTOCOL } from "./protocols";
 
 export const assertFitsInBitArray = (n: number, bitArray: BitArray) => {
