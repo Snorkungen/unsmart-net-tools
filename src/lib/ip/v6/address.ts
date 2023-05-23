@@ -1,5 +1,6 @@
 import { BitArray } from "../../binary";
 import { validateMaskBits } from "../v4";
+import { ADDRESS_TYPESV6 } from "./reserved";
 
 const ADDRESS_LENGTH = 128;
 
@@ -30,8 +31,9 @@ export class AddressV6 {
     }
 
     get isMulticast(): boolean {
-        // binary 11111111 at the start of the address identifies the address as being a multicast address.
-        return this.bits.slice(0,8).toNumber() == 0xff;
+        let [notated, length] = ADDRESS_TYPESV6.MULTICAST;
+        let mask = new SubnetMaskV6( length);
+        return this.bits.and(mask.bits).toNumber() == parseColonNotated(notated).toNumber();
     }
 
     toString(simplify?: Parameters<typeof colonNotateBitArray>[1]) {

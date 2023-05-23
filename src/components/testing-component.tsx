@@ -9,6 +9,7 @@ import { PROTOCOLS } from "../lib/ip/packet/protocols";
 import { Host, resolveSendingInformation } from "../lib/device/host";
 import { NetworkSwitch } from "../lib/device/network-switch";
 import { AddressV6 } from "../lib/ip/v6/address";
+import { ALL_NODES_ADDRESSV6 } from "../lib/ip/v6";
 
 const selectContents = (ev: MouseEvent) => {
     if (!(ev.currentTarget instanceof HTMLElement)) return;
@@ -86,9 +87,9 @@ export const TestingComponent: Component = () => {
     swIface_pc1.connect(iface_pc1);
     swIface_pc2.connect(iface_pc2);
 
-    let ipv6Address = new AddressV6("f004::2");
-    console.log(ipv6Address)
-
+    let ipv6Address = new AddressV6("::");
+    console.log(ipv6Address.toString(-1))
+    console.log(new AddressV6(ALL_NODES_ADDRESSV6).isMulticast)
     return (
         <div>
             <header>
