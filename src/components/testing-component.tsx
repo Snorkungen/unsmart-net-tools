@@ -8,8 +8,9 @@ import { ETHER_TYPES } from "../lib/ethernet/types";
 import { PROTOCOLS } from "../lib/ip/packet/protocols";
 import { Host, resolveSendingInformation } from "../lib/device/host";
 import { NetworkSwitch } from "../lib/device/network-switch";
-import { AddressV6 } from "../lib/ip/v6/address";
+import { AddressV6, matchAddressTypeV6 } from "../lib/ip/v6/address";
 import { ALL_NODES_ADDRESSV6 } from "../lib/ip/v6";
+import { createLinkLocalAddressV6 } from "../lib/ip/v6/link-local";
 
 const selectContents = (ev: MouseEvent) => {
     if (!(ev.currentTarget instanceof HTMLElement)) return;
@@ -88,8 +89,14 @@ export const TestingComponent: Component = () => {
     swIface_pc2.connect(iface_pc2);
 
     let ipv6Address = new AddressV6("::");
-    console.log(ipv6Address.toString(-1))
-    console.log(new AddressV6(ALL_NODES_ADDRESSV6).isMulticast)
+    console.log(ipv6Address.toString(4),matchAddressTypeV6("UNSPECIFIED", ipv6Address))
+    ipv6Address = new AddressV6(ALL_NODES_ADDRESSV6)
+    console.log(ipv6Address.toString(4),ipv6Address.isMulticast)
+    
+    let linkLocalAddress = createLinkLocalAddressV6();
+    console.log(linkLocalAddress.toString(4),linkLocalAddress.isLinkLocal)
+
+
     return (
         <div>
             <header>

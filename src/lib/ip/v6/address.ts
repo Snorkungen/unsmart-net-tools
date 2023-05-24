@@ -31,9 +31,10 @@ export class AddressV6 {
     }
 
     get isMulticast(): boolean {
-        let [notated, length] = ADDRESS_TYPESV6.MULTICAST;
-        let mask = new SubnetMaskV6( length);
-        return this.bits.and(mask.bits).toNumber() == parseColonNotated(notated).toNumber();
+        return matchAddressTypeV6("MULTICAST", this);
+    }
+    get isLinkLocal(): boolean {
+        return matchAddressTypeV6("LINK_LOCAL", this);
     }
 
     toString(simplify?: Parameters<typeof colonNotateBitArray>[1]) {
@@ -121,7 +122,7 @@ export function calculateSubnetV6({ address, mask }: {
     }
 }
 
-function parseColonNotated(input: string) {
+export function parseColonNotated(input: string) {
     input = input.toLowerCase().trim();
 
     let bitArray = new BitArray(0, ADDRESS_LENGTH);
@@ -216,3 +217,9 @@ function colonNotateBitArray(bitArray: BitArray, simplify = 4) {
 
     return a.join(":")
 }
+
+export function matchAddressTypeV6(key: keyof typeof ADDRESS_TYPESV6, address: AddressV6): boolean {
+    let [notated, length] = ADDRESS_TYPESV6[key];
+    let mask = new SubnetMaskV6(length);
+    return address.bits.and(mask.bits).toNumber() == parseColonNotated(notated).toNumber();
+} 
