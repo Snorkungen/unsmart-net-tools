@@ -6,10 +6,9 @@ import { Interface } from "./interface";
 export class NetworkSwitch extends Device {
     macaddresses = new Map<string, Interface>()
 
-    private flood(frame: EthernetFrame) {
-        let sourceStr = frame.source.toString();
+    private flood(frame: EthernetFrame,ifID : number) {
         for (let iface of this.interfaces) {
-            if (iface.macAddress.toString() == sourceStr) {
+            if (iface.ifID == ifID) {
                 continue;
             }
 
@@ -33,7 +32,7 @@ export class NetworkSwitch extends Device {
         if (destIface) {
             destIface.send(frame);
         } else {
-            this.flood(frame);
+            this.flood(frame, iface.ifID);
         }       
     }
 }
