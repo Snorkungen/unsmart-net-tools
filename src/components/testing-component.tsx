@@ -1,5 +1,5 @@
 import { Component, JSX } from "solid-js";
-import { EthernetFrame } from "../lib/ethernet";
+import { EthernetFrame, MACAddress } from "../lib/ethernet";
 import { IPPacketV4 } from "../lib/ip/packet/v4";
 import { AddressV4, SubnetMaskV4, validateDotNotated } from "../lib/ip/v4";
 import { ICMPPacketV4, ICMPV4_TYPES, createROHEcho } from "../lib/ip/v4/icmp";
@@ -9,8 +9,12 @@ import { PROTOCOLS } from "../lib/ip/packet/protocols";
 import { Host, resolveSendingInformation } from "../lib/device/host";
 import { NetworkSwitch } from "../lib/device/network-switch";
 import { AddressV6, matchAddressTypeV6 } from "../lib/ip/v6/address";
-import { ALL_NODES_ADDRESSV6 } from "../lib/ip/v6";
+import { ALL_LINK_LOCAL_NODES_ADDRESSV6, ALL_NODES_ADDRESSV6 } from "../lib/ip/v6";
 import { createLinkLocalAddressV6 } from "../lib/ip/v6/link-local";
+import { ICMPPacketV6 } from "../lib/ip/v6/icmp";
+import { ICMPV6_TYPES } from "../lib/ip/v6/icmp";
+import { IPPacketV6 } from "../lib/ip/packet/v6";
+import { BitArray } from "../lib/binary";
 
 const selectContents = (ev: MouseEvent) => {
     if (!(ev.currentTarget instanceof HTMLElement)) return;
@@ -96,7 +100,22 @@ export const TestingComponent: Component = () => {
     swIface_pc2.connect(iface_pc2);
 
     const neighbourDiscobery = () => {
-        throw new Error("Neigbor discovery test function not implement")
+        let targetAddress = iface_pc2.ipAddressV6!
+
+        let icmpv6Packet = new ICMPPacketV6(ICMPV6_TYPES.NEIGHBOR_SOLICITATION, 0, null, targetAddress.bits);
+        let ipPacketv6 = new IPPacketV6(
+            iface_pc1.ipAddressV6!,
+            new AddressV6(ALL_LINK_LOCAL_NODES_ADDRESSV6),
+            PROTOCOLS.IPV6_ICMP,
+            icmpv6Packet.bits);
+
+        let frame = new EthernetFrame(new MACAddress(new BitArray(1, MACAddress.address_length)), iface_pc1.macAddress, ETHER_TYPES.IPv6, ipPacketv6.bits)
+
+        pc1.statefulSend(frame, (frame) => {
+            console.log(targetAddress.toString(),  frame.source.toString())
+        })
+
+        // throw new Error("Neigbor discovery test function not implement")
     }
 
     return (

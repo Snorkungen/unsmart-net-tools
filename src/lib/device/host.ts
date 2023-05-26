@@ -10,6 +10,9 @@ import { Interface } from "./interface";
 import { PROTOCOL, PROTOCOLS } from "../ip/packet/protocols";
 import { AddressV6 } from "../ip/v6/address";
 import { Device } from "./device";
+import { IPPacketV6 } from "../ip/packet/v6";
+import { ICMPPacketV6, ICMPV6_TYPES } from "../ip/v6/icmp";
+import { ALL_LINK_LOCAL_NODES_ADDRESSV6 } from "../ip/v6";
 
 export async function resolveSendingInformation(device: Host, address: AddressV4 | AddressV6) {
     try {
@@ -46,6 +49,27 @@ export async function resolveSendingInformation(device: Host, address: AddressV4
     }
 }
 
+/**
+ *  this function contains logic if device should ignore this packet based upon destination address
+ * @param address 
+ * @param iface 
+ * @returns 
+ */
+function ignoreIPPacketHost(address: AddressV4 | AddressV6, iface: Interface) {
+    if (address instanceof AddressV4) {
+
+
+    } else if (address instanceof AddressV6) {
+        if (address.toString(-1) == new AddressV6(ALL_LINK_LOCAL_NODES_ADDRESSV6).toString(-1)) {
+            return false;
+        }
+        if (address.toString(-1) == iface.ipAddressV6?.toString(-1)) {
+            return false
+        }
+    }
+
+    return true;
+}
 export class Host extends Device {
     arpTable: ARPTable = new ARPTable(this);
 
@@ -89,6 +113,40 @@ export class Host extends Device {
                     let ethernetFrame = new EthernetFrame(frame.source, iface.macAddress, ETHER_TYPES.IPv4, replyIPPacket.bits);
 
                     return iface.send(ethernetFrame);
+                }
+            }
+
+        } else if (frame.type == ETHER_TYPES.IPv6) {
+            let ipPacket = new IPPacketV6(frame.payload);
+
+            // ignore if not matches parameter
+
+            if (ignoreIPPacketHost(ipPacket.destination, iface)) {
+                return;
+            }
+
+            if (ipPacket.nextHeader == PROTOCOLS.IPV6_ICMP) {
+                let icmpPacket = new ICMPPacketV6(ipPacket.payload);
+
+                if (icmpPacket.type == ICMPV6_TYPES.ECHO_REQUEST) { }
+                else if (icmpPacket.type == ICMPV6_TYPES.NEIGHBOR_SOLICITATION) {
+                    // check if target is me
+                    let target = icmpPacket.content.slice(0, AddressV6.address_length);
+                    if (target.toNumber() != iface.ipAddressV6?.bits.toNumber()) {
+                        return;
+                    }
+                    // respond with neighbor solicitation
+
+                    let icmpv6Packet = new ICMPPacketV6(ICMPV6_TYPES.NEIGHBOR_ADVERTISMENT, 0, null, target);
+                    let ipPacketv6 = new IPPacketV6(
+                        iface.ipAddressV6!,
+                        ipPacket.source,
+                        PROTOCOLS.IPV6_ICMP,
+                        icmpv6Packet.bits);
+
+                    let ethernetFrame = new EthernetFrame(frame.source, iface.macAddress, ETHER_TYPES.IPv6, ipPacketv6.bits)
+
+                    return iface.send(ethernetFrame)
                 }
             }
 
@@ -148,7 +206,11 @@ export class Host extends Device {
                 continue;
             }
 
-            if (s.type == ETHER_TYPES.ARP && frame.type == s.type) {
+            if (frame.type != s.type) {
+                continue;
+            }
+
+            if (s.type == ETHER_TYPES.ARP) {
                 let arpPacket = new ARPPacket(frame.payload);
                 // only care about arp replies
                 if (arpPacket.operation != OPCODES.REPLY) {
@@ -185,6 +247,27 @@ export class Host extends Device {
                                 s.cb(frame, iface);
                                 return this.statefulClose(i);
                             }
+                        }
+                    }
+                }
+            } else if (s.type == ETHER_TYPES.IPv6) {
+                let ipPacket = new IPPacketV6(frame.payload);
+                if (s.protocol != ipPacket.nextHeader) {
+                    continue;
+                }
+                console.log(ipPacket.source.toString() , s.destinationP)
+
+                // only support icmp first
+                if (ipPacket.nextHeader == PROTOCOLS.IPV6_ICMP) {
+                    let icmpPacket = new ICMPPacketV6(ipPacket.payload);
+
+                    if (ipPacket.source.toString() == s.destinationP) {
+                        // here would be errors
+                    } else {
+                        // assume this is NDP because i'm tired
+                        if (s.content instanceof BitArray && s.content.toNumber() == icmpPacket.content.toNumber()) {
+                            s.cb(frame, iface);
+                            return this.statefulClose(i)
                         }
                     }
                 }
@@ -233,8 +316,30 @@ export class Host extends Device {
                     return sidx;
                 }
             }
-        }
+        } else if (frame.type == ETHER_TYPES.IPv6) {
+            let ipPacket = new IPPacketV6(frame.payload);
 
+            // only support icmp first
+            if (ipPacket.nextHeader == PROTOCOLS.IPV6_ICMP) {
+                let icmpPacket = new ICMPPacketV6(ipPacket.payload)
+                switch (icmpPacket.type) {
+                    case ICMPV6_TYPES.ECHO_REQUEST:
+                        break;
+
+                    case ICMPV6_TYPES.NEIGHBOR_SOLICITATION:
+                        let sidx = this.state.push({
+                            type: frame.type,
+                            cb,
+                            destinationP: ipPacket.destination.toString(),
+                            protocol: ipPacket.nextHeader,
+                            icmpType: icmpPacket.type,
+                            content: icmpPacket.content
+                        })
+                        iface.send(frame);
+                        return sidx
+                }
+            }
+        }
 
         throw new Error("cannot send frame!")
     }
