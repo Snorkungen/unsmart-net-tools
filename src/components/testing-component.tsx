@@ -86,14 +86,18 @@ export const TestingComponent: Component = () => {
     iface_pc1.subnetMaskV4 = new SubnetMaskV4(24);
     iface_pc1.ipAddressV6 = createLinkLocalAddressV6();
     iface_pc1.prefixLength = 64;
-    
+
     iface_pc2.ipAddressV4 = new AddressV4("192.168.1.20")
     iface_pc2.subnetMaskV4 = new SubnetMaskV4(24);
     iface_pc2.ipAddressV6 = createLinkLocalAddressV6();
     iface_pc2.prefixLength = 64;
-    
+
     swIface_pc1.connect(iface_pc1);
     swIface_pc2.connect(iface_pc2);
+
+    const neighbourDiscobery = () => {
+        throw new Error("Neigbor discovery test function not implement")
+    }
 
     return (
         <div>
@@ -116,6 +120,8 @@ export const TestingComponent: Component = () => {
                     }
                 }}>Ping from: {device.name}</button>
             ))}
+
+            <button onClick={neighbourDiscobery}>NDP (IPV6-DISC)</button>
         </div>
     )
 }
