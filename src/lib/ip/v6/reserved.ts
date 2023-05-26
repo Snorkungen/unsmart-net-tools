@@ -4,6 +4,8 @@
 
 export const ALL_NODES_ADDRESSV6 = "FF01:0:0:0:0:0:0:1" as const;
 export const ALL_ROUTERS_ADDRESSV6 = "FF01:0:0:0:0:0:0:2" as const;
+export const ALL_LINK_LOCAL_NODES_ADDRESSV6 = "FF02:0:0:0:0:0:0:2" as const;
+export const ALL_LINK_LOCAL_ROUTERS_ADDRESSV6 = "FF02:0:0:0:0:0:0:2" as const;
 export const LOOPBACK_ADDRESSV6 = "::1" as const;
 
 

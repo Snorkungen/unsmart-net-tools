@@ -39,7 +39,7 @@ export class ICMPPacketV6 {
 
         this.bits = TYPE_BITS.or(new BitArray(type)).concat(
             CODE_BITS.or(new BitArray(code)),
-            CHECKSUM_BITS, // always ignore checksumROH
+            CHECKSUM_BITS, // always ignore checksum
             ROH_BITS.or(roh),
             ...content
         )
