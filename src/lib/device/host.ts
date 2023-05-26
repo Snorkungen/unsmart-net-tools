@@ -3,7 +3,7 @@ import { EthernetFrame, MACAddress } from "../ethernet";
 import { ARPPacket, OPCODES } from "../ethernet/arp";
 import { ETHER_TYPES, EtherType } from "../ethernet/types";
 import { AddressV4 } from "../ip/v4";
-import { ICMPPacketV4, ICMP_TYPES, readROHEcho } from "../ip/v4/icmp";
+import { ICMPPacketV4, ICMPV4_TYPES, readROHEcho } from "../ip/v4/icmp";
 import { IPPacketV4 } from "../ip/packet/v4";
 import { ARPTable } from "./arp-table";
 import { Interface } from "./interface";
@@ -80,10 +80,10 @@ export class Host extends Device {
                 // icmp packet
                 let icmpPacket = new ICMPPacketV4(ipPacket.payload);
                 // console.info(`packet is an ICMP packet(${icmpPacket.type == ICMP_TYPES.ECHO_REPLY && "Reply" || icmpPacket.type == ICMP_TYPES.ECHO_REQUEST && "Request" || icmpPacket.type})`)
-                if (icmpPacket.type == ICMP_TYPES.ECHO_REQUEST) {
+                if (icmpPacket.type == ICMPV4_TYPES.ECHO_REQUEST) {
                     // icmp request
                     // reply to request
-                    let replyICMPPacket = new ICMPPacketV4(ICMP_TYPES.ECHO_REPLY, 0, icmpPacket.roh, ICMPPacketV4.getIPPacketBits(ipPacket));
+                    let replyICMPPacket = new ICMPPacketV4(ICMPV4_TYPES.ECHO_REPLY, 0, icmpPacket.roh, ICMPPacketV4.getIPPacketBits(ipPacket));
                     // protocol should be an enum
                     let replyIPPacket = new IPPacketV4(iface.ipAddressV4!, ipPacket.source, PROTOCOLS.ICMP, replyICMPPacket.bits);
                     let ethernetFrame = new EthernetFrame(frame.source, iface.macAddress, ETHER_TYPES.IPv4, replyIPPacket.bits);
@@ -178,7 +178,7 @@ export class Host extends Device {
 
                     if (contentIPPacket.protocol == PROTOCOLS.ICMP) {
                         let contentICMPPacket = new ICMPPacketV4(contentIPPacket.payload);
-                        if (contentICMPPacket.type == ICMP_TYPES.ECHO_REQUEST) {
+                        if (contentICMPPacket.type == ICMPV4_TYPES.ECHO_REQUEST) {
                             let { identifier } = readROHEcho(contentICMPPacket.roh);
                             if (s.identifier == identifier) {
                                 // this is a response to my ping request
@@ -219,7 +219,7 @@ export class Host extends Device {
                 let icmpPacket = new ICMPPacketV4(ipPacket.payload);
 
                 // first only care about echo requests
-                if (icmpPacket.type == ICMP_TYPES.ECHO_REQUEST) {
+                if (icmpPacket.type == ICMPV4_TYPES.ECHO_REQUEST) {
                     let { identifier } = readROHEcho(icmpPacket.roh);
                     let sidx = this.state.push({
                         type: frame.type,

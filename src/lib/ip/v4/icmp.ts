@@ -20,8 +20,8 @@ export class ICMPPacketV4 {
     bits: BitArray;
 
     constructor(bits: BitArray);
-    constructor(type: ICMP_Type, code: number, roh: BitArray | null, ...content: BitArray[]);
-    constructor(type: ICMP_Type | BitArray, code?: number, roh?: BitArray | null, ...content: BitArray[]) {
+    constructor(type: ICMPV4_Type, code: number, roh: BitArray | null, ...content: BitArray[]);
+    constructor(type: ICMPV4_Type | BitArray, code?: number, roh?: BitArray | null, ...content: BitArray[]) {
 
         if (type instanceof BitArray) {
             // should probably do some sanity checkin min length 64 bits
@@ -45,8 +45,8 @@ export class ICMPPacketV4 {
         )
     }
 
-    get type(): ICMP_Type {
-        return this.bits.slice(0, TYPE_BITS.size).toNumber() as ICMP_Type;
+    get type(): ICMPV4_Type {
+        return this.bits.slice(0, TYPE_BITS.size).toNumber() as ICMPV4_Type;
     }
 
     get code(): number {
@@ -69,7 +69,7 @@ export class ICMPPacketV4 {
     }
 }
 
-export const ICMP_TYPES = {
+export const ICMPV4_TYPES = {
     ECHO_REPLY: 0,
     DESTINATION_UNREACHABLE: 3,
     REDIRECT_MESSAGE: 5,
@@ -86,11 +86,11 @@ export const ICMP_TYPES = {
     EXTENDED_ECHO_REQUEST: 43,
 } as const;
 
-export type ICMP_Type = typeof ICMP_TYPES[keyof typeof ICMP_TYPES];
+export type ICMPV4_Type = typeof ICMPV4_TYPES[keyof typeof ICMPV4_TYPES];
 
-export const ICMP_CODES = {
-    [ICMP_TYPES.ECHO_REPLY]: 0,
-    [ICMP_TYPES.DESTINATION_UNREACHABLE]: {
+export const ICMPV4_CODES = {
+    [ICMPV4_TYPES.ECHO_REPLY]: 0,
+    [ICMPV4_TYPES.DESTINATION_UNREACHABLE]: {
         UNREACHABLE_NETWORK: 0,
         UNREACHABLE_HOST: 1,
         UNREACHABLE_PROTOCOL: 2,
@@ -116,28 +116,28 @@ export const ICMP_CODES = {
         PRECEDENCE_HOST_VIOLATION: 14,
         PRECEDENCE_CUTOFF: 15
     },
-    [ICMP_TYPES.REDIRECT_MESSAGE]: {
+    [ICMPV4_TYPES.REDIRECT_MESSAGE]: {
         NETWORK: 0,
         HOST: 1,
         TOS_NETWORK: 2,
         TOS_HOST: 3
     },
-    [ICMP_TYPES.ECHO_REQUEST]: 0,
-    [ICMP_TYPES.ROUTER_ADVERTISMENT]: 0,
-    [ICMP_TYPES.ROUTER_SOLICITATION]: 0,
-    [ICMP_TYPES.TIME_EXCEEDED]: {
+    [ICMPV4_TYPES.ECHO_REQUEST]: 0,
+    [ICMPV4_TYPES.ROUTER_ADVERTISMENT]: 0,
+    [ICMPV4_TYPES.ROUTER_SOLICITATION]: 0,
+    [ICMPV4_TYPES.TIME_EXCEEDED]: {
         TTL: 0,
         FRAGMENT: 1
     },
-    [ICMP_TYPES.PARAMETER_PROBLEM]: {
+    [ICMPV4_TYPES.PARAMETER_PROBLEM]: {
         POINTER: 0,
         OPTION: 1,
         LENGTH: 2
     },
-    [ICMP_TYPES.TIMESTAMP]: 0,
-    [ICMP_TYPES.TIMESTAMP_REPLY]: 0,
-    [ICMP_TYPES.EXTENDED_ECHO_REQUEST]: 0,
-    [ICMP_TYPES.EXTENDED_ECHO_REPLY]: {
+    [ICMPV4_TYPES.TIMESTAMP]: 0,
+    [ICMPV4_TYPES.TIMESTAMP_REPLY]: 0,
+    [ICMPV4_TYPES.EXTENDED_ECHO_REQUEST]: 0,
+    [ICMPV4_TYPES.EXTENDED_ECHO_REPLY]: {
         NO_ERROR: 0,
         QUERY_MALFORMED: 1,
         NO_INTERFACE: 2,

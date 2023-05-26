@@ -2,7 +2,7 @@ import { Component, JSX } from "solid-js";
 import { EthernetFrame } from "../lib/ethernet";
 import { IPPacketV4 } from "../lib/ip/packet/v4";
 import { AddressV4, SubnetMaskV4, validateDotNotated } from "../lib/ip/v4";
-import { ICMPPacketV4, ICMP_TYPES, createROHEcho } from "../lib/ip/v4/icmp";
+import { ICMPPacketV4, ICMPV4_TYPES, createROHEcho } from "../lib/ip/v4/icmp";
 import { Device } from "../lib/device/device";
 import { ETHER_TYPES } from "../lib/ethernet/types";
 import { PROTOCOLS } from "../lib/ip/packet/protocols";
@@ -47,7 +47,7 @@ async function ping(device: Host, destination: AddressV4) {
     try {
 
         let n = Math.floor(Math.random() * 1_000)
-        let icmpPacket = new ICMPPacketV4(ICMP_TYPES.ECHO_REQUEST, 0, createROHEcho(n, 0))
+        let icmpPacket = new ICMPPacketV4(ICMPV4_TYPES.ECHO_REQUEST, 0, createROHEcho(n, 0))
 
         let entry = await resolveSendingInformation(device, destination);
         if (!entry.iface.isConnected || !entry.iface.ipAddressV4 || !entry.iface.subnetMaskV4) {
