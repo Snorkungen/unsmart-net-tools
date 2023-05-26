@@ -5,7 +5,7 @@
 import { EthernetFrame, MACAddress } from "../ethernet";
 import { VLANTag } from "../ethernet/vlan";
 import { AddressV4, SubnetMaskV4 } from "../ip/v4";
-import { AddressV6, SubnetMaskV6 } from "../ip/v6/address";
+import { AddressV6 } from "../ip/v6/address";
 export class Interface {
     private target: Interface | null = null;
 
@@ -19,7 +19,7 @@ export class Interface {
     ipAddressV4?: AddressV4;
     subnetMaskV4?: SubnetMaskV4;
     ipAddressV6?: AddressV6;
-    subnetMaskV6?: SubnetMaskV6;
+    prefixLength?: number;
 
     constructor(public ifID: number, macAddress: MACAddress, public forwardCallback: (frame: EthernetFrame, iface: Interface) => void) {
         this.macAddress = macAddress;

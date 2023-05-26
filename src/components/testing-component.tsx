@@ -33,6 +33,9 @@ const DeviceComponent: Component<{ device: Device }> = ({ device }) => {
                     {iface.ipAddressV4 && iface.subnetMaskV4 && (
                         <p>IPv4 address: <span onClick={selectContents}>{iface.ipAddressV4.toString()}</span>/<span>{iface.subnetMaskV4.length}</span></p>
                     )}
+                    {iface.ipAddressV6 && iface.prefixLength && (
+                        <p>IPv6 address: <span onClick={selectContents}>{iface.ipAddressV6.toString(4)}</span>/<span>{iface.prefixLength}</span></p>
+                    )}
                     <p>is connected: {iface.isConnected + ""}</p>
                 </div>
             ))}
@@ -81,21 +84,16 @@ export const TestingComponent: Component = () => {
 
     iface_pc1.ipAddressV4 = new AddressV4("192.168.1.10")
     iface_pc1.subnetMaskV4 = new SubnetMaskV4(24);
-
+    iface_pc1.ipAddressV6 = createLinkLocalAddressV6();
+    iface_pc1.prefixLength = 64;
+    
     iface_pc2.ipAddressV4 = new AddressV4("192.168.1.20")
     iface_pc2.subnetMaskV4 = new SubnetMaskV4(24);
-
+    iface_pc2.ipAddressV6 = createLinkLocalAddressV6();
+    iface_pc2.prefixLength = 64;
+    
     swIface_pc1.connect(iface_pc1);
     swIface_pc2.connect(iface_pc2);
-
-    let ipv6Address = new AddressV6("::");
-    console.log(ipv6Address.toString(4),matchAddressTypeV6("UNSPECIFIED", ipv6Address))
-    ipv6Address = new AddressV6(ALL_NODES_ADDRESSV6)
-    console.log(ipv6Address.toString(4),ipv6Address.isMulticast)
-    
-    let linkLocalAddress = createLinkLocalAddressV6();
-    console.log(linkLocalAddress.toString(4),linkLocalAddress.isLinkLocal)
-
 
     return (
         <div>

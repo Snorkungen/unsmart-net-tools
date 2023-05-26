@@ -42,86 +42,6 @@ export class AddressV6 {
     }
 }
 
-export class SubnetMaskV6 {
-    bits: BitArray = new BitArray(0, ADDRESS_LENGTH);
-
-    constructor(input: string);
-    constructor(input: BitArray);
-    constructor(input: number);
-    constructor(input: SubnetMaskV6);
-    constructor(input: unknown) {
-        if (typeof input == "string") {
-            let bits = parseColonNotated(input);
-            if (validateMaskBits(bits)) {
-                this.bits = bits
-            }
-        }
-
-        if (typeof input == "number" && !isNaN(input) && input <= ADDRESS_LENGTH && input >= 0) {
-            this.bits.splice(0, input, new BitArray(1, input))
-        }
-
-        if (input instanceof BitArray && input.size == ADDRESS_LENGTH) {
-            if (validateMaskBits(input)) {
-                this.bits = input;
-            }
-        }
-
-        if (input instanceof SubnetMaskV6 && validateMaskBits(input.bits)) {
-            this.bits = input.bits.slice();
-        }
-    }
-
-    get length() {
-        let bitString = this.bits.toString(2)
-        let len = ADDRESS_LENGTH;
-        for (let i = 0; i < bitString.length; i++) {
-            if (bitString[i] == "0") {
-                len = i; break
-            }
-        }
-
-        return len;
-    }
-
-    toString(simplify?: Parameters<typeof colonNotateBitArray>[1]) {
-        return colonNotateBitArray(this.bits, simplify)
-    }
-}
-
-/**
- * I'm unsure as to how ipv6 works so this is exists
- * @param options
- * @returns 
- */
-export function calculateSubnetV6({ address, mask }: {
-    address: AddressV6,
-    mask: SubnetMaskV6
-}) {
-    let netBitArray = address.bits.and(mask.bits);
-    let broadcastBitArray = netBitArray.xor(mask.bits.not());
-
-    // I should probably add some type of shift operations but "I have no clue"
-    // changing the last bit
-    let minHostBitArray = netBitArray.xor(new BitArray(1));
-    let maxHostBitArray = broadcastBitArray.xor(new BitArray(1));
-
-
-    return {
-        address: new AddressV6(address),
-        mask: new SubnetMaskV6(mask),
-
-        networkAddress: new AddressV6(netBitArray),
-        broadcastAddress: new AddressV6(broadcastBitArray),
-
-        hosts: {
-            count: 2 ** (ADDRESS_LENGTH - mask.length) - 2,
-            min: new AddressV6(minHostBitArray),
-            max: new AddressV6(maxHostBitArray)
-        }
-    }
-}
-
 export function parseColonNotated(input: string) {
     input = input.toLowerCase().trim();
 
@@ -220,6 +140,6 @@ function colonNotateBitArray(bitArray: BitArray, simplify = 4) {
 
 export function matchAddressTypeV6(key: keyof typeof ADDRESS_TYPESV6, address: AddressV6): boolean {
     let [notated, length] = ADDRESS_TYPESV6[key];
-    let mask = new SubnetMaskV6(length);
-    return address.bits.and(mask.bits).toNumber() == parseColonNotated(notated).toNumber();
+    let mask = new BitArray(1, length);
+    return address.bits.and(mask).toNumber() == parseColonNotated(notated).toNumber();
 } 
