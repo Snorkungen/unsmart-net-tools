@@ -44,30 +44,6 @@ const DeviceComponent: Component<{ device: Device }> = ({ device }) => {
     </div>
 }
 
-async function ping(device: Host, destination: AddressV4) {
-    try {
-
-        let n = Math.floor(Math.random() * 1_000)
-        let icmpPacket = new ICMPPacketV4(ICMPV4_TYPES.ECHO_REQUEST, 0, createROHEcho(n, 0))
-
-        let entry = await resolveSendingInformation(device, destination);
-        if (!entry.iface.isConnected || !entry.iface.ipAddressV4 || !entry.iface.subnetMaskV4) {
-            // failed because interface does not have ipv4 configured
-            // return;
-            // Do nothing because i haven't decided if the device should have an async send function. So thats why this allows me to have an device ping it self
-        }
-
-        let ipv4Packet = new IPPacketV4(entry.iface.ipAddressV4!, destination, PROTOCOLS.ICMP, icmpPacket.bits);
-        let frame = new EthernetFrame(entry.macAddress, entry.iface.macAddress, ETHER_TYPES.IPv4, ipv4Packet.bits)
-
-        device.statefulSend(frame, () => {
-           
-        })
-    } catch (error) {
-        console.error(error)
-    }
-}
-
 export const TestingComponent: Component = () => {
     let networkSwitch = new NetworkSwitch();
     networkSwitch.name = "SW1"

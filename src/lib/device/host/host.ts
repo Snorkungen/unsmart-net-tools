@@ -217,14 +217,16 @@ export class Host extends Device {
                 }
             } else if (s.type == ETHER_TYPES.IPv6) {
                 let ipPacket = new IPPacketV6(frame.payload);
-                if (s.protocol != ipPacket.nextHeader) {
+
+                if (ipPacket.source.toString() != s.destinationP) {
                     continue;
                 }
-                console.log(ipPacket.source.toString(), s.destinationP)
-
                 // only support icmp first
                 if (ipPacket.nextHeader == PROTOCOLS.IPV6_ICMP) {
                     let icmpPacket = new ICMPPacketV6(ipPacket.payload);
+
+                    
+
 
                     if (ipPacket.source.toString() == s.destinationP) {
                         // here would be errors
@@ -287,21 +289,29 @@ export class Host extends Device {
             // only support icmp first
             if (ipPacket.nextHeader == PROTOCOLS.IPV6_ICMP) {
                 let icmpPacket = new ICMPPacketV6(ipPacket.payload)
-                switch (icmpPacket.type) {
-                    case ICMPV6_TYPES.ECHO_REQUEST:
-                        break;
 
-                    case ICMPV6_TYPES.NEIGHBOR_SOLICITATION:
-                        let sidx = this.state.push({
-                            type: frame.type,
-                            cb,
-                            destinationP: ipPacket.destination.toString(),
-                            protocol: ipPacket.nextHeader,
-                            icmpType: icmpPacket.type,
-                            content: icmpPacket.content
-                        })
-                        iface.send(frame);
-                        return sidx
+                if (icmpPacket.type == ICMPV6_TYPES.ECHO_REQUEST) {
+                    let sidx = this.state.push({
+                        type: frame.type,
+                        cb,
+                        destinationP: ipPacket.destination.toString(),
+                        protocol: ipPacket.nextHeader,
+                        icmpType: icmpPacket.type,
+                        identifier: readROHEcho(icmpPacket.roh).identifier
+                    })
+                    iface.send(frame);
+                    return sidx
+                } else if (icmpPacket.type == ICMPV6_TYPES.NEIGHBOR_SOLICITATION) {
+                    let sidx = this.state.push({
+                        type: frame.type,
+                        cb,
+                        destinationP: ipPacket.destination.toString(),
+                        protocol: ipPacket.nextHeader,
+                        icmpType: icmpPacket.type,
+                        content: icmpPacket.content
+                    })
+                    iface.send(frame);
+                    return sidx
                 }
             }
         }
