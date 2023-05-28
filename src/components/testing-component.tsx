@@ -10,6 +10,8 @@ import { Host } from "../lib/device/host";
 import { NetworkSwitch } from "../lib/device/network-switch";
 import { createLinkLocalAddressV6 } from "../lib/ip/v6/link-local";
 import resolveSendingInformation from "../lib/device/host/resolve-sending-information";
+import { AddressV6 } from "../lib/ip/v6";
+import { pingVersion4, pingVersion6 } from "../lib/device/applications/ping";
 
 const selectContents = (ev: MouseEvent) => {
     if (!(ev.currentTarget instanceof HTMLElement)) return;
@@ -59,7 +61,7 @@ async function ping(device: Host, destination: AddressV4) {
         let frame = new EthernetFrame(entry.macAddress, entry.iface.macAddress, ETHER_TYPES.IPv4, ipv4Packet.bits)
 
         device.statefulSend(frame, () => {
-            console.log("%c ECHO Reply recieved: " + device.name, ['background: green', 'color: white', 'display: block', 'text-align: center', 'font-size: 24px'].join(';'))
+           
         })
     } catch (error) {
         console.error(error)
@@ -107,12 +109,19 @@ export const TestingComponent: Component = () => {
             </div>
 
             {[pc1, pc2].map((device) => (
-                <button onClick={() => {
+                <button onClick={async () => {
                     let ip = prompt("Please enter a destination ip, from: " + device.name)
 
-                    if (ip && validateDotNotated(ip)) {
-                        ping(device, new AddressV4(ip))
+                    if (!ip) return;
+
+                    if (validateDotNotated(ip)) {
+                        await pingVersion4(device, new AddressV4(ip))
+                    } else if (new AddressV6(ip).bits.toNumber() != 0) {
+                        await pingVersion6(device, new AddressV6(ip))
                     }
+
+                    console.log("%c ECHO Reply recieved: " + device.name, ['background: green', 'color: white', 'display: block', 'text-align: center', 'font-size: 24px'].join(';'))
+
                 }}>Ping from: {device.name}</button>
             ))}
         </div>
