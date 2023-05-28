@@ -1,53 +1,19 @@
-import { BitArray } from "../binary";
-import { EthernetFrame, MACAddress } from "../ethernet";
-import { ARPPacket, OPCODES } from "../ethernet/arp";
-import { ETHER_TYPES, EtherType } from "../ethernet/types";
-import { AddressV4 } from "../ip/v4";
-import { ICMPPacketV4, ICMPV4_TYPES, readROHEcho } from "../ip/v4/icmp";
-import { IPPacketV4 } from "../ip/packet/v4";
-import { ARPTable } from "./arp-table";
-import { Interface } from "./interface";
-import { PROTOCOL, PROTOCOLS } from "../ip/packet/protocols";
-import { AddressV6 } from "../ip/v6/address";
-import { Device } from "./device";
-import { IPPacketV6 } from "../ip/packet/v6";
-import { ICMPPacketV6, ICMPV6_TYPES } from "../ip/v6/icmp";
-import { ALL_LINK_LOCAL_NODES_ADDRESSV6 } from "../ip/v6";
-
-export async function resolveSendingInformation(device: Host, address: AddressV4 | AddressV6) {
-    try {
-        if (address instanceof AddressV6) {
-            throw new Error("ipv6 not implemented")
-        } else {
-            // address is v4
-
-            // check if inside subnet   
-            for (let opt of device.interfaces) {
-                if (!opt.ipAddressV4 || !opt.subnetMaskV4) {
-                    continue;
-                }
-
-                if (opt.ipAddressV4.toString() == address.toString()) {
-                    // return if the destination is itself
-                    return { destination: opt.ipAddressV4, macAddress: opt.macAddress, iface: opt }
-                }
-
-                if (address.bits.and(opt.subnetMaskV4.bits).toNumber() == opt.ipAddressV4.bits.and(opt.subnetMaskV4.bits).toNumber()) {
-                    // interface address is in the same subnet
-                    let entry = await device.arpTable.getSend(address)
-                    return { destination: entry.neighbour, macAddress: entry.address, iface: entry.iface }
-                }
-            }
-
-
-            throw new Error("Default gateway logic not implemented")
-
-        }
-    } catch (err) {
-        // handle logic where no mac address found
-        throw err;
-    }
-}
+import { BitArray } from "../../binary";
+import { EthernetFrame, MACAddress } from "../../ethernet";
+import { ARPPacket, OPCODES } from "../../ethernet/arp";
+import { ETHER_TYPES, EtherType } from "../../ethernet/types";
+import { AddressV4 } from "../../ip/v4";
+import { ICMPPacketV4, ICMPV4_TYPES, readROHEcho } from "../../ip/v4/icmp";
+import { IPPacketV4 } from "../../ip/packet/v4";
+import { Interface } from "../interface";
+import { PROTOCOL, PROTOCOLS } from "../../ip/packet/protocols";
+import { AddressV6 } from "../../ip/v6/address";
+import { Device } from "../device";
+import { IPPacketV6 } from "../../ip/packet/v6";
+import { ICMPPacketV6, ICMPV6_TYPES } from "../../ip/v6/icmp";
+import { ALL_LINK_LOCAL_NODES_ADDRESSV6 } from "../../ip/v6";
+import NeighborTable from "./neighbor-table";
+import resolveSendingInformation from "./resolve-sending-information";
 
 /**
  *  this function contains logic if device should ignore this packet based upon destination address
@@ -71,8 +37,7 @@ function ignoreIPPacketHost(address: AddressV4 | AddressV6, iface: Interface) {
     return true;
 }
 export class Host extends Device {
-    arpTable: ARPTable = new ARPTable(this);
-
+    neighborTable = new NeighborTable(this);
     listener(frame: EthernetFrame, iface: Interface) {
         // inform about request
         this.log(frame, iface);
@@ -255,7 +220,7 @@ export class Host extends Device {
                 if (s.protocol != ipPacket.nextHeader) {
                     continue;
                 }
-                console.log(ipPacket.source.toString() , s.destinationP)
+                console.log(ipPacket.source.toString(), s.destinationP)
 
                 // only support icmp first
                 if (ipPacket.nextHeader == PROTOCOLS.IPV6_ICMP) {
