@@ -13,8 +13,9 @@ const CHECKSUM_BITS = new BitArray(0, 16);
 const ROH_BITS = new BitArray(0, 32); // 32 bits
 
 export class ICMPPacketV6 {
+    /** This function is scuffed due to according to rfc this should be maximum possible in MTU(Max Transmission Unit) */
     static getIPPacketBits(packet: IPPacketV6) {
-        return packet.bits.slice(0, (packet.payloadLength + 8) * 8);
+        return packet.bits.slice(0, (packet.payloadLength + 8) * 160);
     }
 
     bits: BitArray;

@@ -97,12 +97,10 @@ export default class NeighborTable {
                 let f = createNDPRequest(query, iface)
                 if (!f) return;
                 indices.push(this.host.statefulSend(f, (frame, iface) => {
-                    let arpPacket = new ARPPacket(frame.payload);
-
                     this.version6.set(query.toString(ADDRESS_V6_SIMPLIFY), {
                         neighbor: query,
                         iface,
-                        macAddress: new MACAddress(arpPacket.targetHardware),
+                        macAddress: new MACAddress(frame.source),
                         createdAt: Date.now()
                     })
 
