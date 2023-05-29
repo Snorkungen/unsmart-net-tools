@@ -38,16 +38,13 @@ function ignoreIPPacketHost(address: AddressV4 | AddressV6, iface: Interface) {
 }
 export class Host extends Device {
     neighborTable = new NeighborTable(this);
+    /**
+    This function only replies to requests for now
+    It might not in the future
+    */
     listener(frame: EthernetFrame, iface: Interface) {
         // inform about request
         this.log(frame, iface);
-
-        /* 
-
-        This function only replies to requests for now
-        It might not in the future
-
-        */
 
         if (frame.destination.toString() != iface.macAddress.toString()) {
             if (!frame.destination.isBroadcast) {
@@ -55,6 +52,7 @@ export class Host extends Device {
                 return;
             }
         }
+
 
         if (frame.type == ETHER_TYPES.IPv4) {
             // ipv4 packet
@@ -92,9 +90,12 @@ export class Host extends Device {
 
             if (ipPacket.nextHeader == PROTOCOLS.IPV6_ICMP) {
                 let icmpPacket = new ICMPPacketV6(ipPacket.payload);
-
-                if (icmpPacket.type == ICMPV6_TYPES.ECHO_REQUEST) { }
-                else if (icmpPacket.type == ICMPV6_TYPES.NEIGHBOR_SOLICITATION) {
+                if (icmpPacket.type == ICMPV6_TYPES.ECHO_REQUEST) {
+                    let replyICMPPacket = new ICMPPacketV6(ICMPV6_TYPES.ECHO_REPLY, 0, icmpPacket.roh, ICMPPacketV6.getIPPacketBits(ipPacket));
+                    let replyIPPacket = new IPPacketV6(iface.ipAddressV6!, ipPacket.source, PROTOCOLS.IPV6_ICMP, replyICMPPacket.bits);
+                    let replyFrame = new EthernetFrame(frame.source, iface.macAddress, ETHER_TYPES.IPv6, replyIPPacket.bits);
+                    return iface.send(replyFrame)
+                } else if (icmpPacket.type == ICMPV6_TYPES.NEIGHBOR_SOLICITATION) {
                     // check if target is me
                     let target = icmpPacket.content.slice(0, AddressV6.address_length);
                     if (target.toNumber() != iface.ipAddressV6?.bits.toNumber()) {
@@ -132,7 +133,7 @@ export class Host extends Device {
                 // reply to request
                 let replyARPPacket = new ARPPacket(2, arpPacket.senderHardware, arpPacket.senderProtocol, iface.macAddress.bits, iface.ipAddressV4!.bits);
                 let ethernetFrame = new EthernetFrame(frame.source, iface.macAddress, ETHER_TYPES.ARP, replyARPPacket.bits);
-                iface.send(ethernetFrame);
+                return iface.send(ethernetFrame);
 
                 // idk know if i should add an entry to the arp table
             }
@@ -218,23 +219,35 @@ export class Host extends Device {
             } else if (s.type == ETHER_TYPES.IPv6) {
                 let ipPacket = new IPPacketV6(frame.payload);
 
-                if (ipPacket.source.toString() != s.destinationP) {
+                if (ipPacket.source.toString() != s.destinationP && ipPacket.source.toString(-1) == ALL_LINK_LOCAL_NODES_ADDRESSV6) {
                     continue;
                 }
                 // only support icmp first
                 if (ipPacket.nextHeader == PROTOCOLS.IPV6_ICMP) {
                     let icmpPacket = new ICMPPacketV6(ipPacket.payload);
+                    if (s.icmpType == ICMPV6_TYPES.NEIGHBOR_SOLICITATION) {
 
-                    
-
-
-                    if (ipPacket.source.toString() == s.destinationP) {
-                        // here would be errors
-                    } else {
                         // assume this is NDP because i'm tired
                         if (s.content instanceof BitArray && s.content.toNumber() == icmpPacket.content.toNumber()) {
                             s.cb(frame, iface);
                             return this.statefulClose(i)
+                        }
+                    } else {
+                        let contentIPPacket = new IPPacketV6(icmpPacket.content);
+                        if (contentIPPacket.nextHeader != s.protocol) {
+                            continue;
+                        }
+                        if (contentIPPacket.nextHeader == PROTOCOLS.IPV6_ICMP) {
+                            let contentICMPPacket = new ICMPPacketV6(contentIPPacket.payload);
+
+                            if (contentICMPPacket.type == ICMPV6_TYPES.ECHO_REQUEST) {
+                                let { identifier } = readROHEcho(contentICMPPacket.roh);
+                                if (s.identifier == identifier) {
+                                    // this is a response to my ping request
+                                    s.cb(frame, iface);
+                                    return this.statefulClose(i);
+                                }
+                            }
                         }
                     }
                 }

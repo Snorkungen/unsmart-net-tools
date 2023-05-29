@@ -61,12 +61,12 @@ export const TestingComponent: Component = () => {
 
     iface_pc1.ipAddressV4 = new AddressV4("192.168.1.10")
     iface_pc1.subnetMaskV4 = new SubnetMaskV4(24);
-    iface_pc1.ipAddressV6 = createLinkLocalAddressV6();
+    iface_pc1.ipAddressV6 = new AddressV6("fe80::c438:600:a1ac:ba00")//createLinkLocalAddressV6();
     iface_pc1.prefixLength = 64;
 
     iface_pc2.ipAddressV4 = new AddressV4("192.168.1.20")
     iface_pc2.subnetMaskV4 = new SubnetMaskV4(24);
-    iface_pc2.ipAddressV6 = createLinkLocalAddressV6();
+    iface_pc2.ipAddressV6 = new AddressV6("fe80::c438:600:a1ac:b778")//createLinkLocalAddressV6();
     iface_pc2.prefixLength = 64;
 
     swIface_pc1.connect(iface_pc1);
