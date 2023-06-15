@@ -162,7 +162,7 @@ export class BitArray {
             case 2:
                 return bitString;
             case 16:
-                return parseInt(bitString, 2).toString(16)
+                return bitString.match(/.{1,4}/g)?.map((v) => parseInt(v,2).toString(16)).join("") || ""
             default: return parseInt(bitString, 2).toString()
         }
     }
