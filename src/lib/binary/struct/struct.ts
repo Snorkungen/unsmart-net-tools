@@ -11,7 +11,7 @@ export class StructValue<T> {
 
     private getter: StructValueConstructorProps<T>["getter"];
     private setter: StructValueConstructorProps<T>["setter"];
-
+    private size: number;
     constructor({
         defaultValue,
         size,
@@ -22,6 +22,7 @@ export class StructValue<T> {
     }: StructValueConstructorProps<T>) {
         this.getter = getter;
         this.setter = setter;
+        this.size = size;
 
         this.bits = new BitArray(0, size);
         if (defaultValue) {
@@ -40,14 +41,14 @@ export class StructValue<T> {
     create(val: T): StructValue<T> {
         return new StructValue({
             defaultValue: val,
-            size: this.bits.size,
+            size: this.size,
             getter: this.getter,
             setter: this.setter,
         })
     }
 }
 
-export class Struct<const K extends Record<string, StructValue<any> | Struct<any>>> {
+export class Struct<K extends Record<string, StructValue<any> | Struct<any>>> {
     private order: Array<keyof K>;
     public values: K;
 
@@ -101,44 +102,6 @@ export class Struct<const K extends Record<string, StructValue<any> | Struct<any
     }
 }
 
-export const UINT8 = new StructValue<number>({
-    size: 8,
-    setter(v) {
-        return new BitArray(0, this.size).or(new BitArray(v))
-    },
-    getter(bits) {
-        return bits.toNumber()
-    }
-})
-export const UINT16 = new StructValue<number>({
-    size: 16,
-    setter(v) {
-        return new BitArray(0, this.size).or(new BitArray(v))
-    },
-    getter(bits) {
-        return bits.toNumber()
-    }
-})
-export const UINT32 = new StructValue<number>({
-    size: 32,
-    setter(v) {
-        return new BitArray(0, this.size).or(new BitArray(v))
-    },
-    getter(bits) {
-        return bits.toNumber()
-    }
-})
-export const BOOLEAN = new StructValue<boolean>({
-    size: 1,
-    setter(v) {
-        return new BitArray(v ? 1 : 0)
-    },
-    getter(bits) {
-        return !!bits.toNumber()
-    }
-})
-
-
-export function defineStruct<const K extends Record<string, StructValue<any> | Struct<any>>>(input: K) {
+export function defineStruct<K extends Record<string, StructValue<any> | Struct<any>>>(input: K) {
     return new Struct<K>(input)
 }
