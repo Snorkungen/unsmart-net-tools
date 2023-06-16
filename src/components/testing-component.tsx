@@ -1,18 +1,10 @@
 import { Component, JSX } from "solid-js";
-import { EthernetFrame, MACAddress } from "../lib/ethernet";
-import { IPPacketV4 } from "../lib/ip/packet/v4";
 import { AddressV4, SubnetMaskV4, validateDotNotated } from "../lib/ip/v4";
-import { ICMPPacketV4, ICMPV4_TYPES, createROHEcho } from "../lib/ip/v4/icmp";
 import { Device } from "../lib/device/device";
-import { ETHER_TYPES } from "../lib/ethernet/types";
-import { PROTOCOLS } from "../lib/ip/packet/protocols";
 import { Host } from "../lib/device/host";
 import { NetworkSwitch } from "../lib/device/network-switch";
-import { createLinkLocalAddressV6 } from "../lib/ip/v6/link-local";
-import resolveSendingInformation from "../lib/device/host/resolve-sending-information";
 import { AddressV6 } from "../lib/ip/v6";
 import { pingVersion4, pingVersion6 } from "../lib/device/applications/ping";
-import { PCAP_GLOBAL_HEADER } from "../lib/packet-capture/pcap";
 
 const selectContents = (ev: MouseEvent) => {
     if (!(ev.currentTarget instanceof HTMLElement)) return;
@@ -46,10 +38,6 @@ const DeviceComponent: Component<{ device: Device }> = ({ device }) => {
 }
 
 export const TestingComponent: Component = () => {
-
-    console.log(PCAP_GLOBAL_HEADER.bits.size)
-    console.log(PCAP_GLOBAL_HEADER.values.thiszone.create(-1*2**30).bits)
-
     let networkSwitch = new NetworkSwitch();
     networkSwitch.name = "SW1"
 
