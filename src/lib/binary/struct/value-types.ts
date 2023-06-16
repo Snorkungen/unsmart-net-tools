@@ -77,13 +77,3 @@ export const INT8 = defineINT(8);
 export const INT16 = defineINT(16);
 export const INT32 = defineINT(32);
 export const INT64 = defineINT(64);
-
-export const BOOLEAN = new StructValue<boolean>({
-    size: 1,
-    setter(v) {
-        return new BitArray(v ? 1 : 0)
-    },
-    getter(bits) {
-        return !!bits.toNumber()
-    }
-})
