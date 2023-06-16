@@ -80,7 +80,7 @@ export class StructValue<T> {
 
     setOption<K extends keyof StructOptions>(key: K, value: StructOptions[K]) {
         this.options[key] = value;
-
+        return this;
     }
 }
 
@@ -91,11 +91,17 @@ export class Struct<K extends Record<string, StructValue<any> | Struct<any>>> {
     private options: StructOptions
 
     constructor(values: K, options?: Partial<StructOptions>) {
+        // loop through values and the value to new bitArray
         this.values = values;
         this.order = Object.keys(values)
 
+        for (let key of this.order) {
+            // Trust me bro
+            (this.values[key] as any) = this.values[key].create({}); 
+        }
+
         // Configure options
-        this.options = STRUCT_DEFAULT_OPTIONS;
+        this.options = {...STRUCT_DEFAULT_OPTIONS};
 
         // Configure options of values
         if (!options) return;
@@ -125,10 +131,8 @@ export class Struct<K extends Record<string, StructValue<any> | Struct<any>>> {
 
         let offset = 0;
         for (let key of this.order) {
-            let val = this.values[key], size = val.bits.size;;
-
+            let val = this.values[key], size = val.bits.size;
             this.values[key].bits = bits.slice(offset, offset + size);
-
             offset += size;
         }
     }
@@ -161,6 +165,7 @@ export class Struct<K extends Record<string, StructValue<any> | Struct<any>>> {
         for (let vkey of this.order) {
             this.values[vkey].setOption(key, value);
         }
+        return this;
     }
 }
 

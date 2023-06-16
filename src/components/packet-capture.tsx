@@ -1,18 +1,18 @@
 import { uintArrayToBitArray } from "../lib/binary/array-buffer/uint-x-array";
 import { base64_decode, base64_encode } from "../lib/binary";
-import { PCAP_GLOBAL_HEADER } from "../lib/packet-capture/pcap";
+import { PCAP_GLOBAL_HEADER, PCAP_PACKET_HEADER } from "../lib/packet-capture/pcap";
 
 export default function PacketCapture() {
     let bits = base64_decode(base64EncodePCAPFile);
     let pcapHeader = PCAP_GLOBAL_HEADER.create(bits.slice(0, PCAP_GLOBAL_HEADER.bits.size), { byteOrder: "LITTLE" })
 
-    console.log(pcapHeader.values.magicNumber.value)
-    console.log(pcapHeader.values.versionMajor.value)
-    console.log(pcapHeader.values.versionMinor.value)
-    console.log(pcapHeader.values.thiszone.value)
-    console.log(pcapHeader.values.sigfigs.value)
-    console.log(pcapHeader.values.snaplen.bits)
-    console.log(pcapHeader.values.network.value)
+    let offset = PCAP_GLOBAL_HEADER.bits.size;
+    let packetHeader = PCAP_PACKET_HEADER.create(bits.slice(offset, offset + PCAP_PACKET_HEADER.bits.size), { byteOrder: "LITTLE" })
+
+    console.log(pcapHeader.values.sigfigs.value,pcapHeader.values.network.value)
+    console.log(packetHeader.values.tsSec.value)
+
+
 
     return <div>
         <header>
