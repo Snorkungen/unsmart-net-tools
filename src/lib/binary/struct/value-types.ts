@@ -1,10 +1,9 @@
 import { BitArray } from "../binary";
-import { StructValue } from "./struct";
+import { StructValue, StructValueError } from "./struct";
 
-export class StructValueError extends Error {
-    constructor(message: string, public value: unknown) {
-        super(`cannot set; ${message}`);
-    }
+function convertBigEndianToLittleEndian(bits: BitArray): BitArray {
+    let input = bits.toString(16).match(/.{1,2}/g)?.reverse().join("") || "";
+    return new BitArray(0, bits.size).or(new BitArray(input, 16))
 }
 
 function defineUINT(size: number): StructValue<number> {
@@ -23,7 +22,11 @@ function defineUINT(size: number): StructValue<number> {
             }
             return new BitArray(0, this.size).or(valBits);
         },
-        getter(bits) {
+        getter(bits, options) {
+            if (options.byteOrder == "LITTLE") {
+                bits = convertBigEndianToLittleEndian(bits)
+            }
+
             return bits.toNumber()
         }
     })
@@ -55,10 +58,13 @@ function defineINT(size: number): StructValue<number> {
             return bits.or(valBits);
 
         },
-        getter(bits) {
+        getter(bits, options) {
             /*
                 IMPORTANT this does not work when considering little-endian numbers
             */
+            if (options.byteOrder == "LITTLE") {
+                bits = convertBigEndianToLittleEndian(bits)
+            }
 
             let val = bits.slice(1).toNumber()
             let signedBitValue: 0 | 1 = bits.slice(0, 1).toString(2) == "0" ? 0 : 1;

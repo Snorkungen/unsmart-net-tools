@@ -1,7 +1,12 @@
 import { BitArray } from "../binary"
 
+export class StructValueError extends Error {
+    constructor(message: string, public value: unknown) {
+        super(`cannot set; ${message}`);
+    }
+}
 
-type StructOptions = {
+export type StructOptions = {
     byteOrder: "BIG" | "LITTLE";
 }
 
@@ -12,15 +17,15 @@ const STRUCT_DEFAULT_OPTIONS: StructOptions = {
 export type StructValueConstructorProps<T> = {
     defaultValue?: T
     size: number
-    getter: (bits: BitArray) => T,
-    setter: (val: T) => BitArray
+    getter: (bits: BitArray, options: StructOptions) => T,
+    setter: (val: T, options: StructOptions) => BitArray
 };
 export class StructValue<T> {
     bits: BitArray;
+    size: number;
 
     private getter: StructValueConstructorProps<T>["getter"];
     private setter: StructValueConstructorProps<T>["setter"];
-    private size: number;
 
     private options: StructOptions
 
@@ -41,7 +46,12 @@ export class StructValue<T> {
             ...(options || {}),
         };
 
-        this.bits = new BitArray(0, size);
+        if (this.size < 0) {
+            this.bits = new BitArray(0, this.size);
+        } else {
+            this.bits = new BitArray([]);
+        }
+
         if (defaultValue) {
             this.set(defaultValue);
         }
@@ -56,17 +66,11 @@ export class StructValue<T> {
 
     get(): T {
         let bits = this.bits;
-
-        if (this.options.byteOrder == "LITTLE") {
-            let input = bits.toString(16).match(/.{1,2}/g)?.reverse().join("") || "";
-            bits = new BitArray(0, this.size).or(new BitArray(input, 16))
-        }
-
-        return this.getter(bits);
+        return this.getter(bits, this.options);
     }
 
     set(val: T): void {
-        this.bits = this.setter(val);
+        this.bits = this.setter(val, this.options);
     }
 
     create(val: T): StructValue<T> {
@@ -75,7 +79,16 @@ export class StructValue<T> {
             size: this.size,
             getter: this.getter,
             setter: this.setter,
-        })
+        }, this.options)
+    }
+
+    clone(): StructValue<T> {
+        return new StructValue<T>({
+            defaultValue: this.get(),
+            size: this.size,
+            getter: this.getter,
+            setter: this.setter,
+        }, this.options)
     }
 
     setOption<K extends keyof StructOptions>(key: K, value: StructOptions[K]) {
@@ -84,11 +97,11 @@ export class StructValue<T> {
     }
 }
 
-export class Struct<K extends Record<string, StructValue<any> | Struct<any>>> {
+export class Struct<K extends Record<string, StructValue<any>>> {
     private order: Array<keyof K>;
     public values: K;
 
-    private options: StructOptions
+    private options: StructOptions;
 
     constructor(values: K, options?: Partial<StructOptions>) {
         // loop through values and the value to new bitArray
@@ -96,12 +109,17 @@ export class Struct<K extends Record<string, StructValue<any> | Struct<any>>> {
         this.order = Object.keys(values)
 
         for (let key of this.order) {
-            // Trust me bro
-            (this.values[key] as any) = this.values[key].create({}); 
+            if ((this.values[key] as StructValue<unknown>).size < 0) {
+                if (key != this.order.at(-1)) {
+                    throw new Error("cannot define struct; slice must be last value")
+                }
+            }
+
+            (this.values[key] as any) = this.values[key].clone();
         }
 
         // Configure options
-        this.options = {...STRUCT_DEFAULT_OPTIONS};
+        this.options = { ...STRUCT_DEFAULT_OPTIONS };
 
         // Configure options of values
         if (!options) return;
@@ -111,11 +129,23 @@ export class Struct<K extends Record<string, StructValue<any> | Struct<any>>> {
             }
             this.setOption(k as keyof StructOptions, options[k as keyof StructOptions] as unknown as any)
         }
+    }
 
+    /** return the minimum size of the struct */
+    get size(): number {
+        let size = 0;
+        for (let key of this.order) {
+            let val = this.values[key];
+            if (val.size < 0) {
+                break;
+            }
+            size += val.size;
+        }
+        return size;
     }
 
     get bits() {
-        let bits: BitArray = new BitArray([]);;
+        let bits: BitArray = new BitArray([]);
         for (let key of this.order) {
             let val = this.values[key];
             bits.splice(bits.size, 0, val.bits)
@@ -125,13 +155,19 @@ export class Struct<K extends Record<string, StructValue<any> | Struct<any>>> {
     }
 
     private set bits(bits: BitArray) {
-        if (bits.size != this.bits.size) {
+        if (bits.size < this.bits.size) {
             throw new Error("Bits does not match struct")
         }
 
         let offset = 0;
         for (let key of this.order) {
-            let val = this.values[key], size = val.bits.size;
+            let val = this.values[key], size = val.size;
+
+            if (size < 0) {
+                this.values[key].bits = bits.slice(offset);
+                return;
+            }
+
             this.values[key].bits = bits.slice(offset, offset + size);
             offset += size;
         }
@@ -150,14 +186,20 @@ export class Struct<K extends Record<string, StructValue<any> | Struct<any>>> {
                 continue
             }
 
-            if (struct.values[key].bits.size != values[key]!.bits.size) {
-                throw new Error("value mismatch, cannot set value")
+            if (struct.values[key].size < 0) {
+
+            } else if (struct.values[key].bits.size != values[key]!.bits.size) {
+                throw new StructValueError("value mismatch", values[key])
             }
 
             struct.values[key].bits = values[key]!.bits
         }
 
         return struct
+    }
+
+    clone(): Struct<K> {
+        return new Struct<K>(this.values, this.options);
     }
 
     setOption<K extends keyof StructOptions>(key: K, value: StructOptions[K]) {
@@ -169,6 +211,6 @@ export class Struct<K extends Record<string, StructValue<any> | Struct<any>>> {
     }
 }
 
-export function defineStruct<K extends Record<string, StructValue<any> | Struct<any>>>(input: K) {
+export function defineStruct<K extends Record<string, StructValue<any>>>(input: K) {
     return new Struct<K>(input)
 }
