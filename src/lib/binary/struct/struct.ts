@@ -36,7 +36,10 @@ export class StructValue<T> {
         this.size = size;
 
         // Configure options
-        this.options = Object.assign(options ?? {}, STRUCT_DEFAULT_OPTIONS);
+        this.options = {
+            ...STRUCT_DEFAULT_OPTIONS,
+            ...(options || {}),
+        };
 
         this.bits = new BitArray(0, size);
         if (defaultValue) {
@@ -92,7 +95,17 @@ export class Struct<K extends Record<string, StructValue<any> | Struct<any>>> {
         this.order = Object.keys(values)
 
         // Configure options
-        this.options = Object.assign(options ?? {}, STRUCT_DEFAULT_OPTIONS);
+        this.options = STRUCT_DEFAULT_OPTIONS;
+
+        // Configure options of values
+        if (!options) return;
+        for (let k in options) {
+            if (!options[k as keyof StructOptions]) {
+                continue
+            }
+            this.setOption(k as keyof StructOptions, options[k as keyof StructOptions] as unknown as any)
+        }
+
     }
 
     get bits() {
