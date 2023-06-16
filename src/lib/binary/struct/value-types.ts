@@ -56,6 +56,10 @@ function defineINT(size: number): StructValue<number> {
 
         },
         getter(bits) {
+            /*
+                IMPORTANT this does not work when considering little-endian numbers
+            */
+
             let val = bits.slice(1).toNumber()
             let signedBitValue: 0 | 1 = bits.slice(0, 1).toString(2) == "0" ? 0 : 1;
             if (signedBitValue == 0) return val;
