@@ -1,6 +1,17 @@
 import { BitArray } from "../binary";
 import { StructValue, StructValueError } from "./struct";
 
+export const SLICE = new StructValue<BitArray>({
+    defaultValue: new BitArray([]),
+    size: -1,
+    getter(bits) {
+        return bits
+    },
+    setter(bits) {
+        return bits
+    }
+})
+
 function convertBigEndianToLittleEndian(bits: BitArray): BitArray {
     let input = bits.toString(16).match(/.{1,2}/g)?.reverse().join("") || "";
     return new BitArray(0, bits.size).or(new BitArray(input, 16))

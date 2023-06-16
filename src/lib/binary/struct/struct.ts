@@ -47,9 +47,9 @@ export class StructValue<T> {
         };
 
         if (this.size < 0) {
-            this.bits = new BitArray(0, this.size);
-        } else {
             this.bits = new BitArray([]);
+        } else {
+            this.bits = new BitArray(0, this.size);
         }
 
         if (defaultValue) {
@@ -196,10 +196,6 @@ export class Struct<K extends Record<string, StructValue<any>>> {
         }
 
         return struct
-    }
-
-    clone(): Struct<K> {
-        return new Struct<K>(this.values, this.options);
     }
 
     setOption<K extends keyof StructOptions>(key: K, value: StructOptions[K]) {

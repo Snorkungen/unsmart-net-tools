@@ -1,17 +1,49 @@
 import { uintArrayToBitArray } from "../lib/binary/array-buffer/uint-x-array";
 import { base64_decode, base64_encode } from "../lib/binary";
 import { PCAP_GLOBAL_HEADER, PCAP_PACKET_HEADER } from "../lib/packet-capture/pcap";
+import { SLICE, Struct, StructValue, UINT16, defineStruct } from "../lib/binary/struct";
+import { MACAddress } from "../lib/ethernet";
+
+
+const MAC_ADDRESS = new StructValue<MACAddress>({
+    size: MACAddress.address_length,
+    getter(bits, options) {
+        return new MACAddress(bits)
+    },
+    setter(val) {
+        return val.bits
+    }
+})
+
+const ETHERNET_HEADER = defineStruct({
+    dmac: MAC_ADDRESS,
+    smac: MAC_ADDRESS,
+    ethertype: UINT16,
+    payload: SLICE
+})
+
+function stringifyStruct(struct: Struct<any>) {
+    let obj: any = {}
+
+    Object.keys(struct.values).forEach(k => {
+        obj[k] = struct.values[k].get()
+    })
+
+    return JSON.stringify(obj, null, 2)
+}
 
 export default function PacketCapture() {
     let bits = base64_decode(base64EncodePCAPFile);
     let pcapHeader = PCAP_GLOBAL_HEADER.create(bits.slice(0, PCAP_GLOBAL_HEADER.bits.size), { byteOrder: "LITTLE" })
-
     let offset = PCAP_GLOBAL_HEADER.bits.size;
     let packetHeader = PCAP_PACKET_HEADER.create(bits.slice(offset, offset + PCAP_PACKET_HEADER.bits.size), { byteOrder: "LITTLE" })
+    offset += PCAP_PACKET_HEADER.size
+    console.log(stringifyStruct(pcapHeader))
+    console.log(stringifyStruct(packetHeader))
 
-    console.log(pcapHeader.values.sigfigs.value,pcapHeader.values.network.value)
-    console.log(packetHeader.values.tsSec.value)
-
+    // first ethernet header 
+    let ethernetHeader = ETHERNET_HEADER.create(bits.slice(offset,offset +( packetHeader.values.inclLen.get() * 8)))
+    console.log(ethernetHeader.values.smac.value.toString(), "=>",ethernetHeader.values.dmac.value.toString())
 
 
     return <div>
