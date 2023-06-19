@@ -3,6 +3,8 @@ import { base64_decode, base64_encode } from "../lib/binary";
 import { PCAP_GLOBAL_HEADER, PCAP_PACKET_HEADER } from "../lib/packet-capture/pcap";
 import { SLICE, Struct, StructType, UINT16, defineStruct, defineStructType } from "../lib/binary/struct";
 import { MACAddress } from "../lib/ethernet";
+import { For } from "solid-js";
+import { Card } from "solid-bootstrap";
 
 
 const MAC_ADDRESS = defineStructType({
@@ -36,15 +38,18 @@ export default function PacketCapture() {
     let bits = base64_decode(base64EncodePCAPFile);
     let pcapHeader = PCAP_GLOBAL_HEADER.create(bits.slice(0, PCAP_GLOBAL_HEADER.bits.size), { bigEndian: false })
     let offset = PCAP_GLOBAL_HEADER.bits.size;
-    let packetHeader = PCAP_PACKET_HEADER.create(bits.slice(offset, offset + PCAP_PACKET_HEADER.bits.size), { bigEndian: false })
-    offset += PCAP_PACKET_HEADER.bits.size
+
     console.log(stringifyStruct(pcapHeader))
-    console.log(stringifyStruct(packetHeader))
 
-    // first ethernet header 
-    let ethernetHeader = ETHERNET_HEADER.create(bits.slice(offset, offset + (packetHeader.get("inclLen") * 8)))
-    console.log(ethernetHeader.get("smac").toString(), "=>", ethernetHeader.get("dmac").toString())
+    let data: Array<[typeof PCAP_PACKET_HEADER, typeof ETHERNET_HEADER]> = [];
 
+    while (offset < bits.size) {
+        let packetHeader = PCAP_PACKET_HEADER.create(bits.slice(offset, offset += PCAP_PACKET_HEADER.bits.size), { bigEndian: false })
+        let ethHeader = ETHERNET_HEADER.create(bits.slice(offset, offset += (packetHeader.get("inclLen") * 8)));
+        data.push([packetHeader, ethHeader])
+    }
+
+    console.log(data)
 
     return <div>
         <header>
@@ -61,6 +66,20 @@ export default function PacketCapture() {
                 }
             }} />
         </header>
+        <div>
+            <For each={data} >{([packetHeader, ethHeader], i) => (
+                <>
+                    {i()+ 1 }
+                    <Card text="dark">
+                        <p>Included Length: {packetHeader.get("inclLen")}</p>
+                        <p>Original Length: {packetHeader.get("origLen")}</p>
+                        <p>Source MAC Address: {ethHeader.get("smac").toString()}</p>
+                        <p>Destination MAC Address: {ethHeader.get("dmac").toString()}</p>
+                        <p>EtherType: {ethHeader.get("ethertype")}</p>
+                    </Card>
+                </>
+            )}</For>
+        </div>
     </div>
 }
 
