@@ -5,11 +5,11 @@ import { INT32, UINT16, UINT32, defineStruct } from "../binary/struct";
 /** This header starts the libpcap file and will be followed by the first packet header */
 export const PCAP_GLOBAL_HEADER = defineStruct({
     /** magic number */
-    magicNumber: UINT32.create(0xd4c3b2a1),
+    magicNumber: UINT32,
     /** major version number */
-    versionMajor: UINT16.create(2),
+    versionMajor: UINT16,
     /** minor version number */
-    versionMinor: UINT16.create(4),
+    versionMinor: UINT16,
     /** GMT to local correction */
     thiszone: INT32,
     /** accuracy of timestamps */
