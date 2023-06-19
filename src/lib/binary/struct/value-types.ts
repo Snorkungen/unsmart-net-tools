@@ -1,30 +1,36 @@
 import { BitArray } from "../binary";
 import { StructValueError, defineStructType, StructType } from "./struct";
 
-function convertBigEndianToLittleEndian(bits: BitArray): BitArray {
+function convertLittleEndianToBigEndian(bits: BitArray): BitArray {
     let input = bits.toString(16).match(/.{1,2}/g)?.reverse().join("") || "";
     return new BitArray(0, bits.size).or(new BitArray(input, 16))
 }
+const convertBigEndianToLittleEndian = convertLittleEndianToBigEndian;
 
 function defineUINT(size: number): StructType<number> {
     return defineStructType({
         size: size,
-        setter(v) {
+        setter(v, options) {
             if (v == Infinity) {
                 throw new StructValueError("value is infinity", v)
             }
             if (v < 0) {
                 throw new StructValueError("value must be positive!", v)
             }
-            let valBits = new BitArray(v);
-            if (valBits.size > this.size) {
+            let bits = new BitArray(0, this.size).or(new BitArray(v));
+            if (bits.size > this.size) {
                 throw new StructValueError("value does not fit in bits", v)
             }
-            return new BitArray(0, this.size).or(valBits);
+
+            if (!options.bigEndian) {
+                bits = convertBigEndianToLittleEndian(bits)
+            }
+
+            return bits;
         },
         getter(bits, options) {
             if (!options.bigEndian) {
-                bits = convertBigEndianToLittleEndian(bits)
+                bits = convertLittleEndianToBigEndian(bits)
             }
 
             return bits.toNumber()
@@ -35,7 +41,7 @@ function defineUINT(size: number): StructType<number> {
 function defineINT(size: number): StructType<number> {
     return defineStructType<number>({
         size,
-        setter(v) {
+        setter(v, options) {
             let signedBitValue: 0 | 1 = 0;
 
             if (v < 0) {
@@ -55,6 +61,11 @@ function defineINT(size: number): StructType<number> {
             let bits = new BitArray(0, this.size);
             // set signed bit
             bits.splice(0, 1, new BitArray(signedBitValue));
+
+            if (!options.bigEndian) {
+                return convertBigEndianToLittleEndian(bits.or(valBits))
+            }
+
             return bits.or(valBits);
 
         },
@@ -63,7 +74,7 @@ function defineINT(size: number): StructType<number> {
                 IMPORTANT this does not work when considering little-endian numbers
             */
             if (!options.bigEndian) {
-                bits = convertBigEndianToLittleEndian(bits)
+                bits = convertLittleEndianToBigEndian(bits)
             }
 
             let val = bits.slice(1).toNumber()

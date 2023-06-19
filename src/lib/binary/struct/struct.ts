@@ -35,23 +35,23 @@ export type StructType<T extends any> = {
 export class Struct<Types extends Record<string, StructType<any>>>{
     options: StructOptions;
     order: Array<keyof Types>
-    
+
     private array: BitArray;
     private types: Types;
     private offsetCache: Partial<Record<keyof Types, number>>;
 
     constructor(types: Types, options: Partial<StructOptions> = {}) {
-        let validateError = this.validateTypes(types, options);
+        this.options = { ...STRUCT_DEFAULT_OPTIONS, ...options };
+        this.order = Object.keys(types)
+        this.types = types;
+
+        let validateError = this.validateTypes(types, this.options);
         if (validateError instanceof Error) {
             throw validateError;
         }
 
-        this.options = { ...STRUCT_DEFAULT_OPTIONS, ...options };
-        this.array = new BitArray(0, this.getMinSize());
-        this.order = Object.keys(types)
-        this.types = types;
         this.offsetCache = {};
-
+        this.array = new BitArray(0, this.getMinSize());
         if (this.options.setDefaultValues) {
             this.setDefaultValues();
         }
@@ -64,7 +64,7 @@ export class Struct<Types extends Record<string, StructType<any>>>{
     */
     private validateTypes(types: Types, _: Partial<StructOptions>): Error | null {
         for (let key in types) {
-            if (this.types[key].size < 0 && (key != this.order.at(-1))) {
+            if (types[key].size < 0 && (key != this.order.at(-1))) {
                 return new Error("cannot define struct; slice must be last value")
             }
         }
@@ -81,23 +81,20 @@ export class Struct<Types extends Record<string, StructType<any>>>{
     }
 
     private getTypeOffset<Key extends keyof Types>(key: Key): number {
-        if (this.offsetCache[key] != undefined) {
-            return this.offsetCache[key]!;
-        }
+        // if (this.offsetCache[key] != undefined) {
+        //     return this.offsetCache[key]!;
+        // }
 
         let offset = 0;
 
         for (let k of this.order) {
             if (key == k) break;
 
-            let type = this.types[key];
-            if (!type) {
+            if (!this.types[k]) {
                 throw new Error("failed to calculate offset")
             }
-
-            offset += type.size;
+            offset += this.types[k].size;
         }
-
         this.offsetCache[key] = offset;
         return offset;
     }
@@ -108,6 +105,7 @@ export class Struct<Types extends Record<string, StructType<any>>>{
         let offset = this.getTypeOffset(lastType);
 
         if (this.types[lastType].size < 0) {
+
             return offset;
         }
 
@@ -119,7 +117,7 @@ export class Struct<Types extends Record<string, StructType<any>>>{
     }
 
     set bits(bits: BitArray) {
-        if (this.bits.size < this.getMinSize()) {
+        if (bits.size < this.getMinSize()) {
             throw new Error("cannot set bits, value size mismatch")
         }
         this.array = bits;
