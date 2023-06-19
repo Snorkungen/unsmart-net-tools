@@ -4,7 +4,7 @@ import { PCAP_GLOBAL_HEADER, PCAP_PACKET_HEADER } from "../lib/packet-capture/pc
 import { SLICE, Struct, StructType, UINT16, defineStruct, defineStructType } from "../lib/binary/struct";
 import { MACAddress } from "../lib/ethernet";
 import { For } from "solid-js";
-import { Card } from "solid-bootstrap";
+import { Card, Table } from "solid-bootstrap";
 
 
 const MAC_ADDRESS = defineStructType({
@@ -66,20 +66,26 @@ export default function PacketCapture() {
                 }
             }} />
         </header>
-        <div>
-            <For each={data} >{([packetHeader, ethHeader], i) => (
-                <>
-                    {i()+ 1 }
-                    <Card text="dark">
-                        <p>Included Length: {packetHeader.get("inclLen")}</p>
-                        <p>Original Length: {packetHeader.get("origLen")}</p>
-                        <p>Source MAC Address: {ethHeader.get("smac").toString()}</p>
-                        <p>Destination MAC Address: {ethHeader.get("dmac").toString()}</p>
-                        <p>EtherType: {ethHeader.get("ethertype")}</p>
-                    </Card>
-                </>
-            )}</For>
-        </div>
+        <Table variant="dark">
+            <thead>
+                <tr>
+                    <th>No.</th>
+                    <th>Timestamp</th>
+                    <th>Source</th>
+                    <th>Destination</th>
+                </tr>
+            </thead>
+            <tbody>
+                <For each={data} >{([packetHeader, ethHeader], i) => (
+                    <tr>
+                        <td>{i() + 1}</td>
+                        <td>{new Date(packetHeader.get("tsSec") * 1000).getTime()}</td>
+                        <td>{ethHeader.get("smac").toString()}</td>
+                        <td>{ethHeader.get("dmac").toString()}</td>
+                    </tr>
+                )}</For>
+            </tbody>
+        </Table>
     </div>
 }
 
