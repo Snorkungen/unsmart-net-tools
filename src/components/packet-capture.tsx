@@ -1,13 +1,13 @@
 import { uintArrayToBitArray } from "../lib/binary/array-buffer/uint-x-array";
 import { base64_decode, base64_encode } from "../lib/binary";
 import { PCAP_GLOBAL_HEADER, PCAP_PACKET_HEADER } from "../lib/packet-capture/pcap";
-import { SLICE, Struct, StructValue, UINT16, defineStruct } from "../lib/binary/struct";
+import { SLICE, Struct, StructType, UINT16, defineStruct, defineStructType } from "../lib/binary/struct";
 import { MACAddress } from "../lib/ethernet";
 
 
-const MAC_ADDRESS = new StructValue<MACAddress>({
+const MAC_ADDRESS = defineStructType({
     size: MACAddress.address_length,
-    getter(bits, options) {
+    getter(bits) {
         return new MACAddress(bits)
     },
     setter(val) {
@@ -25,8 +25,8 @@ const ETHERNET_HEADER = defineStruct({
 function stringifyStruct(struct: Struct<any>) {
     let obj: any = {}
 
-    Object.keys(struct.values).forEach(k => {
-        obj[k] = struct.values[k].get()
+    struct.order.forEach(k => {
+        obj[k] = struct.get(k)
     })
 
     return JSON.stringify(obj, null, 2)
@@ -34,16 +34,16 @@ function stringifyStruct(struct: Struct<any>) {
 
 export default function PacketCapture() {
     let bits = base64_decode(base64EncodePCAPFile);
-    let pcapHeader = PCAP_GLOBAL_HEADER.create(bits.slice(0, PCAP_GLOBAL_HEADER.bits.size), { byteOrder: "LITTLE" })
+    let pcapHeader = PCAP_GLOBAL_HEADER.create(bits.slice(0, PCAP_GLOBAL_HEADER.bits.size), { bigEndian: false })
     let offset = PCAP_GLOBAL_HEADER.bits.size;
-    let packetHeader = PCAP_PACKET_HEADER.create(bits.slice(offset, offset + PCAP_PACKET_HEADER.bits.size), { byteOrder: "LITTLE" })
-    offset += PCAP_PACKET_HEADER.size
+    let packetHeader = PCAP_PACKET_HEADER.create(bits.slice(offset, offset + PCAP_PACKET_HEADER.bits.size), { bigEndian: false })
+    offset += PCAP_PACKET_HEADER.bits.size
     console.log(stringifyStruct(pcapHeader))
     console.log(stringifyStruct(packetHeader))
 
     // first ethernet header 
-    let ethernetHeader = ETHERNET_HEADER.create(bits.slice(offset,offset +( packetHeader.values.inclLen.get() * 8)))
-    console.log(ethernetHeader.values.smac.value.toString(), "=>",ethernetHeader.values.dmac.value.toString())
+    let ethernetHeader = ETHERNET_HEADER.create(bits.slice(offset, offset + (packetHeader.get("inclLen") * 8)))
+    console.log(ethernetHeader.get("smac").toString(), "=>", ethernetHeader.get("dmac").toString())
 
 
     return <div>

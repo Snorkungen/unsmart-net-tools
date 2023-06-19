@@ -7,206 +7,185 @@ export class StructValueError extends Error {
 }
 
 export type StructOptions = {
-    byteOrder: "BIG" | "LITTLE";
+    /** big endian is true by default if false it will be assumed that littleEndian is true */
+    bigEndian: boolean;
+    /** by default is false, if true sets the value of a type ie. that's defined in "defaultValue" */
+    setDefaultValues: boolean;
 }
 
 const STRUCT_DEFAULT_OPTIONS: StructOptions = {
-    byteOrder: "BIG",
+    bigEndian: true,
+    setDefaultValues: false,
 }
 
-export type StructValueConstructorProps<T> = {
-    defaultValue?: T
-    size: number
-    getter: (bits: BitArray, options: StructOptions) => T,
-    setter: (val: T, options: StructOptions) => BitArray
-};
-export class StructValue<T> {
-    bits: BitArray;
-    size: number;
+export type StructType<T extends any> = {
+    /** value to be set if no value is set when creating an instance of a struct, if not set struct will default to 0*/
+    defaultValue?: T;
+    /** size of the value type, either the length in bits or bytes depending on what underlying data storage solution */
+    size: number | -1;
+    /** function to be called when a struct is retrieving a value */
+    getter: (bits: BitArray, options: StructOptions) => T;
+    /** function to be called when a struct is setting a value */
+    setter: (value: T, options: StructOptions) => BitArray;
 
-    private getter: StructValueConstructorProps<T>["getter"];
-    private setter: StructValueConstructorProps<T>["setter"];
-
-    private options: StructOptions
-
-    constructor({
-        defaultValue,
-        size,
-
-        getter,
-        setter,
-    }: StructValueConstructorProps<T>, options?: Partial<StructOptions>) {
-        this.getter = getter;
-        this.setter = setter;
-        this.size = size;
-
-        // Configure options
-        this.options = {
-            ...STRUCT_DEFAULT_OPTIONS,
-            ...(options || {}),
-        };
-
-        if (this.size < 0) {
-            this.bits = new BitArray([]);
-        } else {
-            this.bits = new BitArray(0, this.size);
-        }
-
-        if (defaultValue) {
-            this.set(defaultValue);
-        }
-    }
-
-    get value(): T {
-        return this.get()
-    }
-    set value(val: T) {
-        this.set(val);
-    }
-
-    get(): T {
-        let bits = this.bits;
-        return this.getter(bits, this.options);
-    }
-
-    set(val: T): void {
-        this.bits = this.setter(val, this.options);
-    }
-
-    create(val: T): StructValue<T> {
-        return new StructValue({
-            defaultValue: val,
-            size: this.size,
-            getter: this.getter,
-            setter: this.setter,
-        }, this.options)
-    }
-
-    clone(): StructValue<T> {
-        return new StructValue<T>({
-            defaultValue: this.get(),
-            size: this.size,
-            getter: this.getter,
-            setter: this.setter,
-        }, this.options)
-    }
-
-    setOption<K extends keyof StructOptions>(key: K, value: StructOptions[K]) {
-        this.options[key] = value;
-        return this;
-    }
+    /** IDK if this is something worthwhile */
+    options?: Partial<StructOptions>
 }
 
-export class Struct<K extends Record<string, StructValue<any>>> {
-    private order: Array<keyof K>;
-    public values: K;
+export class Struct<Types extends Record<string, StructType<any>>>{
+    options: StructOptions;
+    order: Array<keyof Types>
+    
+    private array: BitArray;
+    private types: Types;
+    private offsetCache: Partial<Record<keyof Types, number>>;
 
-    private options: StructOptions;
-
-    constructor(values: K, options?: Partial<StructOptions>) {
-        // loop through values and the value to new bitArray
-        this.values = values;
-        this.order = Object.keys(values)
-
-        for (let key of this.order) {
-            if ((this.values[key] as StructValue<unknown>).size < 0) {
-                if (key != this.order.at(-1)) {
-                    throw new Error("cannot define struct; slice must be last value")
-                }
-            }
-
-            (this.values[key] as any) = this.values[key].clone();
+    constructor(types: Types, options: Partial<StructOptions> = {}) {
+        let validateError = this.validateTypes(types, options);
+        if (validateError instanceof Error) {
+            throw validateError;
         }
 
-        // Configure options
-        this.options = { ...STRUCT_DEFAULT_OPTIONS };
+        this.options = { ...STRUCT_DEFAULT_OPTIONS, ...options };
+        this.array = new BitArray(0, this.getMinSize());
+        this.order = Object.keys(types)
+        this.types = types;
+        this.offsetCache = {};
 
-        // Configure options of values
-        if (!options) return;
-        for (let k in options) {
-            if (!options[k as keyof StructOptions]) {
-                continue
-            }
-            this.setOption(k as keyof StructOptions, options[k as keyof StructOptions] as unknown as any)
+        if (this.options.setDefaultValues) {
+            this.setDefaultValues();
         }
     }
 
-    /** return the minimum size of the struct */
-    get size(): number {
-        let size = 0;
-        for (let key of this.order) {
-            let val = this.values[key];
-            if (val.size < 0) {
-                break;
+    /**
+     * RULES: (1) variable length value-types must be the last value.
+     * @param types 
+     * @param options 
+    */
+    private validateTypes(types: Types, _: Partial<StructOptions>): Error | null {
+        for (let key in types) {
+            if (this.types[key].size < 0 && (key != this.order.at(-1))) {
+                return new Error("cannot define struct; slice must be last value")
             }
-            size += val.size;
         }
-        return size;
+
+        return null;
     }
 
-    get bits() {
-        let bits: BitArray = new BitArray([]);
+    private setDefaultValues() {
         for (let key of this.order) {
-            let val = this.values[key];
-            bits.splice(bits.size, 0, val.bits)
+            if (this.types[key].defaultValue) {
+                this.set(key, this.types[key]!.defaultValue);
+            }
         }
-
-        return bits;
     }
 
-    private set bits(bits: BitArray) {
-        if (bits.size < this.bits.size) {
-            throw new Error("Bits does not match struct")
+    private getTypeOffset<Key extends keyof Types>(key: Key): number {
+        if (this.offsetCache[key] != undefined) {
+            return this.offsetCache[key]!;
         }
 
         let offset = 0;
-        for (let key of this.order) {
-            let val = this.values[key], size = val.size;
 
-            if (size < 0) {
-                this.values[key].bits = bits.slice(offset);
-                return;
+        for (let k of this.order) {
+            if (key == k) break;
+
+            let type = this.types[key];
+            if (!type) {
+                throw new Error("failed to calculate offset")
             }
 
-            this.values[key].bits = bits.slice(offset, offset + size);
-            offset += size;
+            offset += type.size;
         }
+
+        this.offsetCache[key] = offset;
+        return offset;
     }
 
-    create(values: Partial<{ [x in keyof K]: K[x] }> | BitArray, options?: Partial<StructOptions>) {
-        let struct = new Struct(this.values, options);
+    getMinSize(): number {
+        let lastType = this.order.at(-1);
+        if (!lastType) return 0;
+        let offset = this.getTypeOffset(lastType);
+
+        if (this.types[lastType].size < 0) {
+            return offset;
+        }
+
+        return offset + this.types[lastType].size;
+    }
+
+    get bits(): BitArray {
+        return this.array;
+    }
+
+    set bits(bits: BitArray) {
+        if (this.bits.size < this.getMinSize()) {
+            throw new Error("cannot set bits, value size mismatch")
+        }
+        this.array = bits;
+    }
+
+    get<Key extends keyof Types>(key: Key): ReturnType<Types[Key]["getter"]> {
+        let offset = this.getTypeOffset(key), size = this.types[key].size;
+        let bits: BitArray;
+
+        if (size < 0) {
+            // value is a slice
+            bits = this.bits.slice(offset);
+        } else {
+            bits = this.bits.slice(offset, offset + size);
+        }
+
+        return this.types[key].getter(bits, this.options);
+    }
+
+    set<Key extends keyof Types>(key: Key, value: ReturnType<Types[Key]["getter"]> | BitArray) {
+        let offset = this.getTypeOffset(key), size = this.types[key].size;
+        let bits: BitArray;
+
+        if (value instanceof BitArray) {
+            bits = value;
+        } else {
+            bits = this.types[key].setter(value, this.options);
+        }
+
+        // due to the size being variable the deleteCount has to be calculated
+        let deleteCount: number;
+
+        if (size < 0) {
+            // cheat due to the knowledge that variabel length values MUST always be last
+            deleteCount = this.bits.size - offset;
+        } else {
+            // do a sanity check, check that the bit size is what is expected due to me splicing in bits
+            if (bits.size != size) {
+                throw new Error("cannot set value, value missmatch");
+            }
+            deleteCount = size
+        }
+
+        this.bits.splice(offset, deleteCount, bits);
+
+        return bits.size;
+    }
+
+    create<TypeValues extends { [x in keyof Types]: ReturnType<Types[x]["getter"]> }>(values: Partial<TypeValues> | BitArray, options: Partial<StructOptions> = {}) {
+        let struct = new Struct(this.types, { ...this.options, ...options });
 
         if (values instanceof BitArray) {
             struct.bits = values;
-            return struct;
-        }
-
-        for (let key in values) {
-            if (!values[key]) {
-                continue
+        } else {
+            for (let key in values) {
+                if (values[key]) struct.set(key, values[key]!);
             }
-
-            if (struct.values[key].size < 0) {
-
-            } else if (struct.values[key].bits.size != values[key]!.bits.size) {
-                throw new StructValueError("value mismatch", values[key])
-            }
-
-            struct.values[key].bits = values[key]!.bits
         }
 
-        return struct
-    }
-
-    setOption<K extends keyof StructOptions>(key: K, value: StructOptions[K]) {
-        this.options[key] = value;
-        for (let vkey of this.order) {
-            this.values[vkey].setOption(key, value);
-        }
-        return this;
+        return struct;
     }
 }
 
-export function defineStruct<K extends Record<string, StructValue<any>>>(input: K) {
-    return new Struct<K>(input)
+export function defineStruct<Types extends Record<string, StructType<any>>>(input: Types) {
+    return new Struct<Types>(input)
+}
+export function defineStructType<T extends any>(input: StructType<T>) {
+    return input
 }

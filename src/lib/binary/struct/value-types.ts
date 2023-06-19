@@ -1,24 +1,13 @@
 import { BitArray } from "../binary";
-import { StructValue, StructValueError } from "./struct";
-
-export const SLICE = new StructValue<BitArray>({
-    defaultValue: new BitArray([]),
-    size: -1,
-    getter(bits) {
-        return bits
-    },
-    setter(bits) {
-        return bits
-    }
-})
+import { StructValueError, defineStructType, StructType } from "./struct";
 
 function convertBigEndianToLittleEndian(bits: BitArray): BitArray {
     let input = bits.toString(16).match(/.{1,2}/g)?.reverse().join("") || "";
     return new BitArray(0, bits.size).or(new BitArray(input, 16))
 }
 
-function defineUINT(size: number): StructValue<number> {
-    return new StructValue<number>({
+function defineUINT(size: number): StructType<number> {
+    return defineStructType({
         size: size,
         setter(v) {
             if (v == Infinity) {
@@ -34,7 +23,7 @@ function defineUINT(size: number): StructValue<number> {
             return new BitArray(0, this.size).or(valBits);
         },
         getter(bits, options) {
-            if (options.byteOrder == "LITTLE") {
+            if (!options.bigEndian) {
                 bits = convertBigEndianToLittleEndian(bits)
             }
 
@@ -43,8 +32,8 @@ function defineUINT(size: number): StructValue<number> {
     })
 };
 
-function defineINT(size: number): StructValue<number> {
-    return new StructValue<number>({
+function defineINT(size: number): StructType<number> {
+    return defineStructType<number>({
         size,
         setter(v) {
             let signedBitValue: 0 | 1 = 0;
@@ -73,7 +62,7 @@ function defineINT(size: number): StructValue<number> {
             /*
                 IMPORTANT this does not work when considering little-endian numbers
             */
-            if (options.byteOrder == "LITTLE") {
+            if (!options.bigEndian) {
                 bits = convertBigEndianToLittleEndian(bits)
             }
 
@@ -94,3 +83,14 @@ export const INT8 = defineINT(8);
 export const INT16 = defineINT(16);
 export const INT32 = defineINT(32);
 export const INT64 = defineINT(64);
+
+export const SLICE = defineStructType({
+    defaultValue: new BitArray([]),
+    size: -1,
+    getter(bits) {
+        return bits
+    },
+    setter(bits) {
+        return bits
+    }
+})
