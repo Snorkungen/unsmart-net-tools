@@ -21,7 +21,17 @@ describe("Struct behaves, like expected", () => {
             uint2: UINT8(2),
             int2: INT8(2),
         })
+        
         expect(struct.getMinSize()).toEqual(4);
+
+        expect(() => defineStruct({
+            flags: UINT16(3),
+            fragOffset: UINT16(13),
+        })).not.toThrow();
+
+        expect(UINT8.size).toBe(8)
+
+        expect(UINT8.getter == UINT8(2).getter).toEqual(true)
     })
 
     test("create Struct #1", () => {

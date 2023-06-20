@@ -191,7 +191,6 @@ export function defineStructType<T extends any>(input: StructType<T>) {
             throw new Error(`cannot define, bitWidth "${bitWidth}" is larger than type size "${input.size}".`)
         }
 
-        input.size = bitWidth;
-        return input
+        return { ...input, size: bitWidth }
     }, input)
 }
