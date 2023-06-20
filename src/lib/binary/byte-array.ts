@@ -27,14 +27,14 @@ export class ByteArray {
         }
     }
 
-    get size(): number {
+    get byteCount(): number {
         return this.array.length;
     }
     /**
     * NOTE! overwrites data
     */
-    set size(size: number) {
-        this.array = new Uint8Array(size)
+    set byteCount(byteCount: number) {
+        this.array = new Uint8Array(byteCount)
     }
 
     slice(start?: number | undefined, end?: number | undefined) {
@@ -51,7 +51,7 @@ export class ByteArray {
     splice(start: number, deleteCount: number, ...items: ByteArray[]): ByteArray {
         let firstHalf = this.array.slice(0, start),
             deleted = this.array.slice(start, start + deleteCount),
-            lastHalf = this.array.slice(start + deleteCount );
+            lastHalf = this.array.slice(start + deleteCount);
 
         let arrays = items.map(({ array }) => array)
         arrays.unshift(firstHalf), arrays.push(lastHalf);
@@ -70,7 +70,7 @@ export class ByteArray {
         return new ByteArray(deleted);
     }
 
-    concat (...items: ByteArray[]) : ByteArray {
+    concat(...items: ByteArray[]): ByteArray {
         let arrays = items.map(({ array }) => array)
         arrays.unshift(this.array);
         let array = new Uint8Array(arrays.reduce((sum, { length }) => sum + length, 0));
@@ -87,14 +87,55 @@ export class ByteArray {
 
 
     // Bit_Wise operation
+    or(byteArray: ByteArray): ByteArray {
+        let byteCount = Math.max(this.byteCount, byteArray.byteCount),
+            array = new Uint8Array(byteCount),
+            diff = this.byteCount - byteArray.byteCount;
 
-    // or(): IByteArray
-    // xor(): IByteArray
-    // and(): IByteArray
-    // not(): IByteArray
+        if (diff > 0) for (let i = array.length; i >= 0; i--) { // this.size is larger than bitArray.size
+            array[i] = this.array[i] | byteArray.array[i - diff];
+        } else for (let i = array.length - 1; i >= 0; i--) { // this.size is smaller than bitArray.size
+            array[i] = this.array[i + diff] | byteArray.array[i];
+        }
 
-    // lShift(): IByteArray;
-    // rShift(): IByteArray;
+        return new ByteArray(array);
+    }
+
+    xor(byteArray: ByteArray): ByteArray {
+        let byteCount = Math.max(this.byteCount, byteArray.byteCount),
+            array = new Uint8Array(byteCount),
+            diff = this.byteCount - byteArray.byteCount;
+
+        if (diff > 0) for (let i = array.length; i >= 0; i--) { // this.size is larger than bitArray.size
+            array[i] = this.array[i] ^ byteArray.array[i - diff];
+        } else for (let i = array.length - 1; i >= 0; i--) { // this.size is smaller than bitArray.size
+            array[i] = this.array[i + diff] ^ byteArray.array[i];
+        }
+
+        return new ByteArray(array);
+    }
+
+    and(byteArray: ByteArray): ByteArray {
+        let byteCount = Math.max(this.byteCount, byteArray.byteCount),
+            array = new Uint8Array(byteCount),
+            diff = this.byteCount - byteArray.byteCount;
+
+        if (diff > 0) for (let i = array.length; i >= 0; i--) { // this.size is larger than bitArray.size
+            array[i] = this.array[i] & byteArray.array[i - diff];
+        } else for (let i = array.length - 1; i >= 0; i--) { // this.size is smaller than bitArray.size
+            array[i] = this.array[i + diff] & byteArray.array[i];
+        }
+
+        return new ByteArray(array);
+    }
+
+    not(): ByteArray {
+        let array = this.array.slice();
+        for (let i = 0; i < array.length; i++) {
+            array[i] = ~this.array[i]
+        }
+        return new ByteArray(array);
+    }
 
     toNumber() {
         return parseInt(this.toString(16), 16)
@@ -103,7 +144,7 @@ export class ByteArray {
     toString(radix: 2 | 16 = 16): string {
         let hexString = "";
         for (let v of this.array) {
-            hexString += v.toString(16)
+            hexString += v.toString(16).padStart(2, "0")
         }
 
         switch (radix) {
