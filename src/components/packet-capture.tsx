@@ -7,6 +7,7 @@ import { For } from "solid-js";
 import { AddressV4 } from "../lib/ip/v4";
 import { ETHER_TYPES } from "../lib/ethernet/types";
 import { PROTOCOLS } from "../lib/ip/packet/protocols";
+import { IPV4_HEADER } from "../lib/ip/packet";
 
 
 const MAC_ADDRESS = defineStructType({
@@ -25,33 +26,6 @@ const ETHERNET_HEADER = defineStruct({
     ethertype: UINT16,
     payload: SLICE
 })
-
-const IPV4_ADDRESS = defineStructType({
-    size: AddressV4.address_length,
-    getter(bits) {
-        return new AddressV4(bits)
-    },
-    setter(val) {
-        return val.bits
-    }
-})
-
-
-const IPV4_HEADER = defineStruct({
-    version: UINT8(4),
-    ihl: UINT8(4),
-    tos: UINT8,
-    len: UINT16,
-    id: UINT16,
-    flags: UINT16(3),
-    fragOffset: UINT16(13),
-    ttl: UINT8,
-    proto: UINT8,
-    csum: UINT16,
-    saddr: IPV4_ADDRESS,
-    daddr: IPV4_ADDRESS,
-})
-
 function stringifyStruct(struct: Struct<any>) {
     let obj: any = {}
 
