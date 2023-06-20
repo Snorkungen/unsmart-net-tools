@@ -1,10 +1,12 @@
 import { uintArrayToBitArray } from "../lib/binary/array-buffer/uint-x-array";
 import { base64_decode, base64_encode } from "../lib/binary";
 import { PCAP_GLOBAL_HEADER, PCAP_PACKET_HEADER } from "../lib/packet-capture/pcap";
-import { SLICE, Struct, StructType, UINT16, defineStruct, defineStructType } from "../lib/binary/struct";
+import { SLICE, Struct, UINT16, UINT32, UINT8, defineStruct, defineStructType } from "../lib/binary/struct";
 import { MACAddress } from "../lib/ethernet";
 import { For } from "solid-js";
-import { Card, Table } from "solid-bootstrap";
+import { AddressV4 } from "../lib/ip/v4";
+import { ETHER_TYPES } from "../lib/ethernet/types";
+import { PROTOCOLS } from "../lib/ip/packet/protocols";
 
 
 const MAC_ADDRESS = defineStructType({
@@ -22,6 +24,32 @@ const ETHERNET_HEADER = defineStruct({
     smac: MAC_ADDRESS,
     ethertype: UINT16,
     payload: SLICE
+})
+
+const IPV4_ADDRESS = defineStructType({
+    size: AddressV4.address_length,
+    getter(bits) {
+        return new AddressV4(bits)
+    },
+    setter(val) {
+        return val.bits
+    }
+})
+
+
+const IPV4_HEADER = defineStruct({
+    version: UINT8(4),
+    ihl: UINT8(4),
+    tos: UINT8,
+    len: UINT16,
+    id: UINT16,
+    flags: UINT16(3),
+    fragOffset: UINT16(13),
+    ttl: UINT8,
+    proto: UINT8,
+    csum: UINT16,
+    saddr: IPV4_ADDRESS,
+    daddr: IPV4_ADDRESS,
 })
 
 function stringifyStruct(struct: Struct<any>) {
@@ -51,6 +79,31 @@ export default function PacketCapture() {
 
     console.log(data)
 
+    type TableEntry = {
+        timestamp: Date;
+        source: { toString: () => string };
+        destination: { toString: () => string };
+        protocol: string;
+    }
+    const getKeyByValue = (obj: Record<string, number>, value: number) => Object.keys(obj).find(key => obj[key] === value) ?? "";
+    let tableEntries = data.map(([packetHeader, ethHeader],) => {
+        let entry: TableEntry = {
+            timestamp: new Date((packetHeader.get("tsSec") + (packetHeader.get("tsUsec") / 1_000_000)) * 1000),
+            source: ethHeader.get("smac"),
+            destination: ethHeader.get("dmac"),
+            protocol: getKeyByValue(ETHER_TYPES, ethHeader.get("ethertype"))
+        }
+
+        if (ethHeader.get("ethertype") == ETHER_TYPES.IPv4) {
+            let ipHeader = IPV4_HEADER.create(ethHeader.get("payload").slice(0, -UINT32.size));
+            entry.source = ipHeader.get("saddr");
+            entry.destination = ipHeader.get("daddr");
+            entry.protocol = getKeyByValue(PROTOCOLS, ipHeader.get("proto"))
+        }
+
+        return entry
+    })
+
     return <div>
         <header>
             <h1>Packet Capture</h1>
@@ -66,26 +119,28 @@ export default function PacketCapture() {
                 }
             }} />
         </header>
-        <Table variant="dark">
+        <table>
             <thead>
                 <tr>
                     <th>No.</th>
                     <th>Timestamp</th>
                     <th>Source</th>
                     <th>Destination</th>
+                    <th>Protocol</th>
                 </tr>
             </thead>
             <tbody>
-                <For each={data} >{([packetHeader, ethHeader], i) => (
+                <For each={tableEntries} >{({ timestamp, source, destination, protocol }, i) => (
                     <tr>
                         <td>{i() + 1}</td>
-                        <td>{new Date(packetHeader.get("tsSec") * 1000).getTime()}</td>
-                        <td>{ethHeader.get("smac").toString()}</td>
-                        <td>{ethHeader.get("dmac").toString()}</td>
+                        <td>{timestamp.toJSON()}</td>
+                        <td>{source.toString()}</td>
+                        <td>{destination.toString()}</td>
+                        <td>{protocol}</td>
                     </tr>
                 )}</For>
             </tbody>
-        </Table>
+        </table>
     </div>
 }
 

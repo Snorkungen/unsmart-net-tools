@@ -1,3 +1,5 @@
+$color-1: #191919;
+
 form {
 
     section {
@@ -23,7 +25,9 @@ form {
         margin-left: 0.1em;
     }
 
-    input[type="text"], input[type="number"], select {
+    input[type="text"],
+    input[type="number"],
+    select {
         padding: 0.3rem;
         width: 100%;
     }
@@ -31,4 +35,17 @@ form {
 
 .text-center {
     text-align: center;
+}
+
+table {
+    width: 100%;
+
+    tr {
+        border-bottom-width: 0.2em;
+    }
+
+    tr>* {
+        text-align: center;
+        padding: 0.4em 0;
+    }
 }
