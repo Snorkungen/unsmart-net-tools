@@ -7,8 +7,8 @@ function convertLittleEndianToBigEndian(bits: BitArray): BitArray {
 }
 const convertBigEndianToLittleEndian = convertLittleEndianToBigEndian;
 
-function defineUINT(size: number): StructType<number> {
-    return defineStructType({
+function defineUINT(size: number) {
+    return defineStructType<number>({
         size: size,
         setter(v, options) {
             if (v == Infinity) {
@@ -38,7 +38,7 @@ function defineUINT(size: number): StructType<number> {
     })
 };
 
-function defineINT(size: number): StructType<number> {
+function defineINT(size: number) {
     return defineStructType<number>({
         size,
         setter(v, options) {

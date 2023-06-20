@@ -4,12 +4,24 @@ import { BitArray } from "../../lib/binary";
 
 
 describe("Struct behaves, like expected", () => {
-    test("define Struct", () => {
-
+    test("define Struct #1", () => {
         expect(() => defineStruct({
             slice: SLICE,
             uint: UINT64
         })).toThrow()
+    })
+
+    test("define Struct #2", () => {
+        expect(() => defineStruct({
+            uint: UINT64,
+            slice: SLICE(21)
+        })).toThrow();
+
+        let struct = defineStruct({
+            uint2: UINT8(2),
+            int2: INT8(2),
+        })
+        expect(struct.getMinSize()).toEqual(4);
     })
 
     test("create Struct #1", () => {
