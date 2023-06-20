@@ -81,9 +81,9 @@ export class Struct<Types extends Record<string, StructType<any>>>{
     }
 
     private getTypeOffset<Key extends keyof Types>(key: Key): number {
-        // if (this.offsetCache[key] != undefined) {
-        //     return this.offsetCache[key]!;
-        // }
+        if (this.offsetCache[key] != undefined) {
+            return this.offsetCache[key]!;
+        }
 
         let offset = 0;
 
