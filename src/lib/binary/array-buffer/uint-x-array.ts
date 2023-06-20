@@ -1,4 +1,4 @@
-import { BitArray } from "../binary";
+import { BitArray } from "../bit-array";
 
 export function uintArrayToBitArray(array: Uint8Array | Uint16Array | Uint32Array) {
     let bits = new BitArray([]);

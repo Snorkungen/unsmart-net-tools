@@ -1,4 +1,4 @@
-import { BitArray } from "../binary"
+import { BitArray } from "../bit-array"
 
 export class StructValueError extends Error {
     constructor(message: string, public value: unknown) {

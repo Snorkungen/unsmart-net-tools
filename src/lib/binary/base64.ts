@@ -1,4 +1,4 @@
-import { BitArray } from "./binary";
+import { BitArray } from "./bit-array";
 
 // SOURCE <https://datatracker.ietf.org/doc/html/rfc4648#section-4>
 const TABLE = [

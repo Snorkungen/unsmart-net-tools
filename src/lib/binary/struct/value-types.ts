@@ -1,4 +1,4 @@
-import { BitArray } from "../binary";
+import { BitArray } from "../bit-array";
 import { StructValueError, defineStructType, StructType } from "./struct";
 
 function convertLittleEndianToBigEndian(bits: BitArray): BitArray {
