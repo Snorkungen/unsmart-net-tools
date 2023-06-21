@@ -87,6 +87,8 @@ export default function PacketCapture() {
                 reader.readAsArrayBuffer(file)
                 reader.onloadend = () => {
                     let arr = new Uint8Array(reader.result as ArrayBuffer)
+                    let buf = Buffer.from(reader.result as ArrayBuffer)
+                    console.log(buf)
                     let bits = uintArrayToBitArray(arr)
                     console.log(base64_encode(bits))
                     // console.log(arr)
