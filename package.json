@@ -12,6 +12,7 @@
   },
   "license": "MIT",
   "devDependencies": {
+    "@vitest/coverage-c8": "^0.32.2",
     "jsdom": "^21.1.1",
     "typescript": "^5.0.4",
     "vite": "^4.1.1",
