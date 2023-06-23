@@ -1,14 +1,15 @@
+import { BitArray } from "../../binary"
 import { defineStructType, defineStruct, UINT8, UINT16, UINT32 } from "../../binary/struct"
 import { AddressV4 } from "../v4"
 import { AddressV6 } from "../v6"
 
 const IPV4_ADDRESS = defineStructType({
-    size: AddressV4.address_length,
-    getter(bits) {
-        return new AddressV4(bits)
+    bitLength: AddressV4.address_length,
+    getter(buffer) {
+        return new AddressV4(new BitArray(buffer.toString("hex"), 16))
     },
     setter(val) {
-        return val.bits
+        return Buffer.from(val.bits.toString(16), "hex")
     }
 })
 
@@ -28,12 +29,12 @@ export const IPV4_HEADER = defineStruct({
 });
 
 const IPV6_ADDRESS = defineStructType({
-    size: AddressV6.address_length,
-    getter(bits) {
-        return new AddressV6(bits);
+    bitLength: AddressV6.address_length,
+    getter(buffer) {
+        return new AddressV6(new BitArray(buffer.toString("hex"), 16));
     },
-    setter (value) {
-        return value.bits;
+    setter(value) {
+        return Buffer.from(value.bits.toString(16), "hex")
     }
 })
 

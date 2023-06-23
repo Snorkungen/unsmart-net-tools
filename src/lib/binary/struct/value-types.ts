@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import { StructValueError, defineStructType } from ".";
 
 function defineUINT(bitLength: number) {

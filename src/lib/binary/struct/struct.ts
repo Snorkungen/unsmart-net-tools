@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import { mutateAnd, mutateLeftShift, mutateNot, mutateOr, mutateRightShift } from "../buffer-bitwise";
 
 export class StructValueError extends Error {
