@@ -133,6 +133,10 @@ export class Struct<Types extends Record<string, StructType<any>>>{
         return Math.ceil(this.getMinBitSize() / 8);
     }
 
+    get size () {
+        return this.buffer.length;
+    }
+
     private createMask(
         size: number,
         firstByteBitOffset: number,
@@ -165,13 +169,14 @@ export class Struct<Types extends Record<string, StructType<any>>>{
             buf = this.buffer.subarray(startIndex, endIndex);
         }
 
+        buf = Buffer.from(buf)
+        
         if (!this.options.bigEndian) {
             // reverse the byte order
             buf = buf.reverse()
         }
         
         if (this.options.packed && bitLength >= 0) {
-            buf = Buffer.from(buf)
 
             let firstByteBitOffset = bitOffset - (startIndex * 8)
             let lastByteBitOffset = (endIndex * 8) - (startIndex * 8) - firstByteBitOffset - bitLength;
@@ -231,7 +236,7 @@ export class Struct<Types extends Record<string, StructType<any>>>{
         let struct = new Struct(this.types, { ...this.options, ...options });
 
         if (values instanceof Buffer) {
-            struct.buffer = values;
+            struct.buffer = Buffer.from(values);
         } else {
             for (let key in values) {
                 if (values[key]) struct.set(key, values[key]!);
