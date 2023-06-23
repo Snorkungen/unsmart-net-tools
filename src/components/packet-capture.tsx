@@ -107,6 +107,8 @@ export default function PacketCapture() {
                         entry.sport = udpHdr.get("sport")
                         entry.dport = udpHdr.get("dport")
                     }
+
+                    entry.protocol += "->" + getKeyByValue(PROTOCOLS, contentIPHdr.get("proto"))
                 } else if (icmpHdr.get("type") == ICMPV4_TYPES.DESTINATION_UNREACHABLE) {
                     console.info(getKeyByValue(ICMPV4_CODES[ICMPV4_TYPES.DESTINATION_UNREACHABLE], icmpHdr.get("code")))
                 }

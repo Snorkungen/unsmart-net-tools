@@ -14,6 +14,9 @@ export const defineAddress = <AT extends typeof BaseAddress>(Address: AT) => {
 
 export class BaseAddress {
     static ADDRESS_LENGTH = 0;
+    static parse(input: string): Buffer {
+        throw new Error("Not Implemented!")
+    }
 
     buffer: Buffer;
 
@@ -22,10 +25,6 @@ export class BaseAddress {
     }
 
     toString(): string {
-        throw new Error("Not Implemented!")
-    }
-
-    static parse(input: string): Buffer {
         throw new Error("Not Implemented!")
     }
 } 

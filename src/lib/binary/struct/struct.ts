@@ -1,4 +1,4 @@
-import { Buffer } from "buffer";
+import { Buffer } from "buffer"; window.Buffer = Buffer;
 import { mutateAnd, mutateLeftShift, mutateNot, mutateOr, mutateRightShift } from "../buffer-bitwise";
 
 export class StructValueError extends Error {
@@ -133,7 +133,7 @@ export class Struct<Types extends Record<string, StructType<any>>>{
         return Math.ceil(this.getMinBitSize() / 8);
     }
 
-    get size () {
+    get size() {
         return this.buffer.length;
     }
 
@@ -169,23 +169,23 @@ export class Struct<Types extends Record<string, StructType<any>>>{
             buf = this.buffer.subarray(startIndex, endIndex);
         }
         buf = Buffer.from(buf)
-        
+
         if (!this.options.bigEndian) {
             // reverse the byte order
             buf = buf.reverse()
         }
-        
+
         if (this.options.packed && bitLength >= 0) {
-            
+
             let firstByteBitOffset = bitOffset - (startIndex * 8)
             let lastByteBitOffset = (endIndex * 8) - (startIndex * 8) - firstByteBitOffset - bitLength;
             let mask = this.createMask(buf.length, firstByteBitOffset, lastByteBitOffset);
-            
+
             mutateNot(mask)
             mutateAnd(buf, mask);
             mutateRightShift(buf, lastByteBitOffset)
         }
-       
+
         return this.types[key].getter(buf, this.options);
     }
 
@@ -236,6 +236,10 @@ export class Struct<Types extends Record<string, StructType<any>>>{
         let struct = new Struct(this.types, { ...this.options, ...options });
 
         if (values instanceof Buffer) {
+            if (values.length < this.getMinSize()) {
+                // here should maybe throw error if the bytes do not fill struct
+                // throw new Error("too few bytes to satisfy struct. " + `${values.length} < ${this.getMinSize()}`)
+            }
             struct.buffer = Buffer.from(values);
         } else {
             for (let key in values) {

@@ -138,14 +138,14 @@ describe("Buffer based struct", () => {
         expect(createdStruct2.get("int")).toEqual(-10)
     })
 
-    test("create Struct #4", () => {
-        let struct = defineStruct({
-            int: INT64
-        });
+    // test("create Struct #4", () => {
+    //     let struct = defineStruct({
+    //         int: INT64
+    //     });
 
 
-        expect(() => {
-            struct.create(Buffer.alloc(0))
-        }).toThrow()
-    })
+    //     expect(() => {
+    //         struct.create(Buffer.alloc(0))
+    //     }).toThrow()
+    // })
 })

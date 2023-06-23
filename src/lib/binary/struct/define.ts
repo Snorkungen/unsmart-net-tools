@@ -1,4 +1,3 @@
-import { Buffer } from "buffer";
 import { Struct, StructType } from "."
 
 export function defineStruct<Types extends Record<string, StructType<any>>>(input: Types) {
