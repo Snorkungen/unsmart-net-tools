@@ -1,22 +1,11 @@
 import { BitArray, base64_decode, base64_encode } from "../lib/binary";
 import { PCAP_GLOBAL_HEADER, PCAP_PACKET_HEADER } from "../lib/packet-capture/pcap";
 import { SLICE, Struct, UINT16, UINT32, UINT8, defineStruct, defineStructType } from "../lib/binary/struct";
-import { MACAddress } from "../lib/ethernet";
 import { For } from "solid-js";
 import { ETHER_TYPES } from "../lib/ethernet/types";
 import { PROTOCOLS } from "../lib/ip/packet/protocols";
 import { IPV4_HEADER } from "../lib/ip/packet";
-
-
-const MAC_ADDRESS = defineStructType<MACAddress>({
-    bitLength: MACAddress.address_length,
-    getter(buffer) {
-        return new MACAddress(new BitArray(buffer.toString("hex"), 16))
-    },
-    setter(val) {
-        return Buffer.from(val.bits.toString(16))
-    }
-})
+import { MAC_ADDRESS } from "../lib/address/mac";
 
 const ETHERNET_HEADER = defineStruct({
     dmac: MAC_ADDRESS,
@@ -45,7 +34,7 @@ export default function PacketCapture() {
         let ethHeader = ETHERNET_HEADER.create(buffer.subarray(offset, offset += (packetHeader.get("inclLen"))));
 
         data.push([packetHeader, ethHeader])
-
+        
     }
 
     type TableEntry = {

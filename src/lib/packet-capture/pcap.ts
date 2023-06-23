@@ -31,3 +31,7 @@ export const PCAP_PACKET_HEADER = defineStruct({
     /** actial length of packet */
     origLen: UINT32
 })
+export const PCAP_RECORD_HEADER = PCAP_PACKET_HEADER;
+
+const PCAP_MAGIC_NUMBER = 0xd4c3b2a1;
+const PCAP_MAGIC_NUMBER_LITTLE = 0xa1b2c3d4;
