@@ -168,7 +168,6 @@ export class Struct<Types extends Record<string, StructType<any>>>{
         } else {
             buf = this.buffer.subarray(startIndex, endIndex);
         }
-
         buf = Buffer.from(buf)
         
         if (!this.options.bigEndian) {
@@ -177,15 +176,16 @@ export class Struct<Types extends Record<string, StructType<any>>>{
         }
         
         if (this.options.packed && bitLength >= 0) {
-
+            
             let firstByteBitOffset = bitOffset - (startIndex * 8)
             let lastByteBitOffset = (endIndex * 8) - (startIndex * 8) - firstByteBitOffset - bitLength;
             let mask = this.createMask(buf.length, firstByteBitOffset, lastByteBitOffset);
-
+            
             mutateNot(mask)
             mutateAnd(buf, mask);
             mutateRightShift(buf, lastByteBitOffset)
         }
+       
         return this.types[key].getter(buf, this.options);
     }
 

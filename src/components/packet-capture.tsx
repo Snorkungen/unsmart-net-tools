@@ -1,16 +1,14 @@
-import { uintArrayToBitArray } from "../lib/binary/array-buffer/uint-x-array";
 import { BitArray, base64_decode, base64_encode } from "../lib/binary";
 import { PCAP_GLOBAL_HEADER, PCAP_PACKET_HEADER } from "../lib/packet-capture/pcap";
 import { SLICE, Struct, UINT16, UINT32, UINT8, defineStruct, defineStructType } from "../lib/binary/struct";
 import { MACAddress } from "../lib/ethernet";
 import { For } from "solid-js";
-import { AddressV4 } from "../lib/ip/v4";
 import { ETHER_TYPES } from "../lib/ethernet/types";
 import { PROTOCOLS } from "../lib/ip/packet/protocols";
 import { IPV4_HEADER } from "../lib/ip/packet";
 
 
-const MAC_ADDRESS = defineStructType({
+const MAC_ADDRESS = defineStructType<MACAddress>({
     bitLength: MACAddress.address_length,
     getter(buffer) {
         return new MACAddress(new BitArray(buffer.toString("hex"), 16))
@@ -30,30 +28,25 @@ function stringifyStruct(struct: Struct<any>) {
     let obj: any = {}
 
     struct.order.forEach(k => {
-        obj[k] = struct.get(k)
+        obj[k] = struct.get(k) + ""
     })
 
     return JSON.stringify(obj, null, 2)
 }
 
 export default function PacketCapture() {
-    let buffer = Buffer.from(hexEncodePCAPFile, "hex")
-    let pcapHeader = PCAP_GLOBAL_HEADER.create(buffer.slice(0, PCAP_GLOBAL_HEADER.getMinSize()), { bigEndian: false })
-    let offset = PCAP_GLOBAL_HEADER.getMinSize();
-
-    console.log(stringifyStruct(pcapHeader))
+    let buffer = Buffer.from(hexEncodePCAPFile, "hex");
+    let offset = 0;
+    let pcapHeader = PCAP_GLOBAL_HEADER.create(buffer.subarray(offset, offset += PCAP_GLOBAL_HEADER.size), { bigEndian: false, packed: false })
 
     let data: Array<[typeof PCAP_PACKET_HEADER, typeof ETHERNET_HEADER]> = [];
-
     while (offset < buffer.length) {
-        let packetHeader = PCAP_PACKET_HEADER.create(buffer.slice(offset, offset += PCAP_PACKET_HEADER.getMinSize()), { bigEndian: false })
-        let ethHeader = ETHERNET_HEADER.create(buffer.slice(offset, offset += (packetHeader.get("inclLen"))));
+        let packetHeader = PCAP_PACKET_HEADER.create(buffer.subarray(offset, offset += PCAP_PACKET_HEADER.getMinSize()), { bigEndian: false, packed: false })
+        let ethHeader = ETHERNET_HEADER.create(buffer.subarray(offset, offset += (packetHeader.get("inclLen"))));
 
         data.push([packetHeader, ethHeader])
-        
-    }
 
-    // console.log(data)
+    }
 
     type TableEntry = {
         timestamp: Date;
@@ -70,11 +63,9 @@ export default function PacketCapture() {
             protocol: getKeyByValue(ETHER_TYPES, ethHeader.get("ethertype"))
         }
 
-        console.log(ethHeader)
-
         if (ethHeader.get("ethertype") == ETHER_TYPES.IPv4) {
             let ipHeader = IPV4_HEADER.create(ethHeader.get("payload").subarray(0, -(UINT32.bitLength / 8)));
-            console.log(stringifyStruct(ipHeader))
+    
             entry.source = ipHeader.get("saddr");
             entry.destination = ipHeader.get("daddr");
             entry.protocol = getKeyByValue(PROTOCOLS, ipHeader.get("proto"))
@@ -91,10 +82,8 @@ export default function PacketCapture() {
                 let reader = new FileReader()
                 reader.readAsArrayBuffer(file)
                 reader.onloadend = () => {
-                    let arr = new Uint8Array(reader.result as ArrayBuffer)
                     let buf = Buffer.from(reader.result as ArrayBuffer)
                     console.log(buf.toString("hex"))
-                
                     // console.log(arr)
                 }
             }} />

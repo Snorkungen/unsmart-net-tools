@@ -174,7 +174,7 @@ function numberToArrayOfBooleans(num: number): BitArray["array"] {
 }
 
 function hexStringToArrayOfBooleans(hexString: string) {
-    let bitString = parseInt(hexString, 16).toString(2);
+    let bitString = parseInt(hexString, 16).toString(2).padStart(hexString.length * 4, "0");
     return bitStringToArrayOfBooleans(bitString);
 }
 
