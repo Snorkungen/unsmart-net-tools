@@ -1,4 +1,4 @@
-import { and, leftShift, mutateAnd, mutateLeftShift, mutateNot, mutateOr, mutateRightShift, mutateXor, not, or, rightShift, xor } from "../buffer-bitwise";
+import { mutateAnd, mutateLeftShift, mutateNot, mutateOr, mutateRightShift } from "../buffer-bitwise";
 
 export class StructValueError extends Error {
     constructor(message: string, public value: unknown) {
@@ -30,21 +30,18 @@ export type StructType<T extends any> = {
     getter: (buf: Buffer, options: StructOptions) => T;
     /** function to be called when a struct is setting a value */
     setter: (value: T, options: StructOptions) => Buffer;
-
-    /** IDK if this is something worthwhile */
-    options?: Partial<StructOptions>
 }
 
 export class Struct<Types extends Record<string, StructType<any>>>{
     order: Array<keyof Types>
 
-    private _options: StructOptions;
+    private options: StructOptions;
     private buffer: Buffer;
     private types: Types;
     private offsetCache: Partial<Record<keyof Types, number>>;
 
     constructor(types: Types, options: Partial<StructOptions> = {}) {
-        this._options = { ...STRUCT_DEFAULT_OPTIONS, ...options };
+        this.options = { ...STRUCT_DEFAULT_OPTIONS, ...options };
         this.order = Object.keys(types)
         this.types = types;
         this.offsetCache = {};
@@ -56,6 +53,9 @@ export class Struct<Types extends Record<string, StructType<any>>>{
 
         this.buffer = Buffer.alloc(this.getMinSize());
 
+        if (this.options.setDefaultValues) {
+            this.setDefaultValues();
+        }
     }
 
     /**
@@ -107,6 +107,15 @@ export class Struct<Types extends Record<string, StructType<any>>>{
         return offset;
     }
 
+    private setDefaultValues() {
+        for (let key in this.order) {
+            if (this.types[key].defaultValue === undefined) {
+                continue
+            }
+            this.set(key, this.types[key].defaultValue);
+        }
+    }
+
     getMinBitSize(): number {
         let lastType = this.order.at(-1);
         if (!lastType) return 0;
@@ -121,24 +130,6 @@ export class Struct<Types extends Record<string, StructType<any>>>{
 
     getMinSize(): number {
         return Math.ceil(this.getMinBitSize() / 8);
-    }
-
-    get options() {
-        return this._options;
-    }
-    private set options(options: StructOptions) {
-        this._options = options;
-    }
-
-    get buf(): Buffer {
-        return this.buffer;
-    }
-    set buf(buffer: Buffer) {
-        if (buffer.length < this.getMinSize()) {
-            throw new Error("cannot set bits, value size mismatch")
-        }
-
-        this.buffer = buffer;
     }
 
     private createMask(
@@ -177,8 +168,7 @@ export class Struct<Types extends Record<string, StructType<any>>>{
             // reverse the byte order
             buf = buf.reverse()
         }
-
-        // if (key == "flags") console.log(buf)
+        
         if (this.options.packed && bitLength >= 0) {
             buf = Buffer.from(buf)
 
@@ -204,7 +194,7 @@ export class Struct<Types extends Record<string, StructType<any>>>{
         }
 
         if (bitLength > 0 && (buf.length > Math.ceil(bitLength / 8) || parseInt(buf.toString("hex"), 16) >= 2 ** bitLength)) {
-            console.log(key,bitLength)
+            console.log(key, bitLength)
             throw new StructValueError("value does not fit in bits", value)
         }
 
@@ -240,7 +230,7 @@ export class Struct<Types extends Record<string, StructType<any>>>{
         let struct = new Struct(this.types, { ...this.options, ...options });
 
         if (values instanceof Buffer) {
-            struct.buf = values;
+            struct.buffer = values;
         } else {
             for (let key in values) {
                 if (values[key]) struct.set(key, values[key]!);
@@ -249,18 +239,4 @@ export class Struct<Types extends Record<string, StructType<any>>>{
 
         return struct;
     }
-}
-
-export function defineStruct<Types extends Record<string, StructType<any>>>(input: Types) {
-    return new Struct<Types>(input)
-}
-export function defineStructType<T extends any>(input: StructType<T>) {
-    return Object.assign((bitLength: number) => {
-
-        if (input.bitLength < bitLength) {
-            throw new Error(`cannot define, bitLength "${bitLength}" is larger than type size "${input.bitLength}".`)
-        }
-
-        return { ...input, bitLength: bitLength }
-    }, input)
 }
