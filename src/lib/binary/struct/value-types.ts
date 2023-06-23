@@ -1,15 +1,8 @@
-import { BitArray } from "../bit-array";
-import { StructValueError, defineStructType, StructType } from "./struct";
+import { StructValueError, defineStructType } from ".";
 
-function convertLittleEndianToBigEndian(bits: BitArray): BitArray {
-    let input = bits.toString(16).match(/.{1,2}/g)?.reverse().join("") || "";
-    return new BitArray(0, bits.size).or(new BitArray(input, 16))
-}
-const convertBigEndianToLittleEndian = convertLittleEndianToBigEndian;
-
-function defineUINT(size: number) {
+function defineUINT(bitLength: number) {
     return defineStructType<number>({
-        size: size,
+        bitLength: bitLength,
         setter(v, options) {
             if (v == Infinity) {
                 throw new StructValueError("value is infinity", v)
@@ -17,31 +10,26 @@ function defineUINT(size: number) {
             if (v < 0) {
                 throw new StructValueError("value must be positive!", v)
             }
-            let bits = new BitArray(0, this.size).or(new BitArray(v));
-            if (bits.size > this.size) {
+            if (v >= 2 ** this.bitLength) {
                 throw new StructValueError("value does not fit in bits", v)
             }
 
-            if (!options.bigEndian) {
-                bits = convertBigEndianToLittleEndian(bits)
-            }
-
-            return bits;
+            return Buffer.from(v.toString(16).padStart(Math.ceil(this.bitLength / 8) * 2, "0"), "hex");
         },
-        getter(bits, options) {
-            if (!options.bigEndian) {
-                bits = convertLittleEndianToBigEndian(bits)
-            }
-
-            return bits.toNumber()
+        getter(buf, options) {
+            return parseInt(buf.toString("hex"), 16)
         }
     })
 };
 
-function defineINT(size: number) {
+function defineINT(bitLength: number) {
     return defineStructType<number>({
-        size,
+        bitLength: bitLength,
         setter(v, options) {
+            if (v == Infinity) {
+                throw new StructValueError("value is infinity", v)
+            }
+
             let signedBitValue: 0 | 1 = 0;
 
             if (v < 0) {
@@ -49,41 +37,29 @@ function defineINT(size: number) {
                 signedBitValue = 1;
             }
 
-            if (v == Infinity) {
-                throw new StructValueError("value is infinity", v)
-            }
+            let valBuf = Buffer.from(v.toString(16).padStart(Math.ceil(this.bitLength / 8) * 2, "0"), "hex");
 
-            let valBits = new BitArray(v);
-            if (valBits.size > this.size - 1) {
+            if (v >= 2 ** (this.bitLength - 1)) {
                 throw new StructValueError("value does not fit in bits", v)
             }
 
-            let bits = new BitArray(0, this.size);
-            // set signed bit
-            bits.splice(0, 1, new BitArray(signedBitValue));
-
-            if (!options.bigEndian) {
-                return convertBigEndianToLittleEndian(bits.or(valBits))
+            if (signedBitValue == 1) {
+                valBuf[0] = valBuf[0] | 0x80;
             }
 
-            return bits.or(valBits);
-
+            return valBuf;
         },
-        getter(bits, options) {
-            /*
-                IMPORTANT this does not work when considering little-endian numbers
-            */
-            if (!options.bigEndian) {
-                bits = convertLittleEndianToBigEndian(bits)
+        getter(buf, options) {
+            let mod = 1;
+            if (buf[0] & 0x80) {
+                buf[0] = buf[0] ^ 0x80;
+                mod = -1;
             }
 
-            let val = bits.slice(1).toNumber()
-            let signedBitValue: 0 | 1 = bits.slice(0, 1).toString(2) == "0" ? 0 : 1;
-            if (signedBitValue == 0) return val;
-            else return val * -1;
-        },
+            return parseInt(buf.toString("hex"), 16) * mod;
+        }
     })
-}
+};
 
 export const UINT8 = defineUINT(8);
 export const UINT16 = defineUINT(16);
@@ -95,13 +71,13 @@ export const INT16 = defineINT(16);
 export const INT32 = defineINT(32);
 export const INT64 = defineINT(64);
 
-export const SLICE = defineStructType({
-    defaultValue: new BitArray([]),
-    size: -1,
-    getter(bits) {
-        return bits
+export const SLICE = defineStructType<Buffer>({
+    defaultValue: Buffer.alloc(0),
+    bitLength: -1,
+    getter(buf) {
+        return buf
     },
-    setter(bits) {
-        return bits
+    setter(buf) {
+        return buf
     }
 })

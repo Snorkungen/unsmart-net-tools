@@ -1,4 +1,4 @@
-import { Struct, StructType } from "./buffer.struct"
+import { Struct, StructType } from "."
 
 export function defineStruct<Types extends Record<string, StructType<any>>>(input: Types) {
     return new Struct<Types>(input)

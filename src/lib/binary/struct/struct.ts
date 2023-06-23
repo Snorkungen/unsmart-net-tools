@@ -1,4 +1,4 @@
-import { BitArray } from "../bit-array"
+import { mutateAnd, mutateLeftShift, mutateNot, mutateOr, mutateRightShift } from "../buffer-bitwise";
 
 export class StructValueError extends Error {
     constructor(message: string, public value: unknown) {
@@ -11,32 +11,32 @@ export type StructOptions = {
     bigEndian: boolean;
     /** by default is false, if true sets the value of a type ie. that's defined in "defaultValue" */
     setDefaultValues: boolean;
+    /** by default is true, if true the struct will fit the values into as few bytes as possible */
+    packed: boolean;
 }
 
 const STRUCT_DEFAULT_OPTIONS: StructOptions = {
     bigEndian: true,
     setDefaultValues: false,
+    packed: true
 }
 
 export type StructType<T extends any> = {
     /** value to be set if no value is set when creating an instance of a struct, if not set struct will default to 0*/
     defaultValue?: T;
-    /** size of the value type, either the length in bits or bytes depending on what underlying data storage solution */
-    size: number | -1;
+    /** bitLength of the value type, determines how many bits the value  contain */
+    bitLength: number | -1;
     /** function to be called when a struct is retrieving a value */
-    getter: (bits: BitArray, options: StructOptions) => T;
+    getter: (buf: Buffer, options: StructOptions) => T;
     /** function to be called when a struct is setting a value */
-    setter: (value: T, options: StructOptions) => BitArray;
-
-    /** IDK if this is something worthwhile */
-    options?: Partial<StructOptions>
+    setter: (value: T, options: StructOptions) => Buffer;
 }
 
 export class Struct<Types extends Record<string, StructType<any>>>{
-    options: StructOptions;
     order: Array<keyof Types>
 
-    private array: BitArray;
+    private options: StructOptions;
+    private buffer: Buffer;
     private types: Types;
     private offsetCache: Partial<Record<keyof Types, number>>;
 
@@ -44,43 +44,45 @@ export class Struct<Types extends Record<string, StructType<any>>>{
         this.options = { ...STRUCT_DEFAULT_OPTIONS, ...options };
         this.order = Object.keys(types)
         this.types = types;
+        this.offsetCache = {};
 
-        let validateError = this.validateTypes(types, this.options);
+        let validateError = this.validateTypes();
         if (validateError instanceof Error) {
             throw validateError;
         }
 
-        this.offsetCache = {};
-        this.array = new BitArray(0, this.getMinSize());
+        this.buffer = Buffer.alloc(this.getMinSize());
+
         if (this.options.setDefaultValues) {
             this.setDefaultValues();
         }
     }
 
     /**
-     * RULES: (1) variable length value-types must be the last value.
+     * RULES: (1) total bitLength MUST be a multiple of 8. (2) variable length value-types MUST be the last value.
      * @param types 
      * @param options 
     */
-    private validateTypes(types: Types, _: Partial<StructOptions>): Error | null {
-        for (let key in types) {
-            if (types[key].size < 0 && (key != this.order.at(-1))) {
+    private validateTypes(): Error | null {
+
+        for (let key in this.types) {
+            if (this.types[key].bitLength < 0 && (key != this.order.at(-1))) {
                 return new Error("cannot define struct; slice must be last value")
             }
+        }
+
+        if (this.getMinBitSize() % 8 !== 0) {
+            return new Error("cannot define struct; total bitLength MUST be a multiple of 8")
         }
 
         return null;
     }
 
-    private setDefaultValues() {
-        for (let key of this.order) {
-            if (this.types[key].defaultValue) {
-                this.set(key, this.types[key]!.defaultValue);
-            }
-        }
-    }
-
-    private getTypeOffset<Key extends keyof Types>(key: Key): number {
+    /**
+     * @param key 
+     * @returns the bit offset for value-type
+     */
+    private getTypeBitOffset<Key extends keyof Types>(key: Key): number {
         if (this.offsetCache[key] != undefined) {
             return this.offsetCache[key]!;
         }
@@ -93,84 +95,142 @@ export class Struct<Types extends Record<string, StructType<any>>>{
             if (!this.types[k]) {
                 throw new Error("failed to calculate offset")
             }
-            offset += this.types[k].size;
+
+            if (this.options.packed) {
+                offset += this.types[k].bitLength;
+            } else {
+                // set offset to nearest multiple of 8;
+                offset += Math.ceil(this.types[k].bitLength / 8) * 8;
+            }
         }
         this.offsetCache[key] = offset;
         return offset;
     }
 
-    getMinSize(): number {
+    private setDefaultValues() {
+        for (let key in this.order) {
+            if (this.types[key].defaultValue === undefined) {
+                continue
+            }
+            this.set(key, this.types[key].defaultValue);
+        }
+    }
+
+    getMinBitSize(): number {
         let lastType = this.order.at(-1);
         if (!lastType) return 0;
-        let offset = this.getTypeOffset(lastType);
 
-        if (this.types[lastType].size < 0) {
-
-            return offset;
+        let bitOffset = this.getTypeBitOffset(lastType);
+        if (this.types[lastType].bitLength < 0) {
+            return bitOffset;
         }
 
-        return offset + this.types[lastType].size;
+        return bitOffset + this.types[lastType].bitLength;
     }
 
-    get bits(): BitArray {
-        return this.array;
+    getMinSize(): number {
+        return Math.ceil(this.getMinBitSize() / 8);
     }
 
-    set bits(bits: BitArray) {
-        if (bits.size < this.getMinSize()) {
-            throw new Error("cannot set bits, value size mismatch")
+    private createMask(
+        size: number,
+        firstByteBitOffset: number,
+        lastByteBitOffset: number
+    ): Buffer {
+        let mask = Buffer.alloc(size);
+
+        // calculate first byte bit offset
+        if (firstByteBitOffset > 0) {
+            mask[0] = (2 ** firstByteBitOffset) - 1 << 8 - firstByteBitOffset;
         }
-        this.array = bits;
+
+        if (lastByteBitOffset > 0) {
+            mask[mask.length - 1] = mask[mask.length - 1] | (2 ** lastByteBitOffset) - 1;
+        }
+
+        return mask;
     }
 
     get<Key extends keyof Types>(key: Key): ReturnType<Types[Key]["getter"]> {
-        let offset = this.getTypeOffset(key), size = this.types[key].size;
-        let bits: BitArray;
+        let bitOffset = this.getTypeBitOffset(key), bitLength = this.types[key].bitLength;
+        let buf: Buffer;
 
-        if (size < 0) {
-            // value is a slice
-            bits = this.bits.slice(offset);
+        let startIndex = Math.floor(bitOffset / 8);
+        let endIndex = Math.ceil((bitOffset + bitLength) / 8);
+
+        if (bitLength < 0) {
+            buf = this.buffer.subarray(startIndex);
         } else {
-            bits = this.bits.slice(offset, offset + size);
+            buf = this.buffer.subarray(startIndex, endIndex);
         }
 
-        return this.types[key].getter(bits, this.options);
+        if (!this.options.bigEndian) {
+            // reverse the byte order
+            buf = buf.reverse()
+        }
+        
+        if (this.options.packed && bitLength >= 0) {
+            buf = Buffer.from(buf)
+
+            let firstByteBitOffset = bitOffset - (startIndex * 8)
+            let lastByteBitOffset = (endIndex * 8) - (startIndex * 8) - firstByteBitOffset - bitLength;
+            let mask = this.createMask(buf.length, firstByteBitOffset, lastByteBitOffset);
+
+            mutateNot(mask)
+            mutateAnd(buf, mask);
+            mutateRightShift(buf, lastByteBitOffset)
+        }
+        return this.types[key].getter(buf, this.options);
     }
 
-    set<Key extends keyof Types>(key: Key, value: ReturnType<Types[Key]["getter"]> | BitArray) {
-        let offset = this.getTypeOffset(key), size = this.types[key].size;
-        let bits: BitArray;
+    set<Key extends keyof Types>(key: Key, value: ReturnType<Types[Key]["getter"]> | Buffer) {
+        let bitOffset = this.getTypeBitOffset(key), bitLength = this.types[key].bitLength;
+        let buf: Buffer;
 
-        if (value instanceof BitArray) {
-            bits = value;
+        if (value instanceof Buffer) {
+            buf = value;
         } else {
-            bits = this.types[key].setter(value, this.options);
+            buf = this.types[key].setter(value, this.options);
         }
 
-        // due to the size being variable the deleteCount has to be calculated
-        let deleteCount: number;
-
-        if (size < 0) {
-            // cheat due to the knowledge that variabel length values MUST always be last
-            deleteCount = this.bits.size - offset;
-        } else {
-            // do a sanity check, check that the bit size is what is expected due to me splicing in bits
-            if (bits.size != size) {
-                throw new Error("cannot set value, value missmatch");
-            }
-            deleteCount = size
+        if (bitLength > 0 && (buf.length > Math.ceil(bitLength / 8) || parseInt(buf.toString("hex"), 16) >= 2 ** bitLength)) {
+            console.log(key, bitLength)
+            throw new StructValueError("value does not fit in bits", value)
         }
 
-        this.bits.splice(offset, deleteCount, bits);
+        if (!this.options.bigEndian && !(value instanceof Buffer)) {
+            // reverse the byte order
+            buf = buf.reverse()
+        }
 
-        return bits.size;
+        let startIndex = Math.floor(bitOffset / 8), endIndex = Math.ceil((bitOffset + bitLength) / 8);
+        if (this.options.packed && bitLength >= 0) {
+
+            let prevBuf = this.buffer.subarray(startIndex, endIndex)
+
+            let firstByteBitOffset = bitOffset - (startIndex * 8)
+            let lastByteBitOffset = (endIndex * 8) - (startIndex * 8) - firstByteBitOffset - bitLength;
+            let mask = this.createMask(buf.length, firstByteBitOffset, lastByteBitOffset);
+
+            mutateAnd(mask, prevBuf);
+            mutateLeftShift(buf, lastByteBitOffset);
+            mutateOr(buf, mask)
+        }
+
+        if (bitLength < 0) {
+            let newBuf = Buffer.alloc(this.getMinSize() + buf.length);
+            this.buffer.copy(newBuf);
+            this.buffer = newBuf;
+        }
+
+        this.buffer.set(buf, startIndex);
     }
 
-    create<TypeValues extends { [x in keyof Types]: ReturnType<Types[x]["getter"]> }>(values: Partial<TypeValues> | BitArray, options: Partial<StructOptions> = {}) {
+    create<TypeValues extends { [x in keyof Types]: ReturnType<Types[x]["getter"]> }>(values: Partial<TypeValues> | Buffer, options: Partial<StructOptions> = {}) {
         let struct = new Struct(this.types, { ...this.options, ...options });
 
-        if (values instanceof BitArray) {
-            struct.bits = values;
+        if (values instanceof Buffer) {
+            struct.buffer = values;
         } else {
             for (let key in values) {
                 if (values[key]) struct.set(key, values[key]!);
@@ -179,18 +239,4 @@ export class Struct<Types extends Record<string, StructType<any>>>{
 
         return struct;
     }
-}
-
-export function defineStruct<Types extends Record<string, StructType<any>>>(input: Types) {
-    return new Struct<Types>(input)
-}
-export function defineStructType<T extends any>(input: StructType<T>) {
-    return Object.assign((bitWidth: number) => {
-
-        if (input.size < bitWidth) {
-            throw new Error(`cannot define, bitWidth "${bitWidth}" is larger than type size "${input.size}".`)
-        }
-
-        return { ...input, size: bitWidth }
-    }, input)
 }
