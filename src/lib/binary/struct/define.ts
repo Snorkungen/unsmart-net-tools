@@ -1,4 +1,4 @@
-import { Struct, StructType } from "."
+import { Struct, StructType } from "./struct"
 
 export function defineStruct<Types extends Record<string, StructType<any>>>(input: Types) {
     return new Struct<Types>(input)
