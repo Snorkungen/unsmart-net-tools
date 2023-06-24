@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { BaseAddress, defineAddress } from "../../lib/address/address";
+import { BaseAddress, defineAddress } from "../../lib/address/base";
 
 
 describe("Base Address", () => {

@@ -1,4 +1,4 @@
-import { BaseAddress, defineAddress } from "./address";
+import { BaseAddress, defineAddress } from "./base";
 
 const POSSIBLE_SEPARATOR = ["-", ":", "."] as const;
 const SEPARATOR_REGEX = new RegExp(`[${POSSIBLE_SEPARATOR.join("")}]`, "ig");

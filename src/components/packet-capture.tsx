@@ -5,7 +5,7 @@ import { ETHER_TYPES } from "../lib/ethernet/types";
 import { PROTOCOLS } from "../lib/ip/packet/protocols";
 import { MAC_ADDRESS } from "../lib/address/mac";
 import { IPV4_ADDRESS } from "../lib/address/ipv4";
-import { BaseAddress } from "../lib/address/address";
+import { BaseAddress } from "../lib/address/base";
 import { ICMPV4_CODES, ICMPV4_TYPES } from "../lib/ip/v4/icmp";
 
 const ETHERNET_HEADER = defineStruct({
