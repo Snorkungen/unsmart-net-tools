@@ -1,5 +1,5 @@
 import { describe, test, expect } from "vitest";
-import { IPV4Address, calculateSubnetIPV4 } from "../../lib/address/ipv4";
+import { IPV4Address, calculateSubnetIPV4, IPV4_CLASS_A, IPV4_CLASS_B, IPV4_CLASS_C, classifyIPV4Address } from "../../lib/address/ipv4";
 import { createMask } from "../../lib/address/mask";
 
 describe("IPV4 Address", () => {
@@ -47,6 +47,29 @@ describe("IPV4 Address", () => {
             expect(subnet.hosts.count).eq(2);
             expect(subnet.hosts.min.toString()).eq("192.168.0.41");
             expect(subnet.hosts.max.toString()).eq("192.168.0.42");
+        })
+    })
+
+    describe("Classify IPV4 Address", () => {
+        test("Classify IPV4 Address #C", () => {
+            let address = new IPV4Address("192.168.0.2")
+            let c = classifyIPV4Address(address);
+
+            expect(c == IPV4_CLASS_C).eq(true);
+        })
+
+        test("Classify IPV4 Address #B", () => {
+            let address = new IPV4Address("172.16.0.1")
+            let c = classifyIPV4Address(address);
+
+            expect(c == IPV4_CLASS_B).eq(true);
+        })
+
+        test("Classify IPV4 Address #A", () => {
+            let address = new IPV4Address("10.0.0.1")
+            let c = classifyIPV4Address(address);
+
+            expect(c == IPV4_CLASS_A).eq(true);
         })
     })
 })
