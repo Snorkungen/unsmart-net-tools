@@ -1,152 +1,161 @@
 import { Component, createSignal, For, JSX } from "solid-js";
-import { AddressV4, calculateSubnetV4, ClassAddressV4, classesV4, reservedAddresses, SubnetMaskV4, validateDotNotated } from "../lib/ip/v4";
-import { BitArray } from "../lib/binary";
+import { calculateSubnetIPV4, classifyIPV4Address, IPV4_CLASSESS, IPV4Address, IPV4AddressClass, reservedAddresses } from "../lib/address/ipv4";
+import { AddressMask, createMask } from "../lib/address/mask";
+import { mutateOr } from "../lib/binary/buffer-bitwise";
 
-const privateUseAddresses = reservedAddresses.filter(([, , scope]) => scope == "PRIVATE_USE").map(([addr]) => new AddressV4(addr));
-const defaultSubnet = calculateSubnetV4({
-    address: new AddressV4("192.168.76.2"),
-    mask: new SubnetMaskV4(26)
-})
+const privateUseAddresses = reservedAddresses.filter(([, , scope]) => scope == "PRIVATE_USE");
+const defaultSubnetParams: Parameters<typeof calculateSubnetIPV4> = [new IPV4Address("192.168.76.2"), createMask(IPV4Address, 26)]
 
-function getState(options: Parameters<typeof calculateSubnetV4>[0]) {
-    let subnet = calculateSubnetV4(options);
-
+function getState(...params: Parameters<typeof calculateSubnetIPV4>) {
+    let subnet = calculateSubnetIPV4(...params),
+        addressClass = classifyIPV4Address(subnet.address);
     return {
         ...subnet,
-        subnetBits: subnet.mask.length - subnet.address.class.networkBitCount,
-        subnetBitOptions: new Array(AddressV4.address_length - subnet.address.class.networkBitCount - 1).fill(1).map((_, i) => i),
+        subnetBits: subnet.mask.length - addressClass.networkBitCount,
+        subnetBitOptions: new Array(IPV4Address.ADDRESS_LENGTH - addressClass.networkBitCount - 1).fill(1).map((_, i) => i),
         maskBits: subnet.mask.length,
-        maskBitOptions: new Array(AddressV4.address_length - subnet.address.class.networkBitCount - 1).fill(1).map((_, i) => i + subnet.address.class.networkBitCount),
-        maxSubnets: 2 ** (subnet.mask.length - subnet.address.class.networkBitCount),
-        maxSubnetOptions: new Array(AddressV4.address_length - subnet.address.class.networkBitCount - 1).fill(0).map((_, i) => 2 ** i),
-        hostOptions: new Array(subnet.address.class.hostBitCount - 1).fill(0).map((_, i) => 2 ** (i + 2) - 2),
+        maskBitOptions: new Array(IPV4Address.ADDRESS_LENGTH - addressClass.networkBitCount - 1).fill(1).map((_, i) => i + addressClass.networkBitCount),
+        maxSubnets: 2 ** (subnet.mask.length - addressClass.networkBitCount),
+        maxSubnetOptions: new Array(IPV4Address.ADDRESS_LENGTH - addressClass.networkBitCount - 1).fill(0).map((_, i) => 2 ** i),
+        hostOptions: new Array(addressClass.hostBitCount - 1).fill(0).map((_, i) => 2 ** (i + 2) - 2),
     }
 }
 
 type CalcState = ReturnType<typeof getState>;
 
-function getSubnetBasedOnClass(classV4: ClassAddressV4) {
-    let privateUseAddress = privateUseAddresses.find((addr) => addr.class == classV4);
-    if (!privateUseAddress) throw new Error("no address found for class: " + classV4.name);
-    return {
-        address: new AddressV4(privateUseAddress.bits.or(new BitArray(1))),
-        mask: new SubnetMaskV4(classV4.networkBitCount)
-    }
+function getSubnetParamsBasedOnClass(addrClass: IPV4AddressClass): Parameters<typeof calculateSubnetIPV4> {
+    let privateUseAddress = privateUseAddresses.find(([addr]) => classifyIPV4Address(new IPV4Address(addr)) == addrClass);
+    if (!privateUseAddress) throw new Error("no address found for class: " + addrClass.name);
+
+    let address = new IPV4Address(privateUseAddress[0]);
+    address.buffer[3] = address.buffer[3] | 1
+
+    return [
+        address,
+        createMask(IPV4Address, addrClass.networkBitCount)
+    ]
 }
 
-const CalculatorSubnetV4: Component = () => {
-    const [state, setState] = createSignal(getState(defaultSubnet), {
-        "equals": false
-    })
+export const CalculatorSubnetIPV4: Component = () => {
+    const [state, setState] = createSignal<CalcState>(getState(...defaultSubnetParams))
 
-    const handleNetworkClass: JSX.EventHandlerUnion<HTMLInputElement, InputEvent> = (event) => {
-        let classV4 = classesV4.find(({ name }) => name == event.currentTarget.value);
-        if (!classV4) return;
+    const handleNetworkClass: JSX.EventHandler<HTMLInputElement, InputEvent> = (event) => {
+        let addressClass = IPV4_CLASSESS.find(c => c.name == event.currentTarget.value);
+        if (!addressClass) return;
 
-        setState(getState(getSubnetBasedOnClass(classV4)));
+        setState(getState(...getSubnetParamsBasedOnClass(addressClass)));
     }
 
-    const handleAddress: JSX.EventHandlerUnion<HTMLInputElement, InputEvent> = (event) => {
+    const handleAddress: JSX.EventHandler<HTMLInputElement, InputEvent> = (event) => {
         let dotNotated = event.currentTarget.value;
-        if (!validateDotNotated(dotNotated)) return; // address is invalid
+        if (!IPV4Address.validate(dotNotated)) return; // addres is invalid
 
-        setState((prev) => {
-            let address = new AddressV4(dotNotated)
+        setState(prev => {
+            let address = new IPV4Address(dotNotated);
+            let addrClass = classifyIPV4Address(address),
+                prevAddrClass = classifyIPV4Address(prev.address);
 
-            // test if address is in the same class
-            if (address.class == prev.address.class) {
-                // Same class just update address
-                return getState({ address, mask: prev.mask })
+            if (addrClass == prevAddrClass) {
+                return getState(address, prev.mask);
             } else {
-                let { mask } = getSubnetBasedOnClass(address.class)
-                return getState({ mask, address })
+                let [, mask] = getSubnetParamsBasedOnClass(addrClass);
+                return getState(address, mask);
             }
         })
     }
 
-    const setSubnetWithNewMask = (mask: SubnetMaskV4, transformer?: (state: ReturnType<typeof getState>) => ReturnType<typeof getState>) => {
+    const setSubnetWithNewMask = (mask: AddressMask<typeof IPV4Address>, transformer?: (state: CalcState) => CalcState) => {
         // if mask is for the wrong class 
         if (mask.length < 8) throw new Error("given mask is invalid" + mask)
 
-        setState((prev) => {
+        setState(prev => {
             let state: CalcState;
-            if (mask.length >= prev.address.class.networkBitCount) {
-                state = getState({ mask, address: prev.address })
+            let addrClass = classifyIPV4Address(prev.address);
+            if (mask.length >= addrClass.networkBitCount) {
+                state = getState(prev.address, mask);
             } else {
                 // get appropriate class for mask 
-                let classV4 = classesV4.filter(({ networkBitCount }) => networkBitCount <= mask.length).at(-1)!;
-                let { address } = getSubnetBasedOnClass(classV4);
-                state = getState({ address, mask })
-                return state;
+                addrClass = IPV4_CLASSESS.filter(({ networkBitCount }) => networkBitCount <= mask.length).at(-1)!;
+                let [address] = getSubnetParamsBasedOnClass(addrClass);
+                state = getState(address, mask);
             }
 
-            if (transformer) {
-                return transformer(state)
-            }
-            return state
+            if (transformer) return transformer(state);
+            return state;
         })
     }
 
-    const handleMask: JSX.EventHandlerUnion<HTMLInputElement, InputEvent> = (event) => {
+    const handleMask: JSX.EventHandler<HTMLInputElement, InputEvent> = (event) => {
         let dotNotated = event.currentTarget.value;
-        if (!validateDotNotated(dotNotated)) return; // address is invalid
-        let mask = new SubnetMaskV4(dotNotated);
+        if (!IPV4Address.validate(dotNotated)) return; // address is invalid
 
-        if (mask.length < 8) {
+        let mask = createMask(IPV4Address, dotNotated, false);
+        if (mask.length < 8 || !mask.isValid()) {
             // mask is invalid
             return;
         }
-        setSubnetWithNewMask(mask)
+        setSubnetWithNewMask(mask);
     }
 
-    const handleSubnetBits: JSX.EventHandlerUnion<HTMLSelectElement, Event> = (event) => {
+    const handleSubnetBits: JSX.EventHandler<HTMLSelectElement, Event> = event => {
         let subnetBits = Number(event.currentTarget.value);
-        if (isNaN(subnetBits)) return; // invalid value
-        let mask = new SubnetMaskV4(state().address.class.networkBitCount + subnetBits);
-        setSubnetWithNewMask(mask)
+        if (isNaN(subnetBits)) return;
+        let addrClass = classifyIPV4Address(state().address);
+        let mask = createMask(IPV4Address, subnetBits + addrClass.networkBitCount);
+        setSubnetWithNewMask(mask);
     }
 
-    const handleMaskBits: JSX.EventHandlerUnion<HTMLSelectElement, Event> = (event) => {
+    const handleMaskBits: JSX.EventHandler<HTMLSelectElement, Event> = event => {
         let maskBits = Number(event.currentTarget.value);
-        if (isNaN(maskBits)) return // invalid value
-        let mask = new SubnetMaskV4(maskBits);
-        setSubnetWithNewMask(mask)
+        if (isNaN(maskBits)) return;
+        let mask = createMask(IPV4Address, maskBits);
+        setSubnetWithNewMask(mask);
     }
 
-    const handleMaxSubnets: JSX.EventHandlerUnion<HTMLSelectElement, Event> = (event) => {
+    const handleMaxSubnets: JSX.EventHandler<HTMLSelectElement, Event> = event => {
         let maxSubnets = Number(event.currentTarget.value);
-        if (isNaN(maxSubnets)) return // invalid value
+        if (isNaN(maxSubnets)) return;
         // 2**x = maxSubnets || log(maxSubnets) / log(2) = x
         let subnetBits = Math.ceil(Math.log(maxSubnets) / Math.log(2));
-        let mask = new SubnetMaskV4(state().address.class.networkBitCount + subnetBits);
-        setSubnetWithNewMask(mask)
+        let addrClass = classifyIPV4Address(state().address);
+        let mask = createMask(IPV4Address, subnetBits + addrClass.networkBitCount);
+        setSubnetWithNewMask(mask);
     }
 
-    const handleHosts: JSX.EventHandlerUnion<HTMLInputElement, InputEvent> = (event) => {
+    const handleHosts: JSX.EventHandler<HTMLInputElement, Event> = event => {
         let hosts = event.currentTarget.valueAsNumber;
-        if (isNaN(hosts) || hosts < 1 || hosts > 2 ** (32 - 8) - 2) return;
-
+        if (isNaN(hosts) || hosts < 1 || hosts > 2 ** (IPV4Address.ADDRESS_LENGTH - 8) - 2) return;
         // 2**x - 2  = hosts || log(hosts + 2) / log(2) = x
         let hostBits = Math.ceil(Math.log(hosts + 2) / Math.log(2));
-        if (2 ** hostBits - 2 == 2 ** (AddressV4.address_length - state().mask.length) - 2) {
-            return
+        if (2 ** hostBits - 2 == 2 ** (IPV4Address.ADDRESS_LENGTH - state().mask.length)) {
+            return;
         }
-        let maskBits = AddressV4.address_length - hostBits;
-        let mask = new SubnetMaskV4(maskBits);
+        let maskBits = IPV4Address.ADDRESS_LENGTH - hostBits;
+        let mask = createMask(IPV4Address, maskBits);
         setSubnetWithNewMask(mask, (s) => {
             s.hosts.count = hosts;
             return s;
-        })
+        });
     }
 
     // Easter egg
     // randomize the adress keep within subnet
     const randomizeAddress = () => {
         setState(prev => {
-            let hostBits = AddressV4.address_length - prev.mask.length;
-            let n = Math.round(Math.random() * (2 ** hostBits - 2))
-            prev.address = new AddressV4(prev.address.bits.xor(new BitArray(n)))
-            return prev;
+            let hostBits = IPV4Address.ADDRESS_LENGTH - prev.mask.length;
+            let n = Math.round(Math.random() * (2 ** hostBits - 2));
+
+            let nbuf = Buffer.from(n.toString(16), "hex"),
+                buffer = Buffer.alloc(IPV4Address.ADDRESS_LENGTH / 8);
+            buffer.set(nbuf, buffer.length - nbuf.length);
+
+            mutateOr(buffer, prev.mask.mask(prev.address).buffer);
+            if (buffer[3] == 0) buffer[3] = buffer[3] | 1;
+
+            return {
+                ...prev,
+                address: new IPV4Address(buffer)
+            };
         })
     }
 
@@ -159,7 +168,7 @@ const CalculatorSubnetV4: Component = () => {
                     <legend>Network Class</legend>
                     <section>
                         {
-                            classesV4.map((val, i) => (
+                            IPV4_CLASSESS.map((val, i) => (
                                 <label>
                                     {val.name}
                                     <input
@@ -167,7 +176,7 @@ const CalculatorSubnetV4: Component = () => {
                                         type="radio"
                                         value={val.name}
                                         name="class"
-                                        checked={val === state().address.class}
+                                        checked={val === classifyIPV4Address(state().address)}
                                     /*
                                      If classes D & E were added i'd need to disable the due to no private addresses for that class 
                                      */
@@ -188,7 +197,7 @@ const CalculatorSubnetV4: Component = () => {
                     <input type="text" name="mask" list="subnet-mask-list" value={state().mask.toString()} onInput={handleMask} />
                     <datalist id="subnet-mask-list">
                         <For each={state().maskBitOptions}>{(bits) => (
-                            <option value={new SubnetMaskV4(bits).toString()} />
+                            <option value={createMask(IPV4Address, bits).toString()} />
                         )}</For>
                     </datalist>
                 </fieldset>
@@ -245,7 +254,7 @@ const CalculatorSubnetV4: Component = () => {
             <section>
                 <fieldset>
                     <legend>Host Address Range</legend>
-                    <input class="text-center" type="text" readOnly value={`${state().hosts.min} - ${state().hosts.max}`} onClick={randomizeAddress} onFocus={randomizeAddress} />
+                    <input class="text-center" type="text" readOnly value={`${state().hosts.min} - ${state().hosts.max}`} onClick={randomizeAddress} /* onFocus={randomizeAddress} */ />
                 </fieldset>
             </section>
             <section>
@@ -260,6 +269,6 @@ const CalculatorSubnetV4: Component = () => {
             </section>
         </fieldset>
     </form>
-}
+};
 
-export default CalculatorSubnetV4;
+export default CalculatorSubnetIPV4;

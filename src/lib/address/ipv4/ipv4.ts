@@ -18,6 +18,13 @@ export class IPV4Address implements BaseAddress {
 
         return buffer;
     }
+    static validate(input: unknown): boolean {
+        if (typeof input == "string") {
+            return DOT_NOTATED_ADDRESS_REGEX.test(input);
+        }
+
+        return false;
+    }
 
     buffer: Buffer;
     constructor(input: string);

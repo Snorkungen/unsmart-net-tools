@@ -1,9 +1,9 @@
 import { Container, Nav, Navbar, Card, NavLink } from 'solid-bootstrap';
 import type { Component } from 'solid-js';
-import CalculatorSubnetV4 from './components/calculator-subnet';
 import ViewRouter, { createViewHref } from './components/view-router';
 import { TestingComponent } from './components/testing-component';
 import PacketCapture from './components/packet-capture';
+import CalculatorSubnetIPV4 from './components/calculator-subnet';
 
 const App: Component = () => {
   return (
@@ -12,7 +12,7 @@ const App: Component = () => {
         <Container>
           <Navbar.Brand href="#home">Navbar</Navbar.Brand>
           <Nav class="me-auto">
-            <NavLink href={createViewHref(CalculatorSubnetV4.name)}>Subnet calculator v4</NavLink>
+            <NavLink href={createViewHref(CalculatorSubnetIPV4.name)}>Subnet calculator v4 NEW!</NavLink>
             <NavLink href={createViewHref(TestingComponent.name)}>Testing</NavLink>
             <NavLink href={createViewHref(PacketCapture.name)}>Testing</NavLink>
           </Nav>
@@ -24,23 +24,21 @@ const App: Component = () => {
             <ViewRouter views={[
               {
                 element: (
-
                   <PacketCapture />
                 ),
                 name: PacketCapture.name
               },
               {
                 element: (
-
                   <TestingComponent />
                 ),
                 name: TestingComponent.name
               },
               {
                 element: (
-                  <CalculatorSubnetV4 />
+                  <CalculatorSubnetIPV4 />
                 ),
-                name: CalculatorSubnetV4.name
+                name: CalculatorSubnetIPV4.name
               }
             ]}
               fallback={(
