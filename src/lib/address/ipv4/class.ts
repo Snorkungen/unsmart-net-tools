@@ -58,19 +58,35 @@ export const IPV4_CLASS_A = {
 } as const satisfies IPV4AddressClass;
 
 export const IPV4_CLASS_B = {
-    ...IPV4_CLASS_A,
     name: "B",
     higherOrderBitLength: 2,
     higherOrderBits: 0x80, //10
     hostBitCount: 16,
+    get networkBitCount(): number {
+        return IPV4Address.ADDRESS_LENGTH - this.hostBitCount;
+    },
+    get maxHosts(): number {
+        return 2 ** this.hostBitCount - 2;
+    },
+    get maxAddresses(): number {
+        return 2 ** (this.networkBitCount - this.higherOrderBitLength);
+    }
 } as const satisfies IPV4AddressClass;
 
 export const IPV4_CLASS_C = {
-    ...IPV4_CLASS_A,
     name: "C",
     higherOrderBitLength: 3,
     higherOrderBits: 0xc0, // 110
     hostBitCount: 8,
+    get networkBitCount(): number {
+        return IPV4Address.ADDRESS_LENGTH - this.hostBitCount;
+    },
+    get maxHosts(): number {
+        return 2 ** this.hostBitCount - 2;
+    },
+    get maxAddresses(): number {
+        return 2 ** (this.networkBitCount - this.higherOrderBitLength);
+    }
 } as const satisfies IPV4AddressClass;
 
 export const IPV4_CLASSESS = [

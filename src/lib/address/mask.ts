@@ -118,6 +118,10 @@ export class AddressMask<Address extends typeof BaseAddress>  {
         // #TRUSMEBRO
         return (new this.address(this.buffer)) as A;
     }
+
+    toString(): string {
+        return this.toAddress().toString()
+    }
 }
 
 export function createMask<Address extends typeof BaseAddress>(address: Address, input: ConstructorParameters<typeof AddressMask<Address>>[1], validate = true): AddressMask<Address> {
