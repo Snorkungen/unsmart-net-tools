@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { INT16, INT64, INT8, SLICE, Struct, UINT16, UINT64, UINT8, defineStruct } from "../../lib/binary/struct/";
-import { ARRAY } from "../../lib/binary/struct/value-types/array";
+import { ARRAY, STRUCT } from "../../lib/binary/struct/more-value-types";
 
 describe("Buffer based struct", () => {
 
@@ -151,25 +151,57 @@ describe("Buffer based struct", () => {
     // })
 })
 
-describe("StructArrayType", () => {
-
-    test("#1", () => {
+describe("more struct types", () => {
+    test("ARRAY", () => {
         let x = ARRAY(UINT16, 2)
         let buf = Buffer.alloc(4);
         buf[1] = 0xc0;
 
-        let options =  {
+        let options = {
             packed: false,
-            bigEndian:true,
+            bigEndian: true,
             "setDefaultValues": false
         }
 
-        let got  = x.getter(buf, options)
-        expect(got).deep.eq([0xc0,0])
+        let got = x.getter(buf, options)
+        expect(got).deep.eq([0xc0, 0])
         got[0] = 0xfe
-        
+
         buf = x.setter(got, options)
-        got  = x.getter(buf, options)
-        expect(got).deep.eq([0xfe,0])
+        got = x.getter(buf, options)
+        expect(got).deep.eq([0xfe, 0])
+    })
+
+    test("STRUCT", () => {
+        const SUB_STRUCT = defineStruct({
+            uint: UINT16,
+            int: INT16
+        });
+
+        const TEST_STRUCT = defineStruct({
+            uint: UINT16,
+            struct: STRUCT(SUB_STRUCT),
+            int: INT8,
+        });
+
+        let st = TEST_STRUCT.create({
+            uint: 8,
+            struct: SUB_STRUCT.create({
+                uint: 0xcf,
+                int: -1
+            }),
+            int: -100
+        })
+
+        
+        expect (st.get("uint")).eq(8);
+        expect(st.get("int")).eq(-100);
+        expect(st.get("struct").get("uint")).eq(0xcf)
+        expect(st.get("struct").get("int")).eq(-1)
+        
+        let got = st.get("struct")
+        got.set("int", -2);
+        st.set("struct", got);
+        expect(st.get("struct").get("int")).eq(-2)
     })
 })
