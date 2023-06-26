@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { INT16, INT64, INT8, SLICE, Struct, UINT16, UINT64, UINT8, defineStruct } from "../../lib/binary/struct/";
+import { ARRAY } from "../../lib/binary/struct/array";
 
 describe("Buffer based struct", () => {
 
@@ -148,4 +149,27 @@ describe("Buffer based struct", () => {
     //         struct.create(Buffer.alloc(0))
     //     }).toThrow()
     // })
+})
+
+describe("StructArrayType", () => {
+
+    test("#1", () => {
+        let x = ARRAY(UINT16, 2)
+        let buf = Buffer.alloc(4);
+        buf[1] = 0xc0;
+
+        let options =  {
+            packed: false,
+            bigEndian:true,
+            "setDefaultValues": false
+        }
+
+        let got  = x.getter(buf, options)
+        expect(got).deep.eq([0xc0,0])
+        got[0] = 0xfe
+        
+        buf = x.setter(got, options)
+        got  = x.getter(buf, options)
+        expect(got).deep.eq([0xfe,0])
+    })
 })
