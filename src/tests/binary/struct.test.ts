@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { INT16, INT64, INT8, SLICE, Struct, UINT16, UINT64, UINT8, defineStruct } from "../../lib/binary/struct/";
-import { ARRAY } from "../../lib/binary/struct/array";
+import { ARRAY } from "../../lib/binary/struct/value-types/array";
 
 describe("Buffer based struct", () => {
 

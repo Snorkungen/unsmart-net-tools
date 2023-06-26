@@ -1,5 +1,5 @@
-import { StructValueError } from "./struct";
-import { defineStructType } from "./define";
+import { StructValueError } from "../struct";
+import { defineStructType } from "../define";
 
 function defineUINT(bitLength: number) {
     return defineStructType<number>({

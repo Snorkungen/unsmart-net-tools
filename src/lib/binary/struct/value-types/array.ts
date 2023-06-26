@@ -1,5 +1,5 @@
-import { defineStructType } from "./define";
-import { StructType } from "./struct";
+import { defineStructType } from "../define";
+import { StructType } from "../struct";
 
 type ExtractStructType<T extends StructType<any>> = ReturnType<T["getter"]>
 type StructArrayType<T extends StructType<any>> = ExtractStructType<T>[]
