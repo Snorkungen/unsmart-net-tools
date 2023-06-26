@@ -249,4 +249,8 @@ export class Struct<Types extends Record<string, StructType<any>>>{
 
         return struct;
     }
+
+    getBuffer(): Buffer {
+        return this.buffer;
+    }
 }
