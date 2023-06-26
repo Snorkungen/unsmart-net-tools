@@ -170,12 +170,26 @@ describe("more struct types", () => {
         buf = x.setter(got, options)
         got = x.getter(buf, options)
         expect(got).deep.eq([0xfe, 0])
+
+        const TEST_STRUCT = defineStruct({
+            array: ARRAY(UINT16, 2),
+            int: INT8
+        });
+
+        let st = TEST_STRUCT.create({
+            array: [192, 0],
+            int: -100
+        })
+
+        st.get("array")[0] = 1
+
+        expect(st.get("array")[0]).eq(1)
     })
 
     test("STRUCT", () => {
         const SUB_STRUCT = defineStruct({
-            uint: UINT16,
-            int: INT16
+            uint: UINT8,
+            int: INT8
         });
 
         const TEST_STRUCT = defineStruct({
@@ -193,15 +207,15 @@ describe("more struct types", () => {
             int: -100
         })
 
-        
-        expect (st.get("uint")).eq(8);
+
+        expect(st.get("uint")).eq(8);
         expect(st.get("int")).eq(-100);
         expect(st.get("struct").get("uint")).eq(0xcf)
         expect(st.get("struct").get("int")).eq(-1)
-        
+
         let got = st.get("struct")
         got.set("int", -2);
-        st.set("struct", got);
+        // st.set("struct", got);
         expect(st.get("struct").get("int")).eq(-2)
     })
 })

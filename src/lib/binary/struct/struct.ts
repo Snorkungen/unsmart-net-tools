@@ -31,6 +31,9 @@ export type StructType<T extends any> = {
     getter: (buf: Buffer, options: StructOptions) => T;
     /** function to be called when a struct is setting a value */
     setter: (value: T, options: StructOptions) => Buffer;
+
+    /** this is some useless complicating garbage */
+    setterAfterFunc?: true | ((buf: Buffer) => void)
 }
 
 export class Struct<Types extends Record<string, StructType<any>>>{
@@ -186,7 +189,17 @@ export class Struct<Types extends Record<string, StructType<any>>>{
             mutateRightShift(buf, lastByteBitOffset)
         }
 
+        this.handleSetterAfterFunc(key)
         return this.types[key].getter(buf, this.options);
+    }
+
+    private handleSetterAfterFunc<Key extends keyof Types>(key: Key) {
+        // set setterAfterFunc
+        if (this.types[key].setterAfterFunc) {
+            this.types[key].setterAfterFunc = ((buf: Buffer) => {
+                this.set(key, buf)
+            }).bind(this)
+        }
     }
 
     set<Key extends keyof Types>(key: Key, value: ReturnType<Types[Key]["getter"]> | Buffer) {
