@@ -1,53 +1,12 @@
-import { PCAP_GLOBAL_HEADER, PCAP_PACKET_HEADER } from "../lib/packet-capture/pcap";
-import { SLICE, Struct, UINT16, UINT32, UINT8, defineStruct, defineStructType } from "../lib/binary/struct";
 import { For } from "solid-js";
-import { ETHER_TYPES } from "../lib/ethernet/types";
-import { PROTOCOLS } from "../lib/ip/packet/protocols";
-import { MAC_ADDRESS } from "../lib/address/mac";
-import { IPV4_ADDRESS } from "../lib/address/ipv4";
+import { Struct, UINT32, } from "../lib/binary/struct";
+import { calculateChecksum } from "../lib/binary/checksum";
 import { BaseAddress } from "../lib/address/base";
-import { ICMPV4_CODES, ICMPV4_TYPES } from "../lib/ip/v4/icmp";
-
-const ETHERNET_HEADER = defineStruct({
-    dmac: MAC_ADDRESS,
-    smac: MAC_ADDRESS,
-    ethertype: UINT16,
-    payload: SLICE
-});
-
-const IPV4_HEADER = defineStruct({
-    version: UINT8(4),
-    ihl: UINT8(4),
-    tos: UINT8,
-    len: UINT16,
-    id: UINT16,
-    flags: UINT16(3),
-    fragOffset: UINT16(13),
-    ttl: UINT8,
-    proto: UINT8,
-    csum: UINT16,
-    saddr: IPV4_ADDRESS,
-    daddr: IPV4_ADDRESS,
-    payload: SLICE
-});
-
-const UDP_HEADER = defineStruct({
-    /** SPORT: Source Port */
-    sport: UINT16,
-    /** DPORT: Destination Port */
-    dport: UINT16,
-    length: UINT16,
-    csum: UINT16,
-    payload: SLICE
-});
-
-const ICMP_HEADER = defineStruct({
-    type: UINT8,
-    code: UINT8,
-    csum: UINT16,
-    content: UINT32,
-    payload: SLICE
-})
+import { PCAP_GLOBAL_HEADER, PCAP_PACKET_HEADER } from "../lib/header/pcap";
+import { ETHERNET_HEADER, ETHER_TYPES } from "../lib/header/ethernet";
+import { IPV4_HEADER, PROTOCOLS } from "../lib/header/ip";
+import { ICMP_HEADER, ICMP_UNUSED, ICMPV4_CODES, ICMPV4_TYPES } from "../lib/header/icmp";
+import { UDP_HEADER } from "../lib/header/udp";
 
 function stringifyStruct(struct: Struct<any>) {
     let obj: any = {}
@@ -72,6 +31,10 @@ export default function PacketCapture() {
         data.push([packetHeader, ethHeader])
 
     }
+
+    let firstEthHdr = data[0][1];
+    let firstIPHdr = IPV4_HEADER.create(firstEthHdr.get("payload").subarray(0, -(UINT32.bitLength / 8)));
+    console.log(firstIPHdr.set("csum", 0), calculateChecksum(firstIPHdr.getBuffer().subarray(0, 20)))
 
     type TableEntry = {
         timestamp: Date;
@@ -101,7 +64,7 @@ export default function PacketCapture() {
                 let icmpHdr = ICMP_HEADER.create(ipHeader.get("payload"))
 
                 if (icmpHdr.get("type") == ICMPV4_TYPES.TIME_EXCEEDED) {
-                    let contentIPHdr = IPV4_HEADER.create(icmpHdr.get("payload"));
+                    let contentIPHdr = IPV4_HEADER.create(ICMP_UNUSED.create(icmpHdr.get("data")).get("data"));
                     if (contentIPHdr.get("proto") == PROTOCOLS.UDP) {
                         let udpHdr = UDP_HEADER.create(contentIPHdr.get("payload"))
                         entry.sport = udpHdr.get("sport")
