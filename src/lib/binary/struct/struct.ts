@@ -230,6 +230,8 @@ export class Struct<Types extends Record<string, StructType<any>>>{
         }
 
         this.buffer.set(buf, startIndex);
+
+        return this;
     }
 
     create<TypeValues extends { [x in keyof Types]: ReturnType<Types[x]["getter"]> }>(values: Partial<TypeValues> | Buffer, options: Partial<StructOptions> = {}) {
