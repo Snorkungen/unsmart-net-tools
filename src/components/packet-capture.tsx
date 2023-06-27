@@ -18,6 +18,11 @@ function stringifyStruct(struct: Struct<any>) {
     return JSON.stringify(obj, null, 2)
 }
 
+function stringifyConstName(name: string): string {
+    return name.replaceAll("_", " ")
+}
+
+
 export default function PacketCapture() {
     let buffer = Buffer.from(base64EncodedPCAPFile, "base64");
     let offset = 0;
@@ -42,7 +47,10 @@ export default function PacketCapture() {
         destination: BaseAddress;
         protocol: string;
         sport?: number,
-        dport?: number
+        dport?: number,
+
+        negative?: true;
+        title?: string;
     }
     const getKeyByValue = (obj: Record<string, number>, value: number) => Object.keys(obj).find(key => obj[key] === value) ?? "";
     let tableEntries = data.map(([packetHeader, ethHeader],) => {
@@ -60,22 +68,33 @@ export default function PacketCapture() {
             entry.destination = ipHeader.get("daddr");
             entry.protocol = getKeyByValue(PROTOCOLS, ipHeader.get("proto"))
 
-            if (ipHeader.get("proto") == PROTOCOLS.ICMP) {
-                let icmpHdr = ICMP_HEADER.create(ipHeader.get("payload"))
 
-                if (icmpHdr.get("type") == ICMPV4_TYPES.TIME_EXCEEDED) {
-                    let contentIPHdr = IPV4_HEADER.create(ICMP_UNUSED.create(icmpHdr.get("data")).get("data"));
+            if (ipHeader.get("proto") == PROTOCOLS.ICMP) {
+                let unwrapIPv4 = (ipHdrBuffer: Buffer) => {
+                    let contentIPHdr = IPV4_HEADER.create(ipHdrBuffer);
                     if (contentIPHdr.get("proto") == PROTOCOLS.UDP) {
                         let udpHdr = UDP_HEADER.create(contentIPHdr.get("payload"))
                         entry.sport = udpHdr.get("sport")
                         entry.dport = udpHdr.get("dport")
+
                     }
 
                     entry.protocol += "->" + getKeyByValue(PROTOCOLS, contentIPHdr.get("proto"))
-                } else if (icmpHdr.get("type") == ICMPV4_TYPES.DESTINATION_UNREACHABLE) {
-                    console.info(getKeyByValue(ICMPV4_CODES[ICMPV4_TYPES.DESTINATION_UNREACHABLE], icmpHdr.get("code")))
+                    return contentIPHdr;
                 }
+                let icmpHdr = ICMP_HEADER.create(ipHeader.get("payload"))
 
+                if (icmpHdr.get("type") == ICMPV4_TYPES.TIME_EXCEEDED) {
+                    let contentIPHdr = unwrapIPv4(ICMP_UNUSED.create(icmpHdr.get("data")).get("data"));
+
+                    entry.negative = true
+                    entry.title = `Time Exceeded: ${stringifyConstName(getKeyByValue(ICMPV4_CODES[ICMPV4_TYPES.TIME_EXCEEDED], icmpHdr.get("code")))}`
+                } else if (icmpHdr.get("type") == ICMPV4_TYPES.DESTINATION_UNREACHABLE) {
+                    let contentIPHdr = unwrapIPv4(ICMP_UNUSED.create(icmpHdr.get("data")).get("data"));
+
+                    entry.negative = true;
+                    entry.title = `Denstination Unreachable: ${stringifyConstName(getKeyByValue(ICMPV4_CODES[ICMPV4_TYPES.DESTINATION_UNREACHABLE], icmpHdr.get("code")))}`
+                }
             } else if (ipHeader.get("proto") == PROTOCOLS.UDP) {
                 let udpHdr = UDP_HEADER.create(ipHeader.get("payload"))
                 entry.sport = udpHdr.get("sport")
@@ -113,8 +132,8 @@ export default function PacketCapture() {
                 </tr>
             </thead>
             <tbody>
-                <For each={tableEntries} >{({ timestamp, source, destination, protocol, dport, sport }, i) => (
-                    <tr>
+                <For each={tableEntries} >{({ timestamp, source, destination, protocol, dport, sport, negative, title }, i) => (
+                    <tr style={negative && { background: "red" }} title={title}>
                         <td>{i() + 1}</td>
                         <td>{timestamp.toJSON()}</td>
                         <td>{source.toString()}</td>
