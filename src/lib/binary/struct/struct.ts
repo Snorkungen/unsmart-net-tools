@@ -30,7 +30,7 @@ export type StructType<T extends any> = {
     /** function to be called when a struct is retrieving a value */
     getter: (buf: Buffer, options: StructOptions) => T;
     /** function to be called when a struct is setting a value */
-    setter: (value: T, options: StructOptions) => Buffer;
+    setter: (value: T, options?: StructOptions) => Buffer;
 }
 
 export class Struct<Types extends Record<string, StructType<any>>>{
@@ -244,6 +244,7 @@ export class Struct<Types extends Record<string, StructType<any>>>{
             }
             struct.buffer = Buffer.from(values);
         } else {
+            struct.buffer = Buffer.from(this.buffer)
             for (let key in values) {
                 if (values[key] && this.types[key]) struct.set(key, values[key]!);
             }

@@ -17,3 +17,5 @@ export const IPV4_HEADER = defineStruct({
     daddr: IPV4_ADDRESS,
     payload: SLICE
 });
+
+IPV4_HEADER.set("version", 4);

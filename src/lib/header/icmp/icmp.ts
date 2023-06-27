@@ -1,3 +1,4 @@
+import { IPV6_ADDRESS } from "../../address/ipv6";
 import { defineStruct, UINT8, UINT16, SLICE, UINT32 } from "../../binary/struct";
 
 /**
@@ -26,4 +27,11 @@ export const ICMP_DESTINATION_UNREACHABLE = defineStruct({
     unused: UINT8,
     len: UINT8,
     data: SLICE
+})
+
+
+export const ICMP_NDP_HEADER = defineStruct({
+    reserved: UINT32,
+    targetAddress: IPV6_ADDRESS,
+    options: SLICE
 })
