@@ -2,10 +2,13 @@
 // The question is. That should the intrefaces determine if a frame should be discarded.
 //
 
-import { EthernetFrame, MACAddress } from "../ethernet";
-import { VLANTag } from "../ethernet/vlan";
-import { AddressV4, SubnetMaskV4 } from "../ip/v4";
-import { AddressV6 } from "../ip/v6/address";
+import { IPV4Address } from "../address/ipv4";
+import { IPV6Address } from "../address/ipv6";
+import { MACAddress } from "../address/mac";
+import { AddressMask } from "../address/mask";
+import { ETHERNET_DOT1Q_HEADER, ETHERNET_HEADER, ETHER_TYPES } from "../header/ethernet";
+
+type TEthernetFrame = typeof ETHERNET_HEADER;
 export class Interface {
     private target: Interface | null = null;
 
@@ -16,12 +19,12 @@ export class Interface {
     }
 
     macAddress: MACAddress;
-    ipAddressV4?: AddressV4;
-    subnetMaskV4?: SubnetMaskV4;
-    ipAddressV6?: AddressV6;
+    ipv4Address?: IPV4Address;
+    ipv4SubnetMask?: AddressMask<typeof IPV4Address>;
+    ipv6Address?: IPV6Address;
     prefixLength?: number;
 
-    constructor(public ifID: number, macAddress: MACAddress, public forwardCallback: (frame: EthernetFrame, iface: Interface) => void) {
+    constructor(public ifID: number, macAddress: MACAddress, public forwardCallback: (frame: TEthernetFrame, iface: Interface) => void) {
         this.macAddress = macAddress;
     }
 
@@ -53,8 +56,8 @@ export class Interface {
         target.connect(this)
     }
 
-    send(frame: EthernetFrame) {
-        if (frame.destination.toString() == this.macAddress.toString()) {
+    send(frame: TEthernetFrame) {
+        if (frame.get("dmac").toString() == this.macAddress.toString()) {
             // allow for sending packets to itself
             return this.recieve(frame)
         }
@@ -64,10 +67,10 @@ export class Interface {
             return;
         }
 
+        // this thing below currently does nothing & will probably be hoisted and handled by upper level logic
         if (this.vlan && this.vlan.vids.length > 0) {
             if (this.vlan.type == "access") {
                 // remove tag
-                frame.vlan = null;
             } else if (this.vlan.type == "trunk") {
                 // if (frame.vlan && !this.vlan.vids.find(vid => vid.toNumber() == frame.vlan!.vid.toNumber())) {
                 //     // frame not in vlan list
@@ -79,33 +82,13 @@ export class Interface {
         return this.target!.recieve(frame);
     }
 
-    private recieve(frame: EthernetFrame) {
+    private recieve(frame: TEthernetFrame) {
         if (!this.isConnected) {
             // should probably return an error
             return;
         }
 
-        if (this.vlan && this.vlan.vids.length > 0) {
-            if (this.vlan.type == "access") {
-                if (frame.vlan && !this.vlan.vids.find(vid => vid == frame.vlan!.vid)) {
-                    // frame not in vlan list
-                    return;
-                } else if (!frame.vlan) {
-                    // add tag
-                    frame.vlan = new VLANTag(this.vlan.vids[0]);
-                }
-            } else if (this.vlan.type == "trunk") {
-                // discard if not in list
-
-                if (!frame.vlan) {
-                    // discard frame no vlan tag
-                    return;
-                } else if (!this.vlan.vids.find(vid => vid == frame.vlan!.vid)) {
-                    // discard frame not in list
-                    return;
-                }
-            }
-        }
+        // inteface doesn't deal with vlans
 
         // recieve doesn't return anything 
         return this.forwardCallback(frame, this);

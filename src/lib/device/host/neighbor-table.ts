@@ -1,18 +1,18 @@
-import { BitArray } from "../../binary";
-import { EthernetFrame, MACAddress } from "../../ethernet";
-import { ARPPacket, OPCODES } from "../../ethernet/arp";
-import { ETHER_TYPES } from "../../ethernet/types";
+import { IPV4Address } from "../../address/ipv4";
+import { ALL_LINK_LOCAL_NODES_ADDRESSV6, IPV6Address } from "../../address/ipv6";
+import { MACAddress } from "../../address/mac";
+import { calculateChecksum } from "../../binary/checksum";
+import { ARP_HEADER, ARP_OPCODES } from "../../header/arp";
+import { ETHERNET_HEADER, ETHER_TYPES, } from "../../header/ethernet";
+import { ICMPV6_TYPES, ICMP_HEADER, ICMP_NDP_HEADER } from "../../header/icmp";
+import { IPV6_HEADER } from "../../header/ip";
 import { PROTOCOLS } from "../../ip/packet/protocols";
-import { IPPacketV6 } from "../../ip/packet/v6";
-import { AddressV4 } from "../../ip/v4";
-import { ALL_LINK_LOCAL_NODES_ADDRESSV6, AddressV6 } from "../../ip/v6";
-import { ICMPPacketV6, ICMPV6_TYPES } from "../../ip/v6/icmp";
 import { Interface } from "../interface";
 import { Host } from "./host";
 
 const ADDRESS_V6_SIMPLIFY = -1;
 
-export type NeighborEntry<AddressT = (AddressV4 | AddressV6)> = {
+export type NeighborEntry<AddressT = (IPV4Address | IPV4Address)> = {
     neighbor: AddressT;
     iface: Interface;
     macAddress: MACAddress;
@@ -26,8 +26,8 @@ export const NEIGHBOR_DISCOVERY_ERROR = {
 export type NeighborDiscoveryError = typeof NEIGHBOR_DISCOVERY_ERROR[keyof typeof NEIGHBOR_DISCOVERY_ERROR];
 
 export default class NeighborTable {
-    version4: Map<string, NeighborEntry<AddressV4>>;
-    version6: Map<string, NeighborEntry<AddressV6>>;
+    version4: Map<string, NeighborEntry<IPV4Address>>;
+    version6: Map<string, NeighborEntry<IPV6Address>>;
 
     private host: Host;
 
@@ -38,24 +38,24 @@ export default class NeighborTable {
         this.version6 = new Map();
     }
 
-    private getVersion4(query: AddressV4): NeighborEntry<AddressV4> | null {
+    private getVersion4(query: IPV4Address): NeighborEntry<IPV4Address> | null {
         return this.version4.get(query.toString()) || null;
     }
-    private getVersion6(query: AddressV6): NeighborEntry<AddressV6> | null {
+    private getVersion6(query: IPV6Address): NeighborEntry<IPV6Address> | null {
         return this.version6.get(query.toString(ADDRESS_V6_SIMPLIFY)) || null;
     }
 
-    get(query: AddressV4 | AddressV6): NeighborEntry<typeof query> | null {
-        if (query instanceof AddressV4) {
+    get(query: IPV4Address | IPV6Address): NeighborEntry<typeof query> | null {
+        if (query instanceof IPV4Address) {
             return this.getVersion4(query);
-        } else if (query instanceof AddressV6) {
+        } else if (query instanceof IPV6Address) {
             return this.getVersion6(query);
         }
 
         return null;
     }
 
-    discoverVersion4(query: AddressV4): Promise<NeighborDiscoveryError> {
+    discoverVersion4(query: IPV4Address): Promise<NeighborDiscoveryError> {
 
         // in the future i would have sockets on the host 
         // then this would have a callback that gets called
@@ -66,12 +66,12 @@ export default class NeighborTable {
                 let f = createARPRequest(query, iface)
                 if (!f) return;
                 indices.push(this.host.statefulSend(f, (frame, iface) => {
-                    let arpPacket = new ARPPacket(frame.payload);
+                    let arpHdr = ARP_HEADER.create(frame.get("payload"))
 
                     this.version4.set(query.toString(), {
                         neighbor: query,
                         iface,
-                        macAddress: new MACAddress(arpPacket.targetHardware),
+                        macAddress: frame.get("smac"),
                         createdAt: Date.now()
                     })
 
@@ -89,7 +89,7 @@ export default class NeighborTable {
         })
     };
 
-    discoverVersion6(query: AddressV6): Promise<NeighborDiscoveryError> {
+    discoverVersion6(query: IPV6Address): Promise<NeighborDiscoveryError> {
         return new Promise<NeighborDiscoveryError>(resolve => {
             let indices: Array<number> = []
 
@@ -100,7 +100,7 @@ export default class NeighborTable {
                     this.version6.set(query.toString(ADDRESS_V6_SIMPLIFY), {
                         neighbor: query,
                         iface,
-                        macAddress: new MACAddress(frame.source),
+                        macAddress: frame.get("smac"),
                         createdAt: Date.now()
                     })
 
@@ -121,17 +121,17 @@ export default class NeighborTable {
         });
     };
 
-    discover(query: AddressV4 | AddressV6): Promise<NeighborDiscoveryError> {
-        if (query instanceof AddressV4) {
+    discover(query: IPV4Address | IPV6Address): Promise<NeighborDiscoveryError> {
+        if (query instanceof IPV4Address) {
             return this.discoverVersion4(query);
-        } else if (query instanceof AddressV6) {
+        } else if (query instanceof IPV6Address) {
             return this.discoverVersion6(query);
         }
 
         throw new Error("cannot discover")
     };
 
-    async getDiscover(query: AddressV4 | AddressV6): Promise<NeighborEntry<typeof query> | NeighborDiscoveryError> {
+    async getDiscover(query: IPV4Address | IPV6Address): Promise<NeighborEntry<typeof query> | NeighborDiscoveryError> {
         let entry = this.get(query);
 
         if (entry) {
@@ -148,34 +148,57 @@ export default class NeighborTable {
     }
 }
 
-function createARPRequest(query: AddressV4, iface: Interface): EthernetFrame | null {
-    if (!iface.isConnected || !iface.ipAddressV4) {
+const BROADCAST_MAC_ADDRESS = new MACAddress(Buffer.alloc(MACAddress.ADDRESS_LENGTH / 8, 0xff))
+
+function createARPRequest(query: IPV4Address, iface: Interface): typeof ETHERNET_HEADER | null {
+    if (!iface.isConnected || !iface.ipv4Address) {
         return null;
     }
 
-    let arpPacket = new ARPPacket(
-        OPCODES.REQUEST,
-        iface.macAddress.bits,
-        iface.ipAddressV4!.bits,
-        new MACAddress(new BitArray(1, MACAddress.address_length)).bits,
-        query.bits
-    )
+    let arpHeader = ARP_HEADER.create({
+        oper: ARP_OPCODES.REQUEST,
+        sha: iface.macAddress,
+        spa: iface.ipv4Address,
+        tpa: query
+    })
 
     // wrap packet in ethernet frame
-    return new EthernetFrame(new MACAddress(new BitArray(1, MACAddress.address_length)), iface.macAddress, ETHER_TYPES.ARP, arpPacket.bits)
+    return ETHERNET_HEADER.create({
+        dmac: BROADCAST_MAC_ADDRESS,
+        smac: iface.macAddress,
+        ethertype: ETHER_TYPES.ARP,
+        payload: arpHeader.getBuffer()
+    })
 }
 
-function createNDPRequest(query: AddressV6, iface: Interface): EthernetFrame | null {
-    if (!iface.isConnected || !iface.ipAddressV6) {
+function createNDPRequest(query: IPV6Address, iface: Interface): typeof ETHERNET_HEADER | null {
+    if (!iface.isConnected || !iface.ipv6Address) {
         return null;
     }
+    
+    let ndpHdr = ICMP_NDP_HEADER.create({
+        targetAddress: query
+    }), icmpHdr = ICMP_HEADER.create({
+        type: ICMPV6_TYPES.NEIGHBOR_SOLICITATION,
+        data: ndpHdr.getBuffer()
+    });
 
-    let icmpv6Packet = new ICMPPacketV6(ICMPV6_TYPES.NEIGHBOR_SOLICITATION, 0, null, query.bits);
-    let ipPacketv6 = new IPPacketV6(
-        iface.ipAddressV6!,
-        new AddressV6(ALL_LINK_LOCAL_NODES_ADDRESSV6),
-        PROTOCOLS.IPV6_ICMP,
-        icmpv6Packet.bits);
+    // I have no clue if this is the right way to calculate the checksum
+    icmpHdr.set("csum", calculateChecksum(icmpHdr.getBuffer()));
 
-    return new EthernetFrame(new MACAddress(new BitArray(1, MACAddress.address_length)), iface.macAddress, ETHER_TYPES.IPv6, ipPacketv6.bits);
+    let ipv6Hdr = IPV6_HEADER.create({
+        saddr: iface.ipv6Address!,
+        daddr: new IPV6Address(ALL_LINK_LOCAL_NODES_ADDRESSV6),
+        nextHeader: PROTOCOLS.IPV6_ICMP,
+        payloadLength: icmpHdr.size,
+        payload: icmpHdr.getBuffer()
+    })
+
+    // wrap packet in ethernet frame
+    return ETHERNET_HEADER.create({
+        dmac: BROADCAST_MAC_ADDRESS,
+        smac: iface.macAddress,
+        ethertype: ETHER_TYPES.IPv6,
+        payload: ipv6Hdr.getBuffer()
+    })
 }

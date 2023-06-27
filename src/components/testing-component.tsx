@@ -1,10 +1,11 @@
 import { Component, JSX } from "solid-js";
-import { AddressV4, SubnetMaskV4, validateDotNotated } from "../lib/ip/v4";
 import { Device } from "../lib/device/device";
 import { Host } from "../lib/device/host";
 import { NetworkSwitch } from "../lib/device/network-switch";
-import { AddressV6 } from "../lib/ip/v6";
 import { pingVersion4, pingVersion6 } from "../lib/device/applications/ping";
+import { createMask } from "../lib/address/mask";
+import { IPV4Address } from "../lib/address/ipv4";
+import { IPV6Address } from "../lib/address/ipv6";
 
 const selectContents = (ev: MouseEvent) => {
     if (!(ev.currentTarget instanceof HTMLElement)) return;
@@ -24,11 +25,11 @@ const DeviceComponent: Component<{ device: Device }> = ({ device }) => {
                 <div>
                     <h5>{iface.ifID}</h5>
                     <p>MAC address: <span onClick={selectContents}>{iface.macAddress.toString()}</span></p>
-                    {iface.ipAddressV4 && iface.subnetMaskV4 && (
-                        <p>IPv4 address: <span onClick={selectContents}>{iface.ipAddressV4.toString()}</span>/<span>{iface.subnetMaskV4.length}</span></p>
+                    {iface.ipv4Address && iface.ipv4SubnetMask && (
+                        <p>IPv4 address: <span onClick={selectContents}>{iface.ipv4Address.toString()}</span>/<span>{iface.ipv4SubnetMask.length}</span></p>
                     )}
-                    {iface.ipAddressV6 && iface.prefixLength && (
-                        <p>IPv6 address: <span onClick={selectContents}>{iface.ipAddressV6.toString(4)}</span>/<span>{iface.prefixLength}</span></p>
+                    {iface.ipv6Address && iface.prefixLength && (
+                        <p>IPv6 address: <span onClick={selectContents}>{iface.ipv6Address.toString(4)}</span>/<span>{iface.prefixLength}</span></p>
                     )}
                     <p>is connected: {iface.isConnected + ""}</p>
                 </div>
@@ -52,14 +53,14 @@ export const TestingComponent: Component = () => {
     let iface_pc1 = pc1.createInterface();
     let iface_pc2 = pc2.createInterface();
 
-    iface_pc1.ipAddressV4 = new AddressV4("192.168.1.10")
-    iface_pc1.subnetMaskV4 = new SubnetMaskV4(24);
-    iface_pc1.ipAddressV6 = new AddressV6("fe80::c438:600:a1ac:ba00")//createLinkLocalAddressV6();
+    iface_pc1.ipv4Address = new IPV4Address("192.168.1.10")
+    iface_pc1.ipv4SubnetMask = createMask(IPV4Address, 24);
+    iface_pc1.ipv6Address = new IPV6Address("fe80::c438:600:a1ac:ba00")//createLinkLocalAddressV6();
     iface_pc1.prefixLength = 64;
 
-    iface_pc2.ipAddressV4 = new AddressV4("192.168.1.20")
-    iface_pc2.subnetMaskV4 = new SubnetMaskV4(24);
-    iface_pc2.ipAddressV6 = new AddressV6("fe80::c438:600:a1ac:b778")//createLinkLocalAddressV6();
+    iface_pc2.ipv4Address = new IPV4Address("192.168.1.20")
+    iface_pc2.ipv4SubnetMask = createMask(IPV4Address, 24);
+    iface_pc2.ipv6Address = new IPV6Address("fe80::c438:600:a1ac:b778")//createLinkLocalAddressV6();
     iface_pc2.prefixLength = 64;
 
     swIface_pc1.connect(iface_pc1);
@@ -83,10 +84,10 @@ export const TestingComponent: Component = () => {
 
                     if (!ip) return;
 
-                    if (validateDotNotated(ip)) {
-                        await pingVersion4(device, new AddressV4(ip))
-                    } else if (new AddressV6(ip).bits.toNumber() != 0) {
-                        await pingVersion6(device, new AddressV6(ip))
+                    if (IPV4Address.validate(ip)) {
+                        await pingVersion4(device, new IPV4Address(ip))
+                    } else if (/* IPV6Address.validate(ip) */ true) {
+                        await pingVersion6(device, new IPV6Address(ip))
                     }
 
                     console.log("%c ECHO Reply recieved: " + device.name, ['background: green', 'color: white', 'display: block', 'text-align: center', 'font-size: 24px'].join(';'))

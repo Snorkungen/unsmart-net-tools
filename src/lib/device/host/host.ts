@@ -1,19 +1,16 @@
-import { BitArray } from "../../binary";
-import { EthernetFrame, MACAddress } from "../../ethernet";
-import { ARPPacket, OPCODES } from "../../ethernet/arp";
-import { ETHER_TYPES, EtherType } from "../../ethernet/types";
-import { AddressV4 } from "../../ip/v4";
-import { ICMPPacketV4, ICMPV4_TYPES, readROHEcho } from "../../ip/v4/icmp";
-import { IPPacketV4 } from "../../ip/packet/v4";
 import { Interface } from "../interface";
-import { PROTOCOL, PROTOCOLS } from "../../ip/packet/protocols";
-import { AddressV6 } from "../../ip/v6/address";
 import { Device } from "../device";
-import { IPPacketV6 } from "../../ip/packet/v6";
-import { ICMPPacketV6, ICMPV6_TYPES } from "../../ip/v6/icmp";
-import { ALL_LINK_LOCAL_NODES_ADDRESSV6 } from "../../ip/v6";
+
 import NeighborTable from "./neighbor-table";
 import resolveSendingInformation from "./resolve-sending-information";
+import { IPV4Address } from "../../address/ipv4";
+import { IPV6Address ,ALL_LINK_LOCAL_NODES_ADDRESSV6} from "../../address/ipv6";
+import { ETHERNET_HEADER, ETHER_TYPES, EtherType } from "../../header/ethernet";
+import { IPV4_HEADER, IPV6_HEADER, PROTOCOLS, type Protocol } from "../../header/ip";
+import { ICMP_ECHO_HEADER, ICMP_HEADER, ICMP_NDP_HEADER, ICMPV4_TYPES, ICMPV6_TYPES } from "../../header/icmp";
+import { calculateChecksum } from "../../binary/checksum";
+import { ARP_HEADER, ARP_OPCODES } from "../../header/arp";
+import { Struct } from "../../binary/struct";
 
 /**
  *  this function contains logic if device should ignore this packet based upon destination address
@@ -21,119 +18,173 @@ import resolveSendingInformation from "./resolve-sending-information";
  * @param iface 
  * @returns 
  */
-function ignoreIPPacketHost(address: AddressV4 | AddressV6, iface: Interface) {
-    if (address instanceof AddressV4) {
-
-
-    } else if (address instanceof AddressV6) {
-        if (address.toString(-1) == new AddressV6(ALL_LINK_LOCAL_NODES_ADDRESSV6).toString(-1)) {
+function ignoreIPPacketHost(address: IPV4Address | IPV6Address, iface: Interface) {
+    if (address instanceof IPV4Address) {
+        if (address.toString() == iface.ipv4Address?.toString()) {
+            return false
+        }
+    } else if (address instanceof IPV6Address) {
+        if (address.toString(-1) == new IPV6Address(ALL_LINK_LOCAL_NODES_ADDRESSV6).toString(-1)) {
             return false;
         }
-        if (address.toString(-1) == iface.ipAddressV6?.toString(-1)) {
+        if (address.toString(-1) == iface.ipv6Address?.toString(-1)) {
             return false
         }
     }
 
     return true;
 }
+
 export class Host extends Device {
     neighborTable = new NeighborTable(this);
     /**
     This function only replies to requests for now
     It might not in the future
     */
-    listener(frame: EthernetFrame, iface: Interface) {
+    listener(frame: typeof ETHERNET_HEADER, iface: Interface) {
         // inform about request
         this.log(frame, iface);
-
-        if (frame.destination.toString() != iface.macAddress.toString()) {
-            if (!frame.destination.isBroadcast) {
+        if (frame.get("dmac").toString() != iface.macAddress.toString()) {
+            if (!frame.get("dmac").isBroadcast()) {
                 // meant for wrong interface
                 return;
             }
         }
-
-
-        if (frame.type == ETHER_TYPES.IPv4) {
+        
+        if (frame.get("ethertype") == ETHER_TYPES.IPv4) {
             // ipv4 packet
-            let ipPacket = new IPPacketV4(frame.payload);
-
-            if (ipPacket.destination.toString() != iface.ipAddressV4?.toString()) {
+            let ipHdr = IPV4_HEADER.create(frame.get("payload").subarray(0));
+            
+            if (ignoreIPPacketHost(ipHdr.get("daddr"), iface)) {
                 // ignore, wrong destination
                 return;
             }
 
-            if (ipPacket.protocol == PROTOCOLS.ICMP) {
+            if (ipHdr.get("proto") == PROTOCOLS.ICMP) {
                 // icmp packet
-                let icmpPacket = new ICMPPacketV4(ipPacket.payload);
-                // console.info(`packet is an ICMP packet(${icmpPacket.type == ICMP_TYPES.ECHO_REPLY && "Reply" || icmpPacket.type == ICMP_TYPES.ECHO_REQUEST && "Request" || icmpPacket.type})`)
-                if (icmpPacket.type == ICMPV4_TYPES.ECHO_REQUEST) {
+                let icmpHdr = ICMP_HEADER.create(ipHdr.get("payload"));
+                console.info(`packet is an ICMP packet(${icmpHdr.get("type") == ICMPV4_TYPES.ECHO_REPLY && "Reply" || icmpHdr.get("type") == ICMPV4_TYPES.ECHO_REQUEST && "Request" || icmpHdr.get("type")})`)
+                if (icmpHdr.get("type") == ICMPV4_TYPES.ECHO_REQUEST) {
                     // icmp request
                     // reply to request
-                    let replyICMPPacket = new ICMPPacketV4(ICMPV4_TYPES.ECHO_REPLY, 0, icmpPacket.roh, ICMPPacketV4.getIPPacketBits(ipPacket));
-                    // protocol should be an enum
-                    let replyIPPacket = new IPPacketV4(iface.ipAddressV4!, ipPacket.source, PROTOCOLS.ICMP, replyICMPPacket.bits);
-                    let ethernetFrame = new EthernetFrame(frame.source, iface.macAddress, ETHER_TYPES.IPv4, replyIPPacket.bits);
+                    let replyIcmpHdr = ICMP_HEADER.create({
+                        type: ICMPV4_TYPES.ECHO_REPLY,
+                        data: icmpHdr.get("data")
+                    })
 
-                    return iface.send(ethernetFrame);
+                    // I have no clue if this is the right way to calculate the checksum
+                    replyIcmpHdr.set("csum", calculateChecksum(replyIcmpHdr.getBuffer()));
+
+                    let replyIPHeader = IPV4_HEADER.create({
+                        saddr: iface.ipv4Address!,
+                        daddr: ipHdr.get("saddr"),
+                        proto: PROTOCOLS.ICMP,
+                        payload: replyIcmpHdr.getBuffer()
+                    })
+
+                    // I have no clue if this is the right way to calculate the checksum
+                    replyIPHeader.set("csum", calculateChecksum(replyIPHeader.getBuffer()));
+
+                    return iface.send(ETHERNET_HEADER.create({
+                        smac: iface.macAddress,
+                        dmac: frame.get("smac"),
+                        ethertype: ETHER_TYPES.IPv4,
+                        payload: replyIPHeader.getBuffer()
+                    }));
                 }
             }
 
-        } else if (frame.type == ETHER_TYPES.IPv6) {
-            let ipPacket = new IPPacketV6(frame.payload);
-
+        } else if (frame.get("ethertype") == ETHER_TYPES.IPv6) {
+            let ipHdr = IPV6_HEADER.create(frame.get("payload"));
             // ignore if not matches parameter
-
-            if (ignoreIPPacketHost(ipPacket.destination, iface)) {
+            
+            if (ignoreIPPacketHost(ipHdr.get("daddr"), iface)) {
                 return;
             }
-
-            if (ipPacket.nextHeader == PROTOCOLS.IPV6_ICMP) {
-                let icmpPacket = new ICMPPacketV6(ipPacket.payload);
-                if (icmpPacket.type == ICMPV6_TYPES.ECHO_REQUEST) {
-                    let replyICMPPacket = new ICMPPacketV6(ICMPV6_TYPES.ECHO_REPLY, 0, icmpPacket.roh, ICMPPacketV6.getIPPacketBits(ipPacket));
-                    let replyIPPacket = new IPPacketV6(iface.ipAddressV6!, ipPacket.source, PROTOCOLS.IPV6_ICMP, replyICMPPacket.bits);
-                    let replyFrame = new EthernetFrame(frame.source, iface.macAddress, ETHER_TYPES.IPv6, replyIPPacket.bits);
-                    return iface.send(replyFrame)
-                } else if (icmpPacket.type == ICMPV6_TYPES.NEIGHBOR_SOLICITATION) {
+            if (ipHdr.get("nextHeader") == PROTOCOLS.IPV6_ICMP) {
+                let icmpHdr = ICMP_HEADER.create(ipHdr.get("payload"));
+                if (icmpHdr.get("type") == ICMPV6_TYPES.ECHO_REQUEST) {
+                    let replyIcmpHdr = ICMP_HEADER.create({
+                        type: ICMPV6_TYPES.ECHO_REPLY,
+                        data: icmpHdr.get("data")
+                    })
+                    
+                    // I have no clue if this is the right way to calculate the checksum
+                    replyIcmpHdr.set("csum", calculateChecksum(replyIcmpHdr.getBuffer()));
+                    
+                    let replyIPHdr = IPV6_HEADER.create({
+                        saddr: iface.ipv6Address,
+                        daddr: ipHdr.get("saddr"),
+                        nextHeader: PROTOCOLS.IPV6_ICMP,
+                        payloadLength: icmpHdr.size,
+                        payload: replyIcmpHdr.getBuffer()
+                    })
+                    
+                    return iface.send(ETHERNET_HEADER.create({
+                        smac: iface.macAddress,
+                        dmac: frame.get("smac"),
+                        ethertype: ETHER_TYPES.IPv6,
+                        payload: replyIPHdr.getBuffer()
+                    }));
+                } else if (icmpHdr.get("type") == ICMPV6_TYPES.NEIGHBOR_SOLICITATION) {
                     // check if target is me
-                    let target = icmpPacket.content.slice(0, AddressV6.address_length);
-                    if (target.toNumber() != iface.ipAddressV6?.bits.toNumber()) {
+                    let ndpHdr = ICMP_NDP_HEADER.create(icmpHdr.get("data"))
+                    if (ndpHdr.get("targetAddress").toString() != iface.ipv6Address!.toString()) {
                         return;
                     }
                     // respond with neighbor solicitation
 
-                    let icmpv6Packet = new ICMPPacketV6(ICMPV6_TYPES.NEIGHBOR_ADVERTISMENT, 0, null, target);
-                    let ipPacketv6 = new IPPacketV6(
-                        iface.ipAddressV6!,
-                        ipPacket.source,
-                        PROTOCOLS.IPV6_ICMP,
-                        icmpv6Packet.bits);
+                    let replyIcmpHdr = ICMP_HEADER.create({
+                        type: ICMPV6_TYPES.NEIGHBOR_ADVERTISMENT,
+                        data: ndpHdr.getBuffer()
+                    })
+                    // I have no clue if this is the right way to calculate the checksum
+                    replyIcmpHdr.set("csum", calculateChecksum(replyIcmpHdr.getBuffer()));
 
-                    let ethernetFrame = new EthernetFrame(frame.source, iface.macAddress, ETHER_TYPES.IPv6, ipPacketv6.bits)
+                    let replyIPHdr = IPV6_HEADER.create({
+                        saddr: iface.ipv6Address,
+                        daddr: ipHdr.get("saddr"),
+                        nextHeader: PROTOCOLS.IPV6_ICMP,
+                        payloadLength: icmpHdr.size,
+                        payload: replyIcmpHdr.getBuffer()
+                    })
 
-                    return iface.send(ethernetFrame)
+                    return iface.send(ETHERNET_HEADER.create({
+                        smac: iface.macAddress,
+                        dmac: frame.get("smac"),
+                        ethertype: ETHER_TYPES.IPv6,
+                        payload: replyIPHdr.getBuffer()
+                    }));
                 }
             }
 
-        } else if (frame.type == ETHER_TYPES.ARP) {
+        } else if (frame.get("ethertype") == ETHER_TYPES.ARP) {
             // handle an arp packet
-            let arpPacket = new ARPPacket(frame.payload);
+            let arpHdr = ARP_HEADER.create(frame.get("payload"));
 
-            // console.info(`packet is an ARP(${arpPacket.operation == 1 && "Request" || arpPacket.operation == 2 && "Reply"})`)
+            // console.info(`packet is an ARP(${arpHdr.get("oper") == 1 && "Request" || arpHdr.get("oper") == 2 && "Reply"})`)
 
-            if (arpPacket.operation == OPCODES.REQUEST) {
+            if (arpHdr.get("oper") == ARP_OPCODES.REQUEST) {
                 // request
 
-                if (arpPacket.targetProtocol.toNumber() != iface.ipAddressV4?.bits.toNumber()) {
+                if (arpHdr.get("tpa").toString() != iface.ipv4Address!.toString()) {
                     // ignore if not intended target
                     return;
                 }
 
                 // reply to request
-                let replyARPPacket = new ARPPacket(2, arpPacket.senderHardware, arpPacket.senderProtocol, iface.macAddress.bits, iface.ipAddressV4!.bits);
-                let ethernetFrame = new EthernetFrame(frame.source, iface.macAddress, ETHER_TYPES.ARP, replyARPPacket.bits);
-                return iface.send(ethernetFrame);
+                let replyArpHdr = ARP_HEADER.create(arpHdr.getBuffer());
+                replyArpHdr.set("oper", ARP_OPCODES.REPLY);
+                replyArpHdr.set("tha", iface.macAddress);
+                replyArpHdr.set("tpa", iface.ipv4Address!);
+
+                // wrap packet in ethernet frame
+                return iface.send(ETHERNET_HEADER.create({
+                    dmac: frame.get("smac"),
+                    smac: iface.macAddress,
+                    ethertype: ETHER_TYPES.ARP,
+                    payload: replyArpHdr.getBuffer()
+                }))
 
                 // idk know if i should add an entry to the arp table
             }
@@ -142,18 +193,33 @@ export class Host extends Device {
         this.statefulRecv(frame, iface)
     }
 
-    async send(destination: AddressV4 | AddressV6, protocol: PROTOCOL, packet: { bits: BitArray }) {
+    async send(destination: IPV4Address | IPV6Address, protocol: Protocol, payload: Struct<any>) {
         try {
             let { iface, macAddress } = await resolveSendingInformation(this, destination);
-            if (destination instanceof AddressV4) {
-                if (!iface.isConnected || !iface.ipAddressV4 || !iface.subnetMaskV4) {
+            if (destination instanceof IPV4Address) {
+                if (!iface.isConnected || !iface.ipv4Address || !iface.ipv4SubnetMask) {
                     // failed because interface does not have ipv4 configured
                     // return;
                     // Do nothing because i haven't decided if the device should have an async send function. So thats why this allows me to have an device ping it self
                 }
-                let ipPacket = new IPPacketV4(iface.ipAddressV4!, destination, protocol, packet.bits);
-                let ethernetFrame = new EthernetFrame(macAddress, iface.macAddress, ETHER_TYPES.IPv4, ipPacket.bits);
-                iface.send(ethernetFrame);
+                let ipHdr = IPV4_HEADER.create({
+                    saddr: iface.ipv4Address!,
+                    daddr: destination,
+                    proto: protocol,
+                    payload: payload.getBuffer()
+                })
+
+                // I have no clue if this is the right way to calculate the checksum
+                ipHdr.set("csum", calculateChecksum(ipHdr.getBuffer()));
+
+                iface.send(ETHERNET_HEADER.create({
+                    dmac: macAddress,
+                    smac: iface.macAddress,
+                    ethertype: ETHER_TYPES.IPv4,
+                    payload: ipHdr.getBuffer()
+                }));
+            } else {
+                throw new Error("Not implemented")
             }
         } catch (error) {
             console.error(error)
@@ -162,9 +228,14 @@ export class Host extends Device {
         }
     }
 
-    state: ({ type: EtherType, cb: (frame: EthernetFrame, iface: Interface) => void } & Record<string, unknown>)[] = []
+    state: ({ ethertype: EtherType, cb: (frame: typeof ETHERNET_HEADER, iface: Interface) => void } & {
+        tpa?: string;
+        destP?: string;
+        proto?: Protocol;
+        id?: number;
+    })[] = []
 
-    statefulRecv(frame: EthernetFrame, iface: Interface) {
+    statefulRecv(frame: typeof ETHERNET_HEADER, iface: Interface) {
         for (let i = 0; i < this.state.length; i++) {
             let s = this.state.at(i);
 
@@ -172,156 +243,127 @@ export class Host extends Device {
                 continue;
             }
 
-            if (frame.type != s.type) {
+            if (frame.get("ethertype") != s.ethertype) {
                 continue;
             }
 
-            if (s.type == ETHER_TYPES.ARP) {
-                let arpPacket = new ARPPacket(frame.payload);
+            if (s.ethertype == ETHER_TYPES.ARP) {
+                let arpHdr = ARP_HEADER.create(frame.get("payload"));
+
                 // only care about arp replies
-                if (arpPacket.operation != OPCODES.REPLY) {
+                if (arpHdr.get("oper") != ARP_OPCODES.REPLY) {
                     continue;
                 }
-                if (s.targetP != arpPacket.targetProtocol.toNumber()) {
+                if (s.tpa != arpHdr.get("tpa").toString()) {
                     continue;
                 }
 
                 s.cb(frame, iface);
                 return this.statefulClose(i);
-            } else if (s.type == ETHER_TYPES.IPv4) {
-                let ipPacket = new IPPacketV4(frame.payload);
+            } else if (s.ethertype == ETHER_TYPES.IPv4) {
+                let ipHdr = IPV4_HEADER.create(frame.get("payload"));
 
-                if (ipPacket.source.toString() != s.destinationP) {
+                if (ipHdr.get("saddr").toString() != s.destP) {
                     continue;
                 }
 
-                if (ipPacket.protocol == PROTOCOLS.ICMP) {
-                    let icmpPacket = new ICMPPacketV4(ipPacket.payload);
-                    let contentIPPacket = new IPPacketV4(icmpPacket.content);
-                    if (contentIPPacket.protocol != s.protocol) {
-                        continue;
-                    }
+                if (ipHdr.get("proto") == PROTOCOLS.ICMP) {
+                    let icmpHdr = ICMP_HEADER.create(ipHdr.get("payload"));
+                    // I don't think this is following spec
 
                     // In here i can respond to icmp replies for ipv4 messages
-
-                    if (contentIPPacket.protocol == PROTOCOLS.ICMP) {
-                        let contentICMPPacket = new ICMPPacketV4(contentIPPacket.payload);
-                        if (contentICMPPacket.type == ICMPV4_TYPES.ECHO_REQUEST) {
-                            let { identifier } = readROHEcho(contentICMPPacket.roh);
-                            if (s.identifier == identifier) {
-                                // this is a response to my ping request
-                                s.cb(frame, iface);
-                                return this.statefulClose(i);
-                            }
-                        }
+                    if (icmpHdr.get("type") == ICMPV4_TYPES.ECHO_REPLY && ICMP_ECHO_HEADER.create(icmpHdr.get("data")).get("id") == s.id) {
+                        s.cb(frame, iface);
+                        return this.statefulClose(i);
                     }
-                }
-            } else if (s.type == ETHER_TYPES.IPv6) {
-                let ipPacket = new IPPacketV6(frame.payload);
 
-                if (ipPacket.source.toString() != s.destinationP && ipPacket.source.toString(-1) == ALL_LINK_LOCAL_NODES_ADDRESSV6) {
-                    continue;
+
+                    // here i would check if the icmp header is an error and match the erro to something
+
                 }
+            } else if (s.ethertype == ETHER_TYPES.IPv6) {
+                let ipHdr = IPV6_HEADER.create(frame.get("payload"));
                 // only support icmp first
-                if (ipPacket.nextHeader == PROTOCOLS.IPV6_ICMP) {
-                    let icmpPacket = new ICMPPacketV6(ipPacket.payload);
-                    if (s.icmpType == ICMPV6_TYPES.NEIGHBOR_SOLICITATION) {
+                if (ipHdr.get("nextHeader") == PROTOCOLS.IPV6_ICMP) {
+                    let icmpHdr = ICMP_HEADER.create(ipHdr.get("payload"))
 
-                        // assume this is NDP because i'm tired
-                        if (s.content instanceof BitArray && s.content.toNumber() == icmpPacket.content.toNumber()) {
-                            s.cb(frame, iface);
-                            return this.statefulClose(i)
-                        }
-                    } else {
-                        let contentIPPacket = new IPPacketV6(icmpPacket.content);
-                        if (contentIPPacket.nextHeader != s.protocol) {
-                            continue;
-                        }
-                        if (contentIPPacket.nextHeader == PROTOCOLS.IPV6_ICMP) {
-                            let contentICMPPacket = new ICMPPacketV6(contentIPPacket.payload);
-
-                            if (contentICMPPacket.type == ICMPV6_TYPES.ECHO_REQUEST) {
-                                let { identifier } = readROHEcho(contentICMPPacket.roh);
-                                if (s.identifier == identifier) {
-                                    // this is a response to my ping request
-                                    s.cb(frame, iface);
-                                    return this.statefulClose(i);
-                                }
-                            }
-                        }
+                    if (icmpHdr.get("type") == ICMPV6_TYPES.NEIGHBOR_ADVERTISMENT && (s.tpa == ICMP_NDP_HEADER.create(icmpHdr.get("data")).get("targetAddress").toString())) {
+                        s.cb(frame, iface);
+                        return this.statefulClose(i)
                     }
+
+                    if (icmpHdr.get("type") == ICMPV6_TYPES.ECHO_REPLY && ICMP_ECHO_HEADER.create(icmpHdr.get("data")).get("id") == s.id) {
+                        s.cb(frame, iface);
+                        return this.statefulClose(i)
+                    }
+
                 }
             }
         }
     }
 
-    statefulSend(frame: EthernetFrame, cb: (frame: EthernetFrame, iface: Interface) => void) {
-        let iface = this.interfaces.find(({ macAddress }) => macAddress.toString() == frame.source.toString());
+    statefulSend(frame: typeof ETHERNET_HEADER, cb: (frame: typeof ETHERNET_HEADER, iface: Interface) => void) {
+        let iface = this.interfaces.find(({ macAddress }) => macAddress.toString() == frame.get("smac").toString());
         if (!iface) {
             throw new Error("No interface for source address")
         }
 
         // first only support arp
-        if (frame.type == ETHER_TYPES.ARP) {
-            let arpPacket = new ARPPacket(frame.payload);
+        if (frame.get("ethertype") == ETHER_TYPES.ARP) {
+            let arpHdr = ARP_HEADER.create(frame.get("payload"));
             // only care about arp requests
-            if (arpPacket.operation == OPCODES.REQUEST) {
+            if (arpHdr.get("oper") == ARP_OPCODES.REQUEST) {
                 let sidx = this.state.push({
-                    type: frame.type,
+                    ethertype: frame.get("ethertype"),
                     cb,
-                    targetP: arpPacket.targetProtocol.toNumber()
+                    tpa: arpHdr.get("tpa").toString()
                 })
 
                 iface.send(frame);
                 return sidx;
             }
-        } else if (frame.type == ETHER_TYPES.IPv4) {
-            let ipPacket = new IPPacketV4(frame.payload);
+        } else if (frame.get("ethertype") == ETHER_TYPES.IPv4) {
+            let ipHdr = IPV4_HEADER.create(frame.get("payload"));
             // only support icmp first
-            if (ipPacket.protocol == PROTOCOLS.ICMP) {
-                let icmpPacket = new ICMPPacketV4(ipPacket.payload);
+            if (ipHdr.get("proto") == PROTOCOLS.ICMP) {
+                let icmpHdr = ICMP_HEADER.create(ipHdr.get("payload"));
 
                 // first only care about echo requests
-                if (icmpPacket.type == ICMPV4_TYPES.ECHO_REQUEST) {
-                    let { identifier } = readROHEcho(icmpPacket.roh);
+                if (icmpHdr.get("type") == ICMPV4_TYPES.ECHO_REQUEST) {
                     let sidx = this.state.push({
-                        type: frame.type,
+                        ethertype: frame.get("ethertype"),
                         cb,
-                        destinationP: ipPacket.destination.toString(),
-                        protocol: ipPacket.protocol,
-                        identifier: identifier
+                        destP: ipHdr.get("daddr").toString(),
+                        proto: ipHdr.get("proto"),
+                        id: ICMP_ECHO_HEADER.create(icmpHdr.get("data")).get("id")
                     })
 
                     iface.send(frame);
                     return sidx;
                 }
             }
-        } else if (frame.type == ETHER_TYPES.IPv6) {
-            let ipPacket = new IPPacketV6(frame.payload);
-
+        } else if (frame.get("ethertype") == ETHER_TYPES.IPv6) {
+            let ipHdr = IPV6_HEADER.create(frame.get("payload"));
             // only support icmp first
-            if (ipPacket.nextHeader == PROTOCOLS.IPV6_ICMP) {
-                let icmpPacket = new ICMPPacketV6(ipPacket.payload)
-
-                if (icmpPacket.type == ICMPV6_TYPES.ECHO_REQUEST) {
+            if (ipHdr.get("nextHeader") == PROTOCOLS.IPV6_ICMP) {
+                let icmpHdr = ICMP_HEADER.create(ipHdr.get("payload"));
+                
+                if (icmpHdr.get("type") == ICMPV6_TYPES.ECHO_REQUEST) {
                     let sidx = this.state.push({
-                        type: frame.type,
+                        ethertype: frame.get("ethertype"),
                         cb,
-                        destinationP: ipPacket.destination.toString(),
-                        protocol: ipPacket.nextHeader,
-                        icmpType: icmpPacket.type,
-                        identifier: readROHEcho(icmpPacket.roh).identifier
+                        destP: ipHdr.get("daddr").toString(),
+                        proto: ipHdr.get("nextHeader"),
+                        id: ICMP_ECHO_HEADER.create(icmpHdr.get("data")).get("id")
                     })
                     iface.send(frame);
                     return sidx
-                } else if (icmpPacket.type == ICMPV6_TYPES.NEIGHBOR_SOLICITATION) {
+                } else if (icmpHdr.get("type") == ICMPV6_TYPES.NEIGHBOR_SOLICITATION) {
                     let sidx = this.state.push({
-                        type: frame.type,
+                        ethertype: frame.get("ethertype"),
                         cb,
-                        destinationP: ipPacket.destination.toString(),
-                        protocol: ipPacket.nextHeader,
-                        icmpType: icmpPacket.type,
-                        content: icmpPacket.content
+                        proto: ipHdr.get("nextHeader"),
+                        tpa: ICMP_NDP_HEADER.create(icmpHdr.get("data")).get("targetAddress").toString()
                     })
                     iface.send(frame);
                     return sidx

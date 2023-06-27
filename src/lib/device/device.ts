@@ -1,26 +1,26 @@
-import { BitArray } from "../binary";
-import { EthernetFrame, MACAddress } from "../ethernet";
+import { MACAddress } from "../address/mac";
+import { or } from "../binary/buffer-bitwise";
+import { UINT16 } from "../binary/struct";
+import { ETHERNET_HEADER } from "../header/ethernet";
 import { Interface } from "./interface";
 
 let macAddressCount = 0;
-let startBits = new BitArray(0, 24).or(new BitArray("fa20f0", 16));
+let startBuf = Buffer.from([0xfa, 0xff, 0x0f, 0])
 function createMacAddress() {
-    return new MACAddress(startBits.concat(
-        new BitArray(0, 14).or(new BitArray(macAddressCount++)),
-        new BitArray(0, 10).or(new BitArray(Math.floor(Math.random() * (2 ** 10 - 1)))),
-    ))
+    let buf = UINT16.setter(macAddressCount++)
+    return new MACAddress(Buffer.concat([startBuf, buf]))
 }
 
 export class Device {
     name = Math.floor(Math.random() * 10_000).toString() + "A";
     interfaces: Interface[] = [];
 
-    log(frame: EthernetFrame, iface: Interface) {
+    log(frame: typeof ETHERNET_HEADER, iface: Interface) {
         // inform about request
-        console.info(`${this.name} recieved on interface: ${iface.ifID}, from ${frame.source.toString()}`)
+        console.info(`${this.name} recieved on interface: ${iface.ifID}, from ${frame.get("smac").toString()}`)
     }
 
-    listener(frame: EthernetFrame, iface: Interface) {
+    listener(frame: typeof ETHERNET_HEADER, iface: Interface) {
         this.log(frame, iface);
     }
 

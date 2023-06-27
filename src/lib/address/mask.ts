@@ -98,9 +98,9 @@ export class AddressMask<Address extends typeof BaseAddress>  {
         return true;
     }
 
-    compare<A extends InstanceType<Address>>(address1: A, addres2: A): boolean {
+    compare<A extends InstanceType<Address>>(address1: A, address2: A): boolean {
         return and(this.buffer, address1.buffer).toString("hex") ==
-            and(this.buffer, addres2.buffer).toString("hex")
+            and(this.buffer, address2.buffer).toString("hex")
     }
 
     /**
