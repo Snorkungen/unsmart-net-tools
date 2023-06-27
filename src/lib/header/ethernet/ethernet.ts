@@ -20,10 +20,10 @@ export const ETHERNET_HEADER = defineStruct({
  #### ***Name probably should be changed but essentially this vlan header***
  Source <https://en.wikipedia.org/wiki/IEEE_802.1Q>
  */
-export const ETHERNET_DOT1Q_HEADER = {
+export const ETHERNET_DOT1Q_HEADER = defineStruct({
     pcp: UINT16(3),
     dei: UINT16(1),
     vid: UINT16(12),
     ethertype: <StructType<EtherType>>UINT16,
     payload: SLICE
-}
+})
