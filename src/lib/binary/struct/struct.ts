@@ -245,7 +245,7 @@ export class Struct<Types extends Record<string, StructType<any>>>{
             struct.buffer = Buffer.from(values);
         } else {
             for (let key in values) {
-                if (values[key]) struct.set(key, values[key]!);
+                if (values[key] && this.types[key]) struct.set(key, values[key]!);
             }
         }
 
