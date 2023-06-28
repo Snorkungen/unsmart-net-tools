@@ -1,6 +1,6 @@
 import { MAC_ADDRESS } from "../../address/mac";
 import { defineStruct, UINT16, SLICE, StructType } from "../../binary/struct";
-import { EtherType } from "../../ethernet/types";
+import { EtherType } from "./ethertypes";
 
 /*
     IMPORTANT! if i were to read this then rememvber to implement FCS / CRC32
