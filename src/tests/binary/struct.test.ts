@@ -14,7 +14,7 @@ describe("Buffer based struct", () => {
             slice: SLICE
         })
 
-        let st = struct.create(Buffer.from("4feff090", "hex"));
+        let st = struct.from(Buffer.from("4feff090", "hex"));
         expect(st.get("version")).eq(4)
         expect(st.get("ihl")).eq(15)
         expect(st.get("flags")).eq(7)
@@ -98,7 +98,7 @@ describe("Buffer based struct", () => {
             int: INT8,
             uint: UINT8,
             slice: SLICE
-        }).create(Buffer.from("ffff1111", "hex"))
+        }).from(Buffer.from("ffff1111", "hex"))
 
         expect(createdStruct.getMinSize()).toEqual(2)
 
@@ -113,7 +113,7 @@ describe("Buffer based struct", () => {
     test("create Struct #3", () => {
         let struct = defineStruct({
             uint: UINT16
-        }), createdStruct = struct.create(Buffer.from("0100" /* 0x0100*/, "hex"), { bigEndian: false });
+        }), createdStruct = struct.from(Buffer.from("0100" /* 0x0100*/, "hex"), { bigEndian: false });
         expect(createdStruct.get("uint")).toBe(1)
 
         createdStruct.set("uint", Buffer.from("0200" /* 0x0200*/, "hex"))
@@ -124,7 +124,7 @@ describe("Buffer based struct", () => {
 
         let struct2 = defineStruct({
             int: INT16
-        }), createdStruct2 = struct2.create(Buffer.from("0100" /* 0x0100*/, "hex"), { bigEndian: false });
+        }), createdStruct2 = struct2.from(Buffer.from("0100" /* 0x0100*/, "hex"), { bigEndian: false });
 
         expect(createdStruct2.get("int")).toBe(1)
 

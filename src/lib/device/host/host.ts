@@ -53,7 +53,7 @@ export class Host extends Device {
 
         if (frame.get("ethertype") == ETHER_TYPES.IPv4) {
             // ipv4 packet
-            let ipHdr = IPV4_HEADER.create(frame.get("payload").subarray(0));
+            let ipHdr = IPV4_HEADER.from(frame.get("payload").subarray(0));
 
             if (ignoreIPPacketHost(ipHdr.get("daddr"), iface)) {
                 // ignore, wrong destination
@@ -62,7 +62,7 @@ export class Host extends Device {
 
             if (ipHdr.get("proto") == PROTOCOLS.ICMP) {
                 // icmp packet
-                let icmpHdr = ICMP_HEADER.create(ipHdr.get("payload"));
+                let icmpHdr = ICMP_HEADER.from(ipHdr.get("payload"));
                 console.info(`packet is an ICMP packet(${icmpHdr.get("type") == ICMPV4_TYPES.ECHO_REPLY && "Reply" || icmpHdr.get("type") == ICMPV4_TYPES.ECHO_REQUEST && "Request" || icmpHdr.get("type")})`)
                 if (icmpHdr.get("type") == ICMPV4_TYPES.ECHO_REQUEST) {
                     // icmp request
@@ -95,14 +95,14 @@ export class Host extends Device {
             }
 
         } else if (frame.get("ethertype") == ETHER_TYPES.IPv6) {
-            let ipHdr = IPV6_HEADER.create(frame.get("payload"));
+            let ipHdr = IPV6_HEADER.from(frame.get("payload"));
             // ignore if not matches parameter
 
             if (ignoreIPPacketHost(ipHdr.get("daddr"), iface)) {
                 return;
             }
             if (ipHdr.get("nextHeader") == PROTOCOLS.IPV6_ICMP) {
-                let icmpHdr = ICMP_HEADER.create(ipHdr.get("payload"));
+                let icmpHdr = ICMP_HEADER.from(ipHdr.get("payload"));
                 if (icmpHdr.get("type") == ICMPV6_TYPES.ECHO_REQUEST) {
                     let replyIcmpHdr = ICMP_HEADER.create({
                         type: ICMPV6_TYPES.ECHO_REPLY,
@@ -128,7 +128,7 @@ export class Host extends Device {
                     }), iface);
                 } else if (icmpHdr.get("type") == ICMPV6_TYPES.NEIGHBOR_SOLICITATION) {
                     // check if target is me
-                    let ndpHdr = ICMP_NDP_HEADER.create(icmpHdr.get("data"))
+                    let ndpHdr = ICMP_NDP_HEADER.from(icmpHdr.get("data"))
                     if (ndpHdr.get("targetAddress").toString() != iface.ipv6Address!.toString()) {
                         return;
                     }
@@ -160,7 +160,7 @@ export class Host extends Device {
 
         } else if (frame.get("ethertype") == ETHER_TYPES.ARP) {
             // handle an arp packet
-            let arpHdr = ARP_HEADER.create(frame.get("payload"));
+            let arpHdr = ARP_HEADER.from(frame.get("payload"));
 
             // console.info(`packet is an ARP(${arpHdr.get("oper") == 1 && "Request" || arpHdr.get("oper") == 2 && "Reply"})`)
 
@@ -173,7 +173,7 @@ export class Host extends Device {
                 }
 
                 // reply to request
-                let replyArpHdr = ARP_HEADER.create(arpHdr.getBuffer());
+                let replyArpHdr = ARP_HEADER.from(arpHdr.getBuffer());
                 replyArpHdr.set("oper", ARP_OPCODES.REPLY);
                 replyArpHdr.set("tha", iface.macAddress);
                 replyArpHdr.set("tpa", iface.ipv4Address!);
@@ -248,7 +248,7 @@ export class Host extends Device {
             }
 
             if (s.ethertype == ETHER_TYPES.ARP) {
-                let arpHdr = ARP_HEADER.create(frame.get("payload"));
+                let arpHdr = ARP_HEADER.from(frame.get("payload"));
 
                 // only care about arp replies
                 if (arpHdr.get("oper") != ARP_OPCODES.REPLY) {
@@ -261,18 +261,18 @@ export class Host extends Device {
                 s.cb(frame, iface);
                 return this.statefulClose(i);
             } else if (s.ethertype == ETHER_TYPES.IPv4) {
-                let ipHdr = IPV4_HEADER.create(frame.get("payload"));
+                let ipHdr = IPV4_HEADER.from(frame.get("payload"));
 
                 if (ipHdr.get("saddr").toString() != s.destP) {
                     continue;
                 }
 
                 if (ipHdr.get("proto") == PROTOCOLS.ICMP) {
-                    let icmpHdr = ICMP_HEADER.create(ipHdr.get("payload"));
+                    let icmpHdr = ICMP_HEADER.from(ipHdr.get("payload"));
                     // I don't think this is following spec
 
                     // In here i can respond to icmp replies for ipv4 messages
-                    if (icmpHdr.get("type") == ICMPV4_TYPES.ECHO_REPLY && ICMP_ECHO_HEADER.create(icmpHdr.get("data")).get("id") == s.id) {
+                    if (icmpHdr.get("type") == ICMPV4_TYPES.ECHO_REPLY && ICMP_ECHO_HEADER.from(icmpHdr.get("data")).get("id") == s.id) {
                         s.cb(frame, iface);
                         return this.statefulClose(i);
                     }
@@ -282,17 +282,17 @@ export class Host extends Device {
 
                 }
             } else if (s.ethertype == ETHER_TYPES.IPv6) {
-                let ipHdr = IPV6_HEADER.create(frame.get("payload"));
+                let ipHdr = IPV6_HEADER.from(frame.get("payload"));
                 // only support icmp first
                 if (ipHdr.get("nextHeader") == PROTOCOLS.IPV6_ICMP) {
-                    let icmpHdr = ICMP_HEADER.create(ipHdr.get("payload"))
+                    let icmpHdr = ICMP_HEADER.from(ipHdr.get("payload"))
 
-                    if (icmpHdr.get("type") == ICMPV6_TYPES.NEIGHBOR_ADVERTISMENT && (s.tpa == ICMP_NDP_HEADER.create(icmpHdr.get("data")).get("targetAddress").toString())) {
+                    if (icmpHdr.get("type") == ICMPV6_TYPES.NEIGHBOR_ADVERTISMENT && (s.tpa == ICMP_NDP_HEADER.from(icmpHdr.get("data")).get("targetAddress").toString())) {
                         s.cb(frame, iface);
                         return this.statefulClose(i)
                     }
 
-                    if (icmpHdr.get("type") == ICMPV6_TYPES.ECHO_REPLY && ICMP_ECHO_HEADER.create(icmpHdr.get("data")).get("id") == s.id) {
+                    if (icmpHdr.get("type") == ICMPV6_TYPES.ECHO_REPLY && ICMP_ECHO_HEADER.from(icmpHdr.get("data")).get("id") == s.id) {
                         s.cb(frame, iface);
                         return this.statefulClose(i)
                     }
@@ -310,7 +310,7 @@ export class Host extends Device {
 
         // first only support arp
         if (frame.get("ethertype") == ETHER_TYPES.ARP) {
-            let arpHdr = ARP_HEADER.create(frame.get("payload"));
+            let arpHdr = ARP_HEADER.from(frame.get("payload"));
             // only care about arp requests
             if (arpHdr.get("oper") == ARP_OPCODES.REQUEST) {
                 let sidx = this.state.push({
@@ -323,10 +323,10 @@ export class Host extends Device {
                 return sidx;
             }
         } else if (frame.get("ethertype") == ETHER_TYPES.IPv4) {
-            let ipHdr = IPV4_HEADER.create(frame.get("payload"));
+            let ipHdr = IPV4_HEADER.from(frame.get("payload"));
             // only support icmp first
             if (ipHdr.get("proto") == PROTOCOLS.ICMP) {
-                let icmpHdr = ICMP_HEADER.create(ipHdr.get("payload"));
+                let icmpHdr = ICMP_HEADER.from(ipHdr.get("payload"));
 
                 // first only care about echo requests
                 if (icmpHdr.get("type") == ICMPV4_TYPES.ECHO_REQUEST) {
@@ -335,7 +335,7 @@ export class Host extends Device {
                         cb,
                         destP: ipHdr.get("daddr").toString(),
                         proto: ipHdr.get("proto"),
-                        id: ICMP_ECHO_HEADER.create(icmpHdr.get("data")).get("id")
+                        id: ICMP_ECHO_HEADER.from(icmpHdr.get("data")).get("id")
                     })
 
                     this.sendFrame(frame, iface);
@@ -343,10 +343,10 @@ export class Host extends Device {
                 }
             }
         } else if (frame.get("ethertype") == ETHER_TYPES.IPv6) {
-            let ipHdr = IPV6_HEADER.create(frame.get("payload"));
+            let ipHdr = IPV6_HEADER.from(frame.get("payload"));
             // only support icmp first
             if (ipHdr.get("nextHeader") == PROTOCOLS.IPV6_ICMP) {
-                let icmpHdr = ICMP_HEADER.create(ipHdr.get("payload"));
+                let icmpHdr = ICMP_HEADER.from(ipHdr.get("payload"));
 
                 if (icmpHdr.get("type") == ICMPV6_TYPES.ECHO_REQUEST) {
                     let sidx = this.state.push({
@@ -354,7 +354,7 @@ export class Host extends Device {
                         cb,
                         destP: ipHdr.get("daddr").toString(),
                         proto: ipHdr.get("nextHeader"),
-                        id: ICMP_ECHO_HEADER.create(icmpHdr.get("data")).get("id")
+                        id: ICMP_ECHO_HEADER.from(icmpHdr.get("data")).get("id")
                     })
                     this.sendFrame(frame, iface);
                     return sidx
@@ -363,7 +363,7 @@ export class Host extends Device {
                         ethertype: frame.get("ethertype"),
                         cb,
                         proto: ipHdr.get("nextHeader"),
-                        tpa: ICMP_NDP_HEADER.create(icmpHdr.get("data")).get("targetAddress").toString()
+                        tpa: ICMP_NDP_HEADER.from(icmpHdr.get("data")).get("targetAddress").toString()
                     })
                     this.sendFrame(frame, iface);
                     return sidx

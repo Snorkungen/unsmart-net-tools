@@ -66,7 +66,7 @@ export default class NeighborTable {
                 let f = createARPRequest(query, iface)
                 if (!f) return;
                 indices.push(this.host.statefulSend(f, (frame, iface) => {
-                    let arpHdr = ARP_HEADER.create(frame.get("payload"))
+                    let arpHdr = ARP_HEADER.from(frame.get("payload"))
 
                     this.version4.set(query.toString(), {
                         neighbor: query,

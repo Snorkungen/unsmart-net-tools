@@ -234,21 +234,31 @@ export class Struct<Types extends Record<string, StructType<any>>>{
         return this;
     }
 
-    create<TypeValues extends { [x in keyof Types]: ReturnType<Types[x]["getter"]> }>(values: Partial<TypeValues> | Buffer, options: Partial<StructOptions> = {}) {
+    create<TypeValues extends { [x in keyof Types]: ReturnType<Types[x]["getter"]> }>(values: Partial<TypeValues>, options: Partial<StructOptions> = {}) {
         let struct = new Struct(this.types, { ...this.options, ...options });
+        struct.buffer = Buffer.from(this.buffer)
 
-        if (values instanceof Buffer) {
-            if (values.length < this.getMinSize()) {
-                // here should maybe throw error if the bytes do not fill struct
-                // throw new Error("too few bytes to satisfy struct. " + `${values.length} < ${this.getMinSize()}`)
-            }
-            struct.buffer = Buffer.from(values);
-        } else {
-            struct.buffer = Buffer.from(this.buffer)
-            for (let key in values) {
-                if (values[key] && this.types[key]) struct.set(key, values[key]!);
-            }
+        if (values instanceof Uint8Array) {
+            throw new Error("cannot create using Uint8Array. Please use Struct.from")
         }
+
+        for (let key in values) {
+            if (!this.order.includes(key)) {
+                throw new Error("Cannot set key " + key)
+            }
+            if (values[key] && this.types[key]) struct.set(key, values[key]!);
+        }
+
+        return struct;
+    }
+
+    from(buf: Buffer, options: Partial<StructOptions> = {}): Struct<Types> {
+        let struct = this.create({}, options);
+        if (buf.length < this.getMinSize()) {
+            // here should maybe throw error if the bytes do not fill struct
+            // throw new Error("too few bytes to satisfy struct. " + `${buf.length} < ${this.getMinSize()}`)
+        }
+        struct.buffer = Buffer.from(buf);
 
         return struct;
     }

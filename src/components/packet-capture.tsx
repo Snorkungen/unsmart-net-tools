@@ -27,12 +27,12 @@ function stringifyConstName(name: string): string {
 export default function PacketCapture() {
     let buffer = Buffer.from(base64EncodedPCAPFile, "base64");
     let offset = 0;
-    let pcapHeader = PCAP_GLOBAL_HEADER.create(buffer.subarray(offset, offset += PCAP_GLOBAL_HEADER.size), { bigEndian: false, packed: false })
+    let pcapHeader = PCAP_GLOBAL_HEADER.from(buffer.subarray(offset, offset += PCAP_GLOBAL_HEADER.size), { bigEndian: false, packed: false })
 
     let data: Array<[typeof PCAP_PACKET_HEADER, typeof ETHERNET_HEADER]> = [];
     while (offset < buffer.length) {
-        let packetHeader = PCAP_PACKET_HEADER.create(buffer.subarray(offset, offset += PCAP_PACKET_HEADER.getMinSize()), { bigEndian: false, packed: false })
-        let ethHeader = ETHERNET_HEADER.create(buffer.subarray(offset, offset += (packetHeader.get("inclLen"))));
+        let packetHeader = PCAP_PACKET_HEADER.from(buffer.subarray(offset, offset += PCAP_PACKET_HEADER.getMinSize()), { bigEndian: false, packed: false })
+        let ethHeader = ETHERNET_HEADER.from(buffer.subarray(offset, offset += (packetHeader.get("inclLen"))));
 
         data.push([packetHeader, ethHeader])
 
@@ -60,7 +60,7 @@ export default function PacketCapture() {
         }
 
         if (ethHeader.get("ethertype") == ETHER_TYPES.IPv4) {
-            let ipHeader = IPV4_HEADER.create(ethHeader.get("payload").subarray(0, -(UINT32.bitLength / 8)));
+            let ipHeader = IPV4_HEADER.from(ethHeader.get("payload").subarray(0, -(UINT32.bitLength / 8)));
 
             entry.source = ipHeader.get("saddr");
             entry.destination = ipHeader.get("daddr");
@@ -69,9 +69,9 @@ export default function PacketCapture() {
 
             if (ipHeader.get("proto") == PROTOCOLS.ICMP) {
                 let unwrapIPv4 = (ipHdrBuffer: Buffer) => {
-                    let contentIPHdr = IPV4_HEADER.create(ipHdrBuffer);
+                    let contentIPHdr = IPV4_HEADER.from(ipHdrBuffer);
                     if (contentIPHdr.get("proto") == PROTOCOLS.UDP) {
-                        let udpHdr = UDP_HEADER.create(contentIPHdr.get("payload"))
+                        let udpHdr = UDP_HEADER.from(contentIPHdr.get("payload"))
                         entry.sport = udpHdr.get("sport")
                         entry.dport = udpHdr.get("dport")
 
@@ -80,21 +80,21 @@ export default function PacketCapture() {
                     entry.protocol += "->" + getKeyByValue(PROTOCOLS, contentIPHdr.get("proto"))
                     return contentIPHdr;
                 }
-                let icmpHdr = ICMP_HEADER.create(ipHeader.get("payload"))
+                let icmpHdr = ICMP_HEADER.from(ipHeader.get("payload"))
 
                 if (icmpHdr.get("type") == ICMPV4_TYPES.TIME_EXCEEDED) {
-                    let contentIPHdr = unwrapIPv4(ICMP_UNUSED.create(icmpHdr.get("data")).get("data"));
+                    let contentIPHdr = unwrapIPv4(ICMP_UNUSED.from(icmpHdr.get("data")).get("data"));
 
                     entry.negative = true
                     entry.title = `Time Exceeded: ${stringifyConstName(getKeyByValue(ICMPV4_CODES[ICMPV4_TYPES.TIME_EXCEEDED], icmpHdr.get("code")))}`
                 } else if (icmpHdr.get("type") == ICMPV4_TYPES.DESTINATION_UNREACHABLE) {
-                    let contentIPHdr = unwrapIPv4(ICMP_UNUSED.create(icmpHdr.get("data")).get("data"));
+                    let contentIPHdr = unwrapIPv4(ICMP_UNUSED.from(icmpHdr.get("data")).get("data"));
 
                     entry.negative = true;
-                    entry.title = `Denstination Unreachable: ${stringifyConstName(getKeyByValue(ICMPV4_CODES[ICMPV4_TYPES.DESTINATION_UNREACHABLE], icmpHdr.get("code")))}`
+                    entry.title = `Destination Unreachable: ${stringifyConstName(getKeyByValue(ICMPV4_CODES[ICMPV4_TYPES.DESTINATION_UNREACHABLE], icmpHdr.get("code")))}`
                 }
             } else if (ipHeader.get("proto") == PROTOCOLS.UDP) {
-                let udpHdr = UDP_HEADER.create(ipHeader.get("payload"))
+                let udpHdr = UDP_HEADER.from(ipHeader.get("payload"))
                 entry.sport = udpHdr.get("sport")
                 entry.dport = udpHdr.get("dport")
             }
