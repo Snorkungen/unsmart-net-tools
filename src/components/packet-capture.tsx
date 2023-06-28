@@ -7,6 +7,7 @@ import { ETHERNET_HEADER, ETHER_TYPES } from "../lib/header/ethernet";
 import { IPV4_HEADER, PROTOCOLS } from "../lib/header/ip";
 import { ICMP_HEADER, ICMP_UNUSED, ICMPV4_CODES, ICMPV4_TYPES } from "../lib/header/icmp";
 import { UDP_HEADER } from "../lib/header/udp";
+import { crc32 } from "../lib/binary/crc";
 
 function stringifyStruct(struct: Struct<any>) {
     let obj: any = {}
@@ -37,9 +38,6 @@ export default function PacketCapture() {
 
     }
 
-    let firstEthHdr = data[0][1];
-    let firstIPHdr = IPV4_HEADER.create(firstEthHdr.get("payload").subarray(0, -(UINT32.bitLength / 8)));
-    console.log(firstIPHdr.set("csum", 0), calculateChecksum(firstIPHdr.getBuffer().subarray(0, 20)))
 
     type TableEntry = {
         timestamp: Date;
