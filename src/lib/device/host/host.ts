@@ -69,7 +69,7 @@ export class Host extends Device {
                     // reply to request
                     let replyIcmpHdr = ICMP_HEADER.create({
                         type: ICMPV4_TYPES.ECHO_REPLY,
-                        data: icmpHdr.get("data")
+                        data: Buffer.concat([icmpHdr.get("data"), ipHdr.getBuffer().subarray(0, 28)])
                     })
 
                     // I have no clue if this is the right way to calculate the checksum
@@ -103,11 +103,11 @@ export class Host extends Device {
                 if (icmpHdr.get("type") == ICMPV6_TYPES.ECHO_REQUEST) {
                     let replyIcmpHdr = ICMP_HEADER.create({
                         type: ICMPV6_TYPES.ECHO_REPLY,
-                        data: icmpHdr.get("data")
+                        data: Buffer.concat([icmpHdr.get("data"), ipHdr.getBuffer()])
                     })
 
                     // I have no clue if this is the right way to calculate the checksum
-                    replyIcmpHdr.set("csum", calculateChecksum(replyIcmpHdr.getBuffer()));
+                    // replyIcmpHdr.set("csum", calculateChecksum(replyIcmpHdr.getBuffer()));
 
                     let replyIPHdr = IPV6_HEADER.create({
                         saddr: iface.ipv6Address,

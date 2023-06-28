@@ -65,7 +65,7 @@ export async function pingVersion6(host: Host, destination: IPV6Address, identif
         // refer to commments in version 4
     }
 
-    icmpHdr.set("csum", calculateChecksum(icmpHdr.getBuffer()));
+    // icmpHdr.set("csum", calculateChecksum(icmpHdr.getBuffer()));
 
     let ipHdr = IPV6_HEADER.create({
         saddr: entry.iface.ipv6Address!,
