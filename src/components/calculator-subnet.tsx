@@ -1,7 +1,8 @@
 import { Component, createSignal, For, JSX } from "solid-js";
 import { calculateSubnetIPV4, classifyIPV4Address, IPV4_CLASSESS, IPV4Address, IPV4AddressClass, reservedAddresses } from "../lib/address/ipv4";
 import { AddressMask, createMask } from "../lib/address/mask";
-import { mutateOr } from "../lib/binary/buffer-bitwise";
+import { mutateAnd, mutateOr, not, or } from "../lib/binary/buffer-bitwise";
+import { bufferFromNumber } from "../lib/binary/buffer-from-number";
 
 const privateUseAddresses = reservedAddresses.filter(([, , scope]) => scope == "PRIVATE_USE");
 const defaultSubnetParams: Parameters<typeof calculateSubnetIPV4> = [new IPV4Address("192.168.76.2"), createMask(IPV4Address, 26)]
@@ -142,19 +143,14 @@ export const CalculatorSubnetIPV4: Component = () => {
     // randomize the adress keep within subnet
     const randomizeAddress = () => {
         setState(prev => {
-            let hostBits = IPV4Address.ADDRESS_LENGTH - prev.mask.length;
-            let n = Math.round(Math.random() * (2 ** hostBits - 2));
-
-            let nbuf = Buffer.from(n.toString(16), "hex"),
-                buffer = Buffer.alloc(IPV4Address.ADDRESS_LENGTH / 8);
-            buffer.set(nbuf, buffer.length - nbuf.length);
-
-            mutateOr(buffer, prev.mask.mask(prev.address).buffer);
-            if (buffer[3] == 0) buffer[3] = buffer[3] | 1;
+            let buf = mutateAnd(
+                bufferFromNumber(Math.ceil(Math.random() * (2 ** (IPV4Address.ADDRESS_LENGTH - prev.mask.length) - 2)), 4).reverse(),
+                not(prev.mask.buffer)
+            )
 
             return {
                 ...prev,
-                address: new IPV4Address(buffer)
+                address: new IPV4Address(or(buf, prev.mask.mask(prev.address).buffer))
             };
         })
     }
