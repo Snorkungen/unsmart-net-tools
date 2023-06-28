@@ -5,7 +5,7 @@ import { Host } from "./host";
 import { NEIGHBOR_DISCOVERY_ERROR } from "./neighbor-table";
 import { NeighborEntry } from "./neighbor-table";
 
-export async function resolveSendingInformationVersion4(host: Host, address: IPV4Address): Promise<NeighborEntry<IPV6Address>> {
+export async function resolveSendingInformationVersion4(host: Host, address: IPV4Address): Promise<NeighborEntry<IPV4Address>> {
     // check if inside subnet   
     for (let opt of host.interfaces) {
         if (!opt.ipv4Address || !opt.ipv4SubnetMask) {
@@ -69,7 +69,7 @@ export async function resolveSendingInformationVersion6(host: Host, address: IPV
 
     throw new Error("Default gateway logic not implemented")
 }
-export default async function resolveSendingInformation(device: Host, address: IPV4Address | IPV6Address): Promise<NeighborEntry> {
+export default async function resolveSendingInformation(device: Host, address: IPV4Address | IPV6Address): Promise<NeighborEntry<typeof address>> {
     if (address instanceof IPV4Address) {
         return resolveSendingInformationVersion4(device, address);
     } else if (address instanceof IPV6Address) {

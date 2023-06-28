@@ -1,3 +1,4 @@
+import { BaseAddress } from "../../address/base";
 import { IPV4Address } from "../../address/ipv4";
 import { ALL_LINK_LOCAL_NODES_ADDRESSV6, IPV6Address } from "../../address/ipv6";
 import { MACAddress } from "../../address/mac";
@@ -11,7 +12,7 @@ import { Host } from "./host";
 
 const ADDRESS_V6_SIMPLIFY = -1;
 
-export type NeighborEntry<AddressT = (IPV4Address | IPV4Address)> = {
+export type NeighborEntry<AddressT extends BaseAddress = BaseAddress> = {
     neighbor: AddressT;
     iface: Interface;
     macAddress: MACAddress;
