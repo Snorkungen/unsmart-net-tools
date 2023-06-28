@@ -1,4 +1,6 @@
 import { BaseAddress, defineAddress } from "../base";
+import { createMask } from "../mask";
+import { ADDRESS_TYPESV6 } from "./reserved";
 
 
 export class IPV6Address implements BaseAddress {
@@ -28,10 +30,7 @@ export class IPV6Address implements BaseAddress {
     }
     buffer: Buffer;
 
-    constructor(input: string);
-    constructor(input: Uint8Array);
-    constructor(input: IPV6Address);
-    constructor(input: unknown) {
+    constructor(input: string | Uint8Array | IPV6Address) {
         if (typeof input == "string") {
             this.buffer = IPV6Address.parse(input)
         } else if (input instanceof Uint8Array && input.length == IPV6Address.ADDRESS_LENGTH / 8) {
@@ -105,6 +104,21 @@ export class IPV6Address implements BaseAddress {
 
         return a.join(":")
     }
+
+    isLinkLocal(): boolean {
+        return LINK_LOCAL_MASK.compare(LINK_LOCAL_NET_ADDRESS, this);
+    }
+
+    isMulticast(): boolean {
+        return MULTICAST_MASK.compare(MULTICAST_NET_ADDRESS, this);
+    }
+    isLoopback(): boolean {
+        return LOOPBACK_MASK.compare(LOOPBACK_NET_ADDRESS, this);
+    }
 }
+
+const LINK_LOCAL_MASK = createMask(IPV6Address, ADDRESS_TYPESV6.LINK_LOCAL[1]), LINK_LOCAL_NET_ADDRESS = new IPV6Address(ADDRESS_TYPESV6.LINK_LOCAL[0]);
+const MULTICAST_MASK = createMask(IPV6Address, ADDRESS_TYPESV6.MULTICAST[1]), MULTICAST_NET_ADDRESS = new IPV6Address(ADDRESS_TYPESV6.MULTICAST[0]);
+const LOOPBACK_MASK = createMask(IPV6Address, ADDRESS_TYPESV6.LOOPBACK[1]), LOOPBACK_NET_ADDRESS = new IPV6Address(ADDRESS_TYPESV6.LOOPBACK[0]);
 
 export const IPV6_ADDRESS = defineAddress(IPV6Address)
