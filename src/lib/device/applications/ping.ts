@@ -2,7 +2,7 @@ import { IPV4Address } from "../../address/ipv4";
 import { IPV6Address } from "../../address/ipv6";
 import { ETHERNET_HEADER, ETHER_TYPES } from "../../header/ethernet";
 import { ICMPV6_TYPES, ICMP_ECHO_HEADER, ICMP_HEADER , ICMPV4_TYPES} from "../../header/icmp";
-import { IPV4_HEADER, IPV6_HEADER, PROTOCOLS } from "../../header/ip";
+import { IPV4_HEADER, IPV6_HEADER, PROTOCOLS, createIPV4Header } from "../../header/ip";
 import { Host } from "../host";
 import { resolveSendingInformationVersion4, resolveSendingInformationVersion6 } from "../host/resolve-sending-information";
 
@@ -31,7 +31,7 @@ export async function pingVersion4(host: Host, destination: IPV4Address, identif
         // Do nothing because i haven't decided if the device should have an async send function. So thats why this allows me to have an device ping it self
     }
 
-    let ipHdr = IPV4_HEADER.create({
+    let ipHdr = createIPV4Header({
         saddr: entry.iface.ipv4Address!,
         daddr: destination,
         proto: PROTOCOLS.ICMP,

@@ -6,7 +6,7 @@ import resolveSendingInformation from "./resolve-sending-information";
 import { IPV4Address } from "../../address/ipv4";
 import { IPV6Address, ALL_LINK_LOCAL_NODES_ADDRESSV6 } from "../../address/ipv6";
 import { ETHERNET_HEADER, ETHER_TYPES, EtherType } from "../../header/ethernet";
-import { IPV4_HEADER, IPV6_HEADER, PROTOCOLS, type Protocol } from "../../header/ip";
+import { IPV4_HEADER, IPV6_HEADER, PROTOCOLS, createIPV4Header, type Protocol } from "../../header/ip";
 import { ICMP_ECHO_HEADER, ICMP_HEADER, ICMP_NDP_HEADER, ICMPV4_TYPES, ICMPV6_TYPES } from "../../header/icmp";
 import { calculateChecksum } from "../../binary/checksum";
 import { ARP_HEADER, ARP_OPCODES } from "../../header/arp";
@@ -75,15 +75,12 @@ export class Host extends Device {
                     // I have no clue if this is the right way to calculate the checksum
                     replyIcmpHdr.set("csum", calculateChecksum(replyIcmpHdr.getBuffer()));
 
-                    let replyIPHeader = IPV4_HEADER.create({
+                    let replyIPHeader = createIPV4Header({
                         saddr: iface.ipv4Address!,
                         daddr: ipHdr.get("saddr"),
                         proto: PROTOCOLS.ICMP,
                         payload: replyIcmpHdr.getBuffer()
                     })
-
-                    // I have no clue if this is the right way to calculate the checksum
-                    replyIPHeader.set("csum", calculateChecksum(replyIPHeader.getBuffer()));
 
                     return this.sendFrame(ETHERNET_HEADER.create({
                         smac: iface.macAddress,
@@ -202,15 +199,12 @@ export class Host extends Device {
                     // return;
                     // Do nothing because i haven't decided if the device should have an async send function. So thats why this allows me to have an device ping it self
                 }
-                let ipHdr = IPV4_HEADER.create({
+                let ipHdr = createIPV4Header({
                     saddr: iface.ipv4Address!,
                     daddr: destination,
                     proto: protocol,
                     payload: payload.getBuffer()
                 })
-
-                // I have no clue if this is the right way to calculate the checksum
-                ipHdr.set("csum", calculateChecksum(ipHdr.getBuffer()));
 
                 this.sendFrame(ETHERNET_HEADER.create({
                     dmac: macAddress,
