@@ -5,8 +5,7 @@ import { calculateChecksum } from "../../binary/checksum";
 import { ARP_HEADER, ARP_OPCODES } from "../../header/arp";
 import { ETHERNET_HEADER, ETHER_TYPES, } from "../../header/ethernet";
 import { ICMPV6_TYPES, ICMP_HEADER, ICMP_NDP_HEADER } from "../../header/icmp";
-import { IPV6_HEADER } from "../../header/ip";
-import { PROTOCOLS } from "../../ip/packet/protocols";
+import { IPV6_HEADER, PROTOCOLS } from "../../header/ip";
 import { Interface } from "../interface";
 import { Host } from "./host";
 
@@ -175,7 +174,7 @@ function createNDPRequest(query: IPV6Address, iface: Interface): typeof ETHERNET
     if (!iface.isConnected || !iface.ipv6Address) {
         return null;
     }
-    
+
     let ndpHdr = ICMP_NDP_HEADER.create({
         targetAddress: query
     }), icmpHdr = ICMP_HEADER.create({

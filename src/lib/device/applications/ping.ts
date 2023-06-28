@@ -1,9 +1,8 @@
 import { IPV4Address } from "../../address/ipv4";
 import { IPV6Address } from "../../address/ipv6";
 import { ETHERNET_HEADER, ETHER_TYPES } from "../../header/ethernet";
-import { ICMPV6_TYPES, ICMP_ECHO_HEADER, ICMP_HEADER } from "../../header/icmp";
+import { ICMPV6_TYPES, ICMP_ECHO_HEADER, ICMP_HEADER , ICMPV4_TYPES} from "../../header/icmp";
 import { IPV4_HEADER, IPV6_HEADER, PROTOCOLS } from "../../header/ip";
-import { ICMPV4_TYPES } from "../../ip/v4/icmp";
 import { Host } from "../host";
 import { resolveSendingInformationVersion4, resolveSendingInformationVersion6 } from "../host/resolve-sending-information";
 

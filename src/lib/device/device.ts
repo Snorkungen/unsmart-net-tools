@@ -1,5 +1,4 @@
 import { MACAddress } from "../address/mac";
-import { or } from "../binary/buffer-bitwise";
 import { UINT16 } from "../binary/struct";
 import { ETHERNET_HEADER } from "../header/ethernet";
 import { Interface } from "./interface";
