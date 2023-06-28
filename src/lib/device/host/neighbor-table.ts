@@ -3,7 +3,7 @@ import { IPV4Address } from "../../address/ipv4";
 import { ALL_LINK_LOCAL_NODES_ADDRESSV6, IPV6Address } from "../../address/ipv6";
 import { MACAddress } from "../../address/mac";
 import { calculateChecksum } from "../../binary/checksum";
-import { ARP_HEADER, ARP_OPCODES } from "../../header/arp";
+import { ARP_HEADER, ARP_OPCODES, createARPHeader } from "../../header/arp";
 import { ETHERNET_HEADER, ETHER_TYPES, } from "../../header/ethernet";
 import { ICMPV6_TYPES, ICMP_HEADER, ICMP_NDP_HEADER } from "../../header/icmp";
 import { IPV6_HEADER, PROTOCOLS } from "../../header/ip";
@@ -155,7 +155,7 @@ function createARPRequest(query: IPV4Address, iface: Interface): typeof ETHERNET
         return null;
     }
 
-    let arpHeader = ARP_HEADER.create({
+    let arpHeader = createARPHeader({
         oper: ARP_OPCODES.REQUEST,
         sha: iface.macAddress,
         spa: iface.ipv4Address,

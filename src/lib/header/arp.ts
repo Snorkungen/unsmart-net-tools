@@ -1,5 +1,5 @@
-import {  IPV4_ADDRESS } from "../address/ipv4";
-import { MAC_ADDRESS } from "../address/mac";
+import { IPV4_ADDRESS } from "../address/ipv4";
+import { MACAddress, MAC_ADDRESS } from "../address/mac";
 import { StructType, UINT16, UINT8, defineStruct } from "../binary/struct";
 
 /** Source <https://en.wikipedia.org/wiki/Address_Resolution_Protocol> */
@@ -30,3 +30,22 @@ export const ARP_OPCODES = {
     REQUEST: 1,
     REPLY: 2
 } as const;
+
+export function createARPHeader<V extends Parameters<typeof ARP_HEADER["create"]>[0] & {
+    oper: ARPOpcode;
+}>(values: V): typeof ARP_HEADER {
+    let hdr = ARP_HEADER.create({
+        htype: 1,
+        ptype: 0x0800, // PROTOCOLS.IPv4
+        hlen: 6,
+        plen: 4,
+    })
+
+    for (let k in values) {
+        if (!hdr.order.includes(k as typeof hdr["order"][number])) continue;
+        // @ts-ignore
+        hdr.set(k, values[k])
+    }
+
+    return hdr;
+}
