@@ -39,14 +39,15 @@ export function createIPV4Header<V extends Parameters<typeof IPV4_HEADER["create
 }>(values: V): typeof IPV4_HEADER {
     let hdr = IPV4_HEADER.create({
         version: 4,
-        ihl: 20 / 5,
+        ihl: 5,
         tos: 0,
+        ttl: 64
     }, {
         packed: true,
         bigEndian: true,
         "setDefaultValues": false
     });
-    
+
     for (let k in values) {
         if (!hdr.order.includes(k as typeof hdr["order"][number])) continue;
         // @ts-ignore
@@ -54,10 +55,11 @@ export function createIPV4Header<V extends Parameters<typeof IPV4_HEADER["create
     }
 
     // Set length
-    hdr.set("len", values.payload.byteLength);
+    hdr.set("len", hdr.getMinSize() + values.payload.byteLength);
 
-    // set checksum
-    hdr.set("csum", calculateChecksum(hdr.getBuffer()));
+    // set checksum 
+    // I do not know how this is actually done because I havn't bothered to read the spec
+    hdr.set("csum", calculateChecksum(hdr.getBuffer().subarray(0, 20)));
 
     return hdr;
 }

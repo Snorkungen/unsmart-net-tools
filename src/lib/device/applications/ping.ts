@@ -1,5 +1,6 @@
 import { IPV4Address } from "../../address/ipv4";
 import { IPV6Address } from "../../address/ipv6";
+import { calculateChecksum } from "../../binary/checksum";
 import { ETHERNET_HEADER, ETHER_TYPES } from "../../header/ethernet";
 import { ICMPV6_TYPES, ICMP_ECHO_HEADER, ICMP_HEADER , ICMPV4_TYPES} from "../../header/icmp";
 import { IPV4_HEADER, IPV6_HEADER, PROTOCOLS, createIPV4Header } from "../../header/ip";
@@ -31,6 +32,8 @@ export async function pingVersion4(host: Host, destination: IPV4Address, identif
         // Do nothing because i haven't decided if the device should have an async send function. So thats why this allows me to have an device ping it self
     }
 
+    icmpHdr.set("csum", calculateChecksum(icmpHdr.getBuffer()));
+
     let ipHdr = createIPV4Header({
         saddr: entry.iface.ipv4Address!,
         daddr: destination,
@@ -61,6 +64,8 @@ export async function pingVersion6(host: Host, destination: IPV6Address, identif
     if (!entry.iface.isConnected || !entry.iface.ipv6Address) {
         // refer to commments in version 4
     }
+
+    icmpHdr.set("csum", calculateChecksum(icmpHdr.getBuffer()));
 
     let ipHdr = IPV6_HEADER.create({
         saddr: entry.iface.ipv6Address!,
