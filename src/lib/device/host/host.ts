@@ -4,7 +4,7 @@ import { Device } from "../device";
 import NeighborTable from "./neighbor-table";
 import resolveSendingInformation from "./resolve-sending-information";
 import { IPV4Address } from "../../address/ipv4";
-import { IPV6Address ,ALL_LINK_LOCAL_NODES_ADDRESSV6} from "../../address/ipv6";
+import { IPV6Address, ALL_LINK_LOCAL_NODES_ADDRESSV6 } from "../../address/ipv6";
 import { ETHERNET_HEADER, ETHER_TYPES, EtherType } from "../../header/ethernet";
 import { IPV4_HEADER, IPV6_HEADER, PROTOCOLS, type Protocol } from "../../header/ip";
 import { ICMP_ECHO_HEADER, ICMP_HEADER, ICMP_NDP_HEADER, ICMPV4_TYPES, ICMPV6_TYPES } from "../../header/icmp";
@@ -50,11 +50,11 @@ export class Host extends Device {
                 return;
             }
         }
-        
+
         if (frame.get("ethertype") == ETHER_TYPES.IPv4) {
             // ipv4 packet
             let ipHdr = IPV4_HEADER.create(frame.get("payload").subarray(0));
-            
+
             if (ignoreIPPacketHost(ipHdr.get("daddr"), iface)) {
                 // ignore, wrong destination
                 return;
@@ -85,19 +85,19 @@ export class Host extends Device {
                     // I have no clue if this is the right way to calculate the checksum
                     replyIPHeader.set("csum", calculateChecksum(replyIPHeader.getBuffer()));
 
-                    return iface.send(ETHERNET_HEADER.create({
+                    return this.sendFrame(ETHERNET_HEADER.create({
                         smac: iface.macAddress,
                         dmac: frame.get("smac"),
                         ethertype: ETHER_TYPES.IPv4,
                         payload: replyIPHeader.getBuffer()
-                    }));
+                    }), iface);
                 }
             }
 
         } else if (frame.get("ethertype") == ETHER_TYPES.IPv6) {
             let ipHdr = IPV6_HEADER.create(frame.get("payload"));
             // ignore if not matches parameter
-            
+
             if (ignoreIPPacketHost(ipHdr.get("daddr"), iface)) {
                 return;
             }
@@ -108,10 +108,10 @@ export class Host extends Device {
                         type: ICMPV6_TYPES.ECHO_REPLY,
                         data: icmpHdr.get("data")
                     })
-                    
+
                     // I have no clue if this is the right way to calculate the checksum
                     replyIcmpHdr.set("csum", calculateChecksum(replyIcmpHdr.getBuffer()));
-                    
+
                     let replyIPHdr = IPV6_HEADER.create({
                         saddr: iface.ipv6Address,
                         daddr: ipHdr.get("saddr"),
@@ -119,13 +119,13 @@ export class Host extends Device {
                         payloadLength: icmpHdr.size,
                         payload: replyIcmpHdr.getBuffer()
                     })
-                    
-                    return iface.send(ETHERNET_HEADER.create({
+
+                    return this.sendFrame(ETHERNET_HEADER.create({
                         smac: iface.macAddress,
                         dmac: frame.get("smac"),
                         ethertype: ETHER_TYPES.IPv6,
                         payload: replyIPHdr.getBuffer()
-                    }));
+                    }), iface);
                 } else if (icmpHdr.get("type") == ICMPV6_TYPES.NEIGHBOR_SOLICITATION) {
                     // check if target is me
                     let ndpHdr = ICMP_NDP_HEADER.create(icmpHdr.get("data"))
@@ -149,12 +149,12 @@ export class Host extends Device {
                         payload: replyIcmpHdr.getBuffer()
                     })
 
-                    return iface.send(ETHERNET_HEADER.create({
+                    return this.sendFrame(ETHERNET_HEADER.create({
                         smac: iface.macAddress,
                         dmac: frame.get("smac"),
                         ethertype: ETHER_TYPES.IPv6,
                         payload: replyIPHdr.getBuffer()
-                    }));
+                    }), iface);
                 }
             }
 
@@ -179,12 +179,12 @@ export class Host extends Device {
                 replyArpHdr.set("tpa", iface.ipv4Address!);
 
                 // wrap packet in ethernet frame
-                return iface.send(ETHERNET_HEADER.create({
+                return this.sendFrame(ETHERNET_HEADER.create({
                     dmac: frame.get("smac"),
                     smac: iface.macAddress,
                     ethertype: ETHER_TYPES.ARP,
                     payload: replyArpHdr.getBuffer()
-                }))
+                }), iface)
 
                 // idk know if i should add an entry to the arp table
             }
@@ -212,12 +212,12 @@ export class Host extends Device {
                 // I have no clue if this is the right way to calculate the checksum
                 ipHdr.set("csum", calculateChecksum(ipHdr.getBuffer()));
 
-                iface.send(ETHERNET_HEADER.create({
+                this.sendFrame(ETHERNET_HEADER.create({
                     dmac: macAddress,
                     smac: iface.macAddress,
                     ethertype: ETHER_TYPES.IPv4,
                     payload: ipHdr.getBuffer()
-                }));
+                }), iface);
             } else {
                 throw new Error("Not implemented")
             }
@@ -319,7 +319,7 @@ export class Host extends Device {
                     tpa: arpHdr.get("tpa").toString()
                 })
 
-                iface.send(frame);
+                this.sendFrame(frame, iface);
                 return sidx;
             }
         } else if (frame.get("ethertype") == ETHER_TYPES.IPv4) {
@@ -338,7 +338,7 @@ export class Host extends Device {
                         id: ICMP_ECHO_HEADER.create(icmpHdr.get("data")).get("id")
                     })
 
-                    iface.send(frame);
+                    this.sendFrame(frame, iface);
                     return sidx;
                 }
             }
@@ -347,7 +347,7 @@ export class Host extends Device {
             // only support icmp first
             if (ipHdr.get("nextHeader") == PROTOCOLS.IPV6_ICMP) {
                 let icmpHdr = ICMP_HEADER.create(ipHdr.get("payload"));
-                
+
                 if (icmpHdr.get("type") == ICMPV6_TYPES.ECHO_REQUEST) {
                     let sidx = this.state.push({
                         ethertype: frame.get("ethertype"),
@@ -356,7 +356,7 @@ export class Host extends Device {
                         proto: ipHdr.get("nextHeader"),
                         id: ICMP_ECHO_HEADER.create(icmpHdr.get("data")).get("id")
                     })
-                    iface.send(frame);
+                    this.sendFrame(frame, iface);
                     return sidx
                 } else if (icmpHdr.get("type") == ICMPV6_TYPES.NEIGHBOR_SOLICITATION) {
                     let sidx = this.state.push({
@@ -365,7 +365,7 @@ export class Host extends Device {
                         proto: ipHdr.get("nextHeader"),
                         tpa: ICMP_NDP_HEADER.create(icmpHdr.get("data")).get("targetAddress").toString()
                     })
-                    iface.send(frame);
+                    this.sendFrame(frame, iface);
                     return sidx
                 }
             }

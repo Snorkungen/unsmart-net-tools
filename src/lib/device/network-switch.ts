@@ -12,7 +12,7 @@ export class NetworkSwitch extends Device {
                 continue;
             }
 
-            iface.send(frame);
+            this.sendFrame(frame, iface)
         }
     }
 
@@ -30,7 +30,7 @@ export class NetworkSwitch extends Device {
         let destIface = this.macaddresses.get(frame.get("dmac").toString());
 
         if (destIface) {
-            destIface.send(frame);
+            this.sendFrame(frame, destIface);
         } else {
             this.flood(frame, iface.ifID);
         }
