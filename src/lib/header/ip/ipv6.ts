@@ -17,3 +17,11 @@ export const IPV6_HEADER = defineStruct({
 });
 
 IPV6_HEADER.set("version", 6);
+
+export const IPV6_PSEUDO_HEADER = defineStruct({
+    saddr: IPV6_ADDRESS,
+    daddr: IPV6_ADDRESS,
+    len: UINT32,
+    zeroes: UINT32(24),
+    nextHeader: <StructType<Protocol>>UINT32(8)
+})

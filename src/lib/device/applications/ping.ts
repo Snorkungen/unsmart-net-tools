@@ -2,8 +2,8 @@ import { IPV4Address } from "../../address/ipv4";
 import { IPV6Address } from "../../address/ipv6";
 import { calculateChecksum } from "../../binary/checksum";
 import { ETHERNET_HEADER, ETHER_TYPES } from "../../header/ethernet";
-import { ICMPV6_TYPES, ICMP_ECHO_HEADER, ICMP_HEADER , ICMPV4_TYPES} from "../../header/icmp";
-import { IPV4_HEADER, IPV6_HEADER, PROTOCOLS, createIPV4Header } from "../../header/ip";
+import { ICMPV6_TYPES, ICMP_ECHO_HEADER, ICMP_HEADER, ICMPV4_TYPES } from "../../header/icmp";
+import { IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS, createIPV4Header } from "../../header/ip";
 import { Host } from "../host";
 import { resolveSendingInformationVersion4, resolveSendingInformationVersion6 } from "../host/resolve-sending-information";
 
@@ -59,13 +59,21 @@ export async function pingVersion6(host: Host, destination: IPV6Address, identif
         type: ICMPV6_TYPES.ECHO_REQUEST,
         data: echoHdr.getBuffer()
     });
-    
+
     let entry = await resolveSendingInformationVersion6(host, destination)
     if (!entry.iface.isConnected || !entry.iface.ipv6Address) {
         // refer to commments in version 4
     }
 
-    // icmpHdr.set("csum", calculateChecksum(icmpHdr.getBuffer()));
+    // The actual spec <https://www.rfc-editor.org/rfc/rfc4443#section-2.3>
+    let pseudoHdr = IPV6_PSEUDO_HEADER.create({
+        saddr: entry.iface.ipv6Address!,
+        daddr: destination,
+        len: icmpHdr.size,
+        nextHeader: PROTOCOLS.IPV6_ICMP,
+    })
+
+    icmpHdr.set("csum", calculateChecksum(Buffer.concat([pseudoHdr.getBuffer(), icmpHdr.getBuffer()])));
 
     let ipHdr = IPV6_HEADER.create({
         saddr: entry.iface.ipv6Address!,

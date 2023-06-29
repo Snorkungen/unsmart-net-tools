@@ -6,7 +6,7 @@ import { calculateChecksum } from "../../binary/checksum";
 import { ARP_HEADER, ARP_OPCODES, createARPHeader } from "../../header/arp";
 import { ETHERNET_HEADER, ETHER_TYPES, } from "../../header/ethernet";
 import { ICMPV6_TYPES, ICMP_HEADER, ICMP_NDP_HEADER } from "../../header/icmp";
-import { IPV6_HEADER, PROTOCOLS } from "../../header/ip";
+import { IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
 import { Interface } from "../interface";
 import { Host } from "./host";
 
@@ -183,8 +183,18 @@ function createNDPRequest(query: IPV6Address, iface: Interface): typeof ETHERNET
         data: ndpHdr.getBuffer()
     });
 
-    // I have no clue if this is the right way to calculate the checksum
-    icmpHdr.set("csum", calculateChecksum(icmpHdr.getBuffer()));
+    // The actual spec <https://www.rfc-editor.org/rfc/rfc4443#section-2.3>
+    let pseudoHdr = IPV6_PSEUDO_HEADER.create({
+        saddr: iface.ipv6Address!,
+        daddr: new IPV6Address(ALL_LINK_LOCAL_NODES_ADDRESSV6),
+        len: icmpHdr.size,
+        nextHeader: PROTOCOLS.IPV6_ICMP,
+    })
+
+    icmpHdr.set("csum", calculateChecksum(Buffer.concat([
+        pseudoHdr.getBuffer(),
+        icmpHdr.getBuffer()
+    ])));
 
     let ipv6Hdr = IPV6_HEADER.create({
         saddr: iface.ipv6Address!,

@@ -6,7 +6,7 @@ import resolveSendingInformation from "./resolve-sending-information";
 import { IPV4Address } from "../../address/ipv4";
 import { IPV6Address, ALL_LINK_LOCAL_NODES_ADDRESSV6 } from "../../address/ipv6";
 import { ETHERNET_HEADER, ETHER_TYPES, EtherType } from "../../header/ethernet";
-import { IPV4_HEADER, IPV6_HEADER, PROTOCOLS, createIPV4Header, type Protocol } from "../../header/ip";
+import { IPV4_HEADER, IPV6_HEADER, PROTOCOLS, createIPV4Header, type Protocol, IPV6_PSEUDO_HEADER } from "../../header/ip";
 import { ICMP_ECHO_HEADER, ICMP_HEADER, ICMP_NDP_HEADER, ICMPV4_TYPES, ICMPV6_TYPES } from "../../header/icmp";
 import { calculateChecksum } from "../../binary/checksum";
 import { ARP_HEADER, ARP_OPCODES } from "../../header/arp";
@@ -106,14 +106,25 @@ export class Host extends Device {
                         data: Buffer.concat([icmpHdr.get("data"), ipHdr.getBuffer()])
                     })
 
-                    // I have no clue if this is the right way to calculate the checksum
-                    // replyIcmpHdr.set("csum", calculateChecksum(replyIcmpHdr.getBuffer()));
+                    // The actual spec <https://www.rfc-editor.org/rfc/rfc4443#section-2.3>
+                    let pseudoHdr = IPV6_PSEUDO_HEADER.create({
+                        saddr: iface.ipv6Address!,
+                        daddr: ipHdr.get("saddr"),
+                        len: replyIcmpHdr.size,
+                        nextHeader: PROTOCOLS.IPV6_ICMP,
+                    })
+
+                    replyIcmpHdr.set("csum", calculateChecksum(Buffer.concat([
+                        pseudoHdr.getBuffer(),
+                        replyIcmpHdr.getBuffer()
+                    ])));
+
 
                     let replyIPHdr = IPV6_HEADER.create({
                         saddr: iface.ipv6Address,
                         daddr: ipHdr.get("saddr"),
                         nextHeader: PROTOCOLS.IPV6_ICMP,
-                        payloadLength: icmpHdr.size,
+                        payloadLength: replyIcmpHdr.size,
                         payload: replyIcmpHdr.getBuffer()
                     })
 
@@ -135,14 +146,25 @@ export class Host extends Device {
                         type: ICMPV6_TYPES.NEIGHBOR_ADVERTISMENT,
                         data: ndpHdr.getBuffer()
                     })
-                    // I have no clue if this is the right way to calculate the checksum
-                    replyIcmpHdr.set("csum", calculateChecksum(replyIcmpHdr.getBuffer()));
+
+                    // The actual spec <https://www.rfc-editor.org/rfc/rfc4443#section-2.3>
+                    let pseudoHdr = IPV6_PSEUDO_HEADER.create({
+                        saddr: iface.ipv6Address!,
+                        daddr: ipHdr.get("saddr"),
+                        len: replyIcmpHdr.size,
+                        nextHeader: PROTOCOLS.IPV6_ICMP,
+                    })
+
+                    replyIcmpHdr.set("csum", calculateChecksum(Buffer.concat([
+                        pseudoHdr.getBuffer(),
+                        replyIcmpHdr.getBuffer()
+                    ])));
 
                     let replyIPHdr = IPV6_HEADER.create({
                         saddr: iface.ipv6Address,
                         daddr: ipHdr.get("saddr"),
                         nextHeader: PROTOCOLS.IPV6_ICMP,
-                        payloadLength: icmpHdr.size,
+                        payloadLength: replyIcmpHdr.size,
                         payload: replyIcmpHdr.getBuffer()
                     })
 
