@@ -12,7 +12,7 @@ function createMacAddress() {
 }
 
 let frames = new Map<string, Buffer>();
-(window as any).f = frames;
+
 export class Device {
     name = Math.floor(Math.random() * 10_000).toString() + "A";
     interfaces: Interface[] = [];
@@ -25,12 +25,38 @@ export class Device {
             console.info(`"${this.name}" sent from interface: ${iface.ifID}, to ${frame.get("dmac").toString()}`)
         }
 
+        // dont add frame if frame is sent to self
+        if (type == "SEND" && frame.get("dmac").toString() == iface.macAddress.toString()) {
+            return;
+        }
+
+        this.addRecordToCapture(frame);
+    }
+
+    listener(frame: typeof ETHERNET_HEADER, iface: Interface) {
+        this.log(frame, iface);
+    }
+
+    sendFrame(frame: typeof ETHERNET_HEADER, iface: Interface) {
+        this.log(frame, iface, "SEND");
+        iface.send(frame);
+    }
+
+    createInterface(): Interface {
+        let iface = new Interface(this.interfaces.length, createMacAddress(), this.listener.bind(this))
+        this.interfaces.push(iface);
+        return iface;
+    }
+
+    addRecordToCapture(frame: typeof ETHERNET_HEADER) {
         let b = frames.get(this.name);
+        let ms = Date.now()
 
         let pcapRecordHdr = PCAP_RECORD_HEADER.create({
             inclLen: frame.getBuffer().length,
             origLen: frame.getBuffer().length,
-            tsSec: Math.floor(Date.now() / 1_000)
+            tsSec: Math.floor(ms / 1000),
+            tsUsec: (ms % 1000) * 1000
         })
 
         if (!b) {
@@ -52,18 +78,15 @@ export class Device {
         ]))
     }
 
-    listener(frame: typeof ETHERNET_HEADER, iface: Interface) {
-        this.log(frame, iface);
-    }
+    createCaptureFile(): File | null {
+        let buf = frames.get(this.name);
 
-    sendFrame(frame: typeof ETHERNET_HEADER, iface: Interface) {
-        this.log(frame, iface, "SEND");
-        iface.send(frame);
-    }
+        if (!buf) return null;
 
-    createInterface(): Interface {
-        let iface = new Interface(this.interfaces.length, createMacAddress(), this.listener.bind(this))
-        this.interfaces.push(iface);
-        return iface;
+        let file = new File([buf], `${this.name}-${new Date().toISOString()}.cap`, {
+            "type": "application/cap",
+        })
+
+        return file;
     }
 }

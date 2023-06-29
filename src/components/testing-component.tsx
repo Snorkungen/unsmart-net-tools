@@ -17,8 +17,14 @@ const selectContents = (ev: MouseEvent) => {
 const DeviceComponent: Component<{ device: Device }> = ({ device }) => {
 
     return <div>
-        <div>
+        <div style={{display: "flex", "justify-content": "space-between"}}>
             <h1>{device.name}</h1>
+            <a onClick={ev => {
+                let f = device.createCaptureFile();
+                if (!f) return alert("No content to dowload")
+                ev.currentTarget.download = f.name;
+                ev.currentTarget.href = URL.createObjectURL(f);
+            }}>Download</a>
         </div>
         <div>
             {device.interfaces.map((iface) => (
