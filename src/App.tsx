@@ -14,7 +14,7 @@ const App: Component = () => {
           <Nav class="me-auto">
             <NavLink href={createViewHref(CalculatorSubnetIPV4.name)}>Subnet calculator v4 NEW!</NavLink>
             <NavLink href={createViewHref(TestingComponent.name)}>Testing</NavLink>
-            <NavLink href={createViewHref(PacketCapture.name)}>Testing</NavLink>
+            <NavLink href={createViewHref(PacketCapture.name)}>Packet Capture</NavLink>
           </Nav>
         </Container>
       </Navbar>

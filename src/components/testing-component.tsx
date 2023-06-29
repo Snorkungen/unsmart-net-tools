@@ -19,9 +19,9 @@ const DeviceComponent: Component<{ device: Device }> = ({ device }) => {
     return <div>
         <div style={{display: "flex", "justify-content": "space-between"}}>
             <h1>{device.name}</h1>
-            <a onClick={ev => {
+            <a href="" onClick={ev => {
                 let f = device.createCaptureFile();
-                if (!f) return alert("No content to dowload")
+                if (!f) return alert("No content to dowload"), ev.preventDefault()
                 ev.currentTarget.download = f.name;
                 ev.currentTarget.href = URL.createObjectURL(f);
             }}>Download</a>
