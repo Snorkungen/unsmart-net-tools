@@ -252,7 +252,7 @@ export class Struct<Types extends Record<string, StructType<any>>>{
         return struct;
     }
 
-    from(buf: Buffer, options: Partial<StructOptions> = {}): Struct<Types> {
+    from(buf: Uint8Array, options: Partial<StructOptions> = {}): Struct<Types> {
         let struct = this.create({}, options);
         if (buf.length < this.getMinSize()) {
             // here should maybe throw error if the bytes do not fill struct

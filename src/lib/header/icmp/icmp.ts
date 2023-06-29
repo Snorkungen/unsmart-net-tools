@@ -11,7 +11,7 @@ export const ICMP_HEADER = defineStruct({
     data: SLICE
 })
 
-export const ICMP_UNUSED = defineStruct({
+export const ICMP_UNUSED_HEADER = defineStruct({
     unused: UINT32,
     data: SLICE
 })
@@ -25,7 +25,7 @@ export const ICMP_ECHO_HEADER = defineStruct({
 /** Source <https://en.wikipedia.org/wiki/Internet_Control_Message_Protocol#Destination_unreachable> */
 export const ICMP_DESTINATION_UNREACHABLE = defineStruct({
     unused: UINT8,
-    len: UINT8,
+    mtu: UINT8,
     data: SLICE
 })
 

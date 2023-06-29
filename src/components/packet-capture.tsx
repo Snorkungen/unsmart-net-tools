@@ -1,13 +1,14 @@
-import { For } from "solid-js";
+import { For, createSignal } from "solid-js";
 import { Struct, UINT32, } from "../lib/binary/struct";
 import { calculateChecksum } from "../lib/binary/checksum";
 import { BaseAddress } from "../lib/address/base";
 import { PCAP_GLOBAL_HEADER, PCAP_PACKET_HEADER } from "../lib/header/pcap";
 import { ETHERNET_HEADER, ETHER_TYPES } from "../lib/header/ethernet";
 import { IPV4_HEADER, PROTOCOLS } from "../lib/header/ip";
-import { ICMP_HEADER, ICMP_UNUSED, ICMPV4_CODES, ICMPV4_TYPES } from "../lib/header/icmp";
+import { ICMP_HEADER, ICMP_UNUSED_HEADER, ICMPV4_CODES, ICMPV4_TYPES } from "../lib/header/icmp";
 import { UDP_HEADER } from "../lib/header/udp";
-import { crc32 } from "../lib/binary/crc";
+import { PacketCapture } from "../lib/packet-capture/capture";
+import { PacketCaptureRecordStatus } from "../lib/packet-capture/record";
 
 function stringifyStruct(struct: Struct<any>) {
     let obj: any = {}
@@ -24,19 +25,15 @@ function stringifyConstName(name: string): string {
 }
 
 
-export default function PacketCapture() {
+export default function PacketCaptureViewer() {
     let buffer = Buffer.from(base64EncodedPCAPFile, "base64");
-    let offset = 0;
-    let pcapHeader = PCAP_GLOBAL_HEADER.from(buffer.subarray(offset, offset += PCAP_GLOBAL_HEADER.size), { bigEndian: false, packed: false })
+
+    let [state, setState] = createSignal<PacketCapture>(new PacketCapture(buffer))
+
+
+
 
     let data: Array<[typeof PCAP_PACKET_HEADER, typeof ETHERNET_HEADER]> = [];
-    while (offset < buffer.length) {
-        let packetHeader = PCAP_PACKET_HEADER.from(buffer.subarray(offset, offset += PCAP_PACKET_HEADER.getMinSize()), { bigEndian: false, packed: false })
-        let ethHeader = ETHERNET_HEADER.from(buffer.subarray(offset, offset += (packetHeader.get("inclLen"))));
-
-        data.push([packetHeader, ethHeader])
-
-    }
 
 
     type TableEntry = {
@@ -83,12 +80,12 @@ export default function PacketCapture() {
                 let icmpHdr = ICMP_HEADER.from(ipHeader.get("payload"))
 
                 if (icmpHdr.get("type") == ICMPV4_TYPES.TIME_EXCEEDED) {
-                    let contentIPHdr = unwrapIPv4(ICMP_UNUSED.from(icmpHdr.get("data")).get("data"));
+                    let contentIPHdr = unwrapIPv4(ICMP_UNUSED_HEADER.from(icmpHdr.get("data")).get("data"));
 
                     entry.negative = true
                     entry.title = `Time Exceeded: ${stringifyConstName(getKeyByValue(ICMPV4_CODES[ICMPV4_TYPES.TIME_EXCEEDED], icmpHdr.get("code")))}`
                 } else if (icmpHdr.get("type") == ICMPV4_TYPES.DESTINATION_UNREACHABLE) {
-                    let contentIPHdr = unwrapIPv4(ICMP_UNUSED.from(icmpHdr.get("data")).get("data"));
+                    let contentIPHdr = unwrapIPv4(ICMP_UNUSED_HEADER.from(icmpHdr.get("data")).get("data"));
 
                     entry.negative = true;
                     entry.title = `Destination Unreachable: ${stringifyConstName(getKeyByValue(ICMPV4_CODES[ICMPV4_TYPES.DESTINATION_UNREACHABLE], icmpHdr.get("code")))}`
@@ -112,7 +109,7 @@ export default function PacketCapture() {
                 reader.readAsArrayBuffer(file)
                 reader.onloadend = () => {
                     let buf = Buffer.from(reader.result as ArrayBuffer)
-                    console.log(buf.toString("base64"))
+                    setState(new PacketCapture(buf))
                     // console.log(arr)
                 }
             }} />
@@ -125,20 +122,20 @@ export default function PacketCapture() {
                     <th>Source</th>
                     <th>Destination</th>
                     <th>Protocol</th>
-                    <th>Source Port</th>
-                    <th>Destination Port</th>
+                    <th>Length</th>
+                    <th>Info</th>
                 </tr>
             </thead>
             <tbody>
-                <For each={tableEntries} >{({ timestamp, source, destination, protocol, dport, sport, negative, title }, i) => (
-                    <tr style={negative && { background: "red" }} title={title}>
-                        <td>{i() + 1}</td>
-                        <td>{timestamp.toJSON()}</td>
-                        <td>{source.toString()}</td>
-                        <td>{destination.toString()}</td>
-                        <td>{protocol}</td>
-                        <td>{sport || null}</td>
-                        <td>{dport || null}</td>
+                <For each={state().records} >{(record) => (
+                    <tr style={(record.status == PacketCaptureRecordStatus.ERROR || record.status == PacketCaptureRecordStatus.WARNING) ? { background: "red" } : undefined} title={record.info.join("; ")}>
+                        <td>{record.index + 1}</td>
+                        <td>{record.timestamp.toJSON()}</td>
+                        <td>{record.saddr.toString()}</td>
+                        <td>{record.daddr.toString()}</td>
+                        <td>{record.protocol}</td>
+                        <td>{record.fullLength}</td>
+                        <td>{record.info.join("; ")}</td>
                     </tr>
                 )}</For>
             </tbody>
