@@ -1,5 +1,6 @@
 import { and } from "../binary/buffer-bitwise";
 import { BaseAddress } from "./base";
+import { Buffer } from "buffer";
 
 /*
     I'm bored and i enjoy confusing future self with unnecessary Typescripting
