@@ -174,11 +174,6 @@ export class PacketCaptureRecordReader {
         return data;
     }
 
-    readICMPEcho(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): typeof data {
-
-        return data;
-    }
-
     readIPv6(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): typeof data {
         let hdr = IPV6_HEADER.from(buf.subarray(begin));
 
