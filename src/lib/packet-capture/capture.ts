@@ -6,51 +6,75 @@ import { PacketCaptureRecord } from "./record";
 export class PacketCapture {
     records: PacketCaptureRecord[] = [];
 
+    private options: PacketCaptureRecordReaderOptions = {
+        "Hformat": PacketCaptureHFormat.unknown,
+        "Nformat": PacketCaptureNFormat.unknown,
+        bigEndian: true,
+    }
+
+    private offset: number = 0;
+
     constructor(buf: Uint8Array) {
-        let offset = 0;
-        buf = Buffer.from(buf);
+        let buffer = Buffer.from(buf);
+        this.identifyHFormat(buffer);
 
-        let magicNumber = (<Buffer>buf).readUint32BE(0);
-
-        /*
-            This would be a great place to wrap the record reader with PacketCaptureReader
-
-            that determines format & endiannes
-        */
-
-        let options: PacketCaptureRecordReaderOptions | null = null;
-
-        if (magicNumber == PCAP_MAGIC_NUMBER) {
-            options = <PacketCaptureRecordReaderOptions>{
-                Hformat: PacketCaptureHFormat.libpcap,
-                Nformat: PacketCaptureNFormat.unknown, // this will be figured out later
-                bigEndian: true
-            }
-        } else if (magicNumber == PCAP_MAGIC_NUMBER_LITTLE) {
-            options = <PacketCaptureRecordReaderOptions>{
-                Hformat: PacketCaptureHFormat.libpcap,
-                Nformat: PacketCaptureNFormat.unknown, // this will be figured out later
-                bigEndian: false
-            }
-        }
-
-        if (!options) {
+        if (this.options.Hformat == PacketCaptureHFormat.unknown) {
+            // return early; unknown file format not recognized
             return;
         }
 
-        let hdr = PCAP_GLOBAL_HEADER.from(buf.subarray(0, offset += PCAP_GLOBAL_HEADER.size), options);
+        this.identifyNFormat(buffer);
+
+        if (this.options.Nformat == PacketCaptureNFormat.unknown) {
+            // return early; unknown network type
+            return;
+        }
+
+        this.readRecords(buffer, this.offset)
+    }
+
+
+    private identifyHFormat(buffer: Buffer) {
+        let magicNumber = buffer.readUint32BE(0);
+
+        switch (magicNumber) {
+            case PCAP_MAGIC_NUMBER:
+                this.options.Hformat = PacketCaptureHFormat.libpcap;
+                this.options.bigEndian = true;
+                break;
+            case PCAP_MAGIC_NUMBER_LITTLE:
+                this.options.Hformat = PacketCaptureHFormat.libpcap;
+                this.options.bigEndian = false;
+        }
+    }
+
+    private identifyNFormat(buffer: Uint8Array) {
+        switch (this.options.Hformat) {
+            case PacketCaptureHFormat.libpcap:
+                return this.readLibpcapHeader(buffer)
+        }
+    }
+
+    private readLibpcapHeader (buffer: Uint8Array) {
+        let hdr = PCAP_GLOBAL_HEADER.from(buffer.subarray(0, this.offset += PCAP_GLOBAL_HEADER.size), this.options);
+
+        if (hdr.get("versionMajor") != 2 || hdr.get("versionMinor") != 4) {
+            return;
+        }
 
         switch (hdr.get("network")) {
             case 1:
-                options.Nformat = PacketCaptureNFormat.ethernet;
+                this.options.Nformat = PacketCaptureNFormat.ethernet;
                 break;
         }
+    }
 
-        let recordReader = new PacketCaptureRecordReader(options);
-
-        while (offset < buf.length) {
+    private readRecords(buffer: Buffer, begin: number) {
+        let offset = begin;
+        let recordReader = new PacketCaptureRecordReader(this.options);
+        while (offset < buffer.length) {
             recordReader.reset()
-            let record = recordReader.read(buf, offset);
+            let record = recordReader.read(buffer, offset);
             record.index = this.records.push(
                 record
             ) - 1;

@@ -1,8 +1,8 @@
 import { StructOptions, StructType } from "../binary";
 import { ARP_HEADER, ARP_OPCODES } from "../header/arp";
 import { ETHERNET_HEADER, ETHER_TYPES } from "../header/ethernet";
-import { ICMPV4_CODES, ICMPV4_TYPES, ICMPV6_TYPES, ICMP_DESTINATION_UNREACHABLE, ICMP_ECHO_HEADER, ICMP_HEADER, ICMP_UNUSED_HEADER } from "../header/icmp";
-import { IPV4_HEADER, PROTOCOLS } from "../header/ip";
+import { ICMPV4_CODES, ICMPV4_TYPES, ICMPV6_TYPES, ICMP_DESTINATION_UNREACHABLE, ICMP_ECHO_HEADER, ICMP_HEADER, ICMP_NDP_HEADER, ICMP_UNUSED_HEADER } from "../header/icmp";
+import { IPV4_HEADER, IPV6_HEADER, PROTOCOLS } from "../header/ip";
 import { PCAP_RECORD_HEADER } from "../header/pcap";
 import { UDP_HEADER } from "../header/udp";
 import { PacketCaptureRecord, PacketCaptureRecordData, PacketCaptureRecordMetaData, PacketCaptureRecordStatus } from "./record";
@@ -31,12 +31,6 @@ export type PacketCaptureRecordReaderOptions = {
     /** Network Format */
     Nformat: PacketCaptureNFormat;
 }
-
-/**
-    ### IMPORTANT NOTE!
-    the current solution does'nt work for sub readers that need access to parent header
-*/
-
 
 export class PacketCaptureRecordReader {
     options: PacketCaptureRecordReaderOptions;
@@ -108,6 +102,8 @@ export class PacketCaptureRecordReader {
                 return this.readARP(hdr.getBuffer(), hdr.getMinSize(), data)
             case ETHER_TYPES.IPv4:
                 return this.readIPv4(hdr.getBuffer(), hdr.getMinSize(), data)
+            case ETHER_TYPES.IPv6:
+                return this.readIPv6(hdr.getBuffer(), hdr.getMinSize(), data)
         }
 
         return data;
@@ -175,6 +171,47 @@ export class PacketCaptureRecordReader {
 
         }
 
+        return data;
+    }
+
+    readICMPEcho(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): typeof data {
+
+        return data;
+    }
+
+    readIPv6(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): typeof data {
+        let hdr = IPV6_HEADER.from(buf.subarray(begin));
+
+        data.saddr = hdr.get("saddr");
+        data.daddr = hdr.get("daddr");
+        data.protocol = getKeyByValue(PROTOCOLS, hdr.get("nextHeader"))
+
+        switch (hdr.get("nextHeader")) {
+            case PROTOCOLS.IPV6_ICMP:
+                return this.readICMPv6(hdr.getBuffer(), hdr.getMinSize(), data);
+        }
+
+        return data;
+    }
+
+    readICMPv6(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): typeof data {
+        let ipHdr = IPV6_HEADER.from(buf);
+        let hdr = ICMP_HEADER.from(buf.subarray(begin));
+        let echoHdr = ICMP_ECHO_HEADER.from(hdr.get("data"))
+        let ndpHdr = ICMP_NDP_HEADER.from(hdr.get("data"))
+
+        switch (hdr.get("type")) {
+            case ICMPV6_TYPES.ECHO_REPLY:
+                data.info.push(`Echo Reply: id=${echoHdr.get("id")}, seq=${echoHdr.get("seq")}`)
+                break;
+            case ICMPV6_TYPES.ECHO_REQUEST:
+                data.info.push(`Echo Request: id=${echoHdr.get("id")}, seq=${echoHdr.get("seq")}`)
+                break;
+            case ICMPV6_TYPES.NEIGHBOR_SOLICITATION: 
+                data.info.push(`${ipHdr.get("saddr")} asks who has ${ndpHdr.get("targetAddress")};`)
+            case ICMPV6_TYPES.NEIGHBOR_ADVERTISMENT: 
+            break;
+        }
         return data;
     }
 
