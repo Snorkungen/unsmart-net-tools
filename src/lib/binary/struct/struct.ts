@@ -1,5 +1,5 @@
-import { Buffer } from "buffer"; window.Buffer = Buffer;
 import { mutateAnd, mutateLeftShift, mutateNot, mutateOr, mutateRightShift } from "../buffer-bitwise";
+import { Buffer } from "buffer";
 
 export class StructValueError extends Error {
     constructor(message: string, public value: unknown) {

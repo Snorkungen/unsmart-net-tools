@@ -3,6 +3,7 @@ import { UINT16 } from "../binary/struct";
 import { ETHERNET_HEADER } from "../header/ethernet";
 import { PCAP_GLOBAL_HEADER, PCAP_MAGIC_NUMBER, PCAP_RECORD_HEADER } from "../header/pcap";
 import { Interface } from "./interface";
+import { Buffer } from "buffer";
 
 let macAddressCount = 0;
 let startBuf = Buffer.from([0xfa, 0xff, 0x0f, 0])

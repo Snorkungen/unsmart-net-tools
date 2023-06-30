@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import { BaseAddress, defineAddress } from "../base";
 import { createMask } from "../mask";
 import { ADDRESS_TYPESV6 } from "./reserved";

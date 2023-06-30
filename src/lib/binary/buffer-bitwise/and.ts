@@ -1,5 +1,7 @@
 // SOURCE <https://github.com/encendre/bitwise-buffer/blob/master/src/and.js>
 
+import { Buffer } from "buffer";
+
 export function mutateAnd(a: Buffer, b: Buffer) {
     let i = Math.max(a.length, b.length)
 

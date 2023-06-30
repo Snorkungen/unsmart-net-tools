@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import { Interface } from "../interface";
 import { Device } from "../device";
 

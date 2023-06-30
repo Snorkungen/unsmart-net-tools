@@ -1,4 +1,5 @@
 // SOURCE <https://github.com/encendre/bitwise-buffer/blob/master/src/leftShift.js>
+import { Buffer } from "buffer";
 
 export function mutateLeftShift(a: Buffer, n: number, fillWith = 0) {
     const padding = fillWith ? 0xff : 0x00

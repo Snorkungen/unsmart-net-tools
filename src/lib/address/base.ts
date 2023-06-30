@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import { StructType } from "../binary/struct"
 
 export const defineAddress = <AT extends typeof BaseAddress>(Address: AT) => {

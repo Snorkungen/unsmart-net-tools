@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import { mutateAnd, mutateNot, mutateOr } from "../../binary/buffer-bitwise";
 import { bufferFromNumber } from "../../binary/buffer-from-number";
 import { createMaskBuffer } from "../mask";

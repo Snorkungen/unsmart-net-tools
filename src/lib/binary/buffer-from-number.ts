@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import { mutateOr } from "./buffer-bitwise/or";
 
 /** Source <https://stackoverflow.com/a/65227338> */

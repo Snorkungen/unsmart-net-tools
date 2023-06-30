@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import { BaseAddress, defineAddress } from "./base";
 
 const POSSIBLE_SEPARATOR = ["-", ":", "."] as const;

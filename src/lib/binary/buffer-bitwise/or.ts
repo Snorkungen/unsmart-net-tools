@@ -1,4 +1,5 @@
 // SOURCE <https://github.com/encendre/bitwise-buffer/blob/master/src/or.js>
+import { Buffer } from "buffer";
 
 export function mutateOr(a: Buffer, b: Buffer) {
     let i = Math.max(a.length, b.length)

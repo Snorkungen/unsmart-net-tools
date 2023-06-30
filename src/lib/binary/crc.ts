@@ -1,3 +1,5 @@
+import { Buffer } from "buffer";
+
 /*  
     This file does not need to exist for the current project
     SOURCES:

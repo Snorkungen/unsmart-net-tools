@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import { For, createSignal } from "solid-js";
 import { Struct, UINT32, } from "../lib/binary/struct";
 import { calculateChecksum } from "../lib/binary/checksum";

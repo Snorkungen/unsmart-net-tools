@@ -1,4 +1,5 @@
 // SOURCE <https://github.com/encendre/bitwise-buffer/blob/master/src/nor.js>
+import { Buffer } from "buffer";
 
 export function mutateNor(a: Buffer, b: Buffer) {
     let i = Math.max(a.length, b.length)

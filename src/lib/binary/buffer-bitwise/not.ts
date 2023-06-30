@@ -1,4 +1,5 @@
 // SOURCE <https://github.com/encendre/bitwise-buffer/blob/master/src/not.js>
+import { Buffer } from "buffer";
 
 export function mutateNot(dest: Buffer) {
     let i = dest.length

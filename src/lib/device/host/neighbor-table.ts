@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import { BaseAddress } from "../../address/base";
 import { IPV4Address } from "../../address/ipv4";
 import { ALL_LINK_LOCAL_NODES_ADDRESSV6, IPV6Address } from "../../address/ipv6";

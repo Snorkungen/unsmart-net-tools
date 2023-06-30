@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import { IPV4Address, IPV4_ADDRESS } from "../../address/ipv4";
 import { calculateChecksum } from "../../binary/checksum";
 import { SLICE, StructType, UINT16, UINT8, defineStruct } from "../../binary/struct";
