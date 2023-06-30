@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import { describe, test, expect } from "vitest";
 import { IPV4Address, calculateSubnetIPV4, IPV4_CLASS_A, IPV4_CLASS_B, IPV4_CLASS_C, classifyIPV4Address } from "../../lib/address/ipv4";
 import { createMask } from "../../lib/address/mask";

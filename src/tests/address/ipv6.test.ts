@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import { describe, test, expect } from "vitest";
 import { ADDRESS_TYPESV6, IPV6Address } from "../../lib/address/ipv6";
 import { createLinkLocalIPV6Address } from "../../lib/address/ipv6/link-local";

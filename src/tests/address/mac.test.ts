@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import { describe, expect, test } from "vitest";
 import { MACAddress } from "../../lib/address/mac";
 
