@@ -1,6 +1,3 @@
-import { BaseAddress } from "../../address/base";
-import { IPV4Address } from "../../address/ipv4";
-import { MACAddress } from "../../address/mac";
 import { ContactsHandler } from "./contacts-handler";
 
 /**
@@ -11,18 +8,27 @@ import { ContactsHandler } from "./contacts-handler";
 export class Contact<AF extends ContactAddrFamily, PTO extends ContactProto>{
     readonly addrFamily: AF;
     readonly proto: PTO;
-
-    readonly address?: ContactAddress<AF, PTO>;
+    private readonly handler: ContactsHandler;
 
     constructor(handler: ContactsHandler, addrFamily: AF, proto: PTO) {
+        this.handler = handler;
+
         this.addrFamily = addrFamily;
         this.proto = proto;
     }
 
-    
+    recieve?: (buf: Uint8Array) => void
+
+    send(buf: Uint8Array) {
+        this.handler.recieve(this, buf);
+    }
+
+    close() {
+        this.handler.closeContact(this);
+    }
 };
 
-enum ContactAddrFamily {
+export enum ContactAddrFamily {
     /** ```RAW``` refers to contact living on OSI L2  */
     RAW,
     /** ```IPv4``` refers to contact living on OSI L3 IPv4  */
@@ -31,22 +37,7 @@ enum ContactAddrFamily {
     IPv6
 }
 
-enum ContactProto {
+export enum ContactProto {
     /** ```RAW``` refers to using the raw protocol chosen in ```ContactAddrFamily``` */
     RAW
 }
-
-type ContactAddress<AF extends ContactAddrFamily, PTO extends ContactProto> =
-    AF extends ContactAddrFamily.RAW ? ContactAddressRaw
-    : AF extends ContactAddrFamily.IPv4 ? ContactAddressIPv4Raw // extend when adding session Layer
-    : AF extends ContactAddrFamily.IPv6 ? ContactAddressIPv6Raw
-
-    : ContactBaseAddress
-
-interface ContactBaseAddress {
-    addr: BaseAddress;
-    port?: number;
-}
-interface ContactAddressRaw extends ContactBaseAddress { addr: MACAddress; }
-interface ContactAddressIPv4Raw extends ContactBaseAddress { addr: IPV4Address; }
-interface ContactAddressIPv6Raw extends ContactBaseAddress { addr: IPV4Address; }
