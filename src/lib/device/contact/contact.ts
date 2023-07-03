@@ -8,7 +8,7 @@ import { ContactsHandler } from "./contacts-handler";
 export class Contact<AF extends ContactAddrFamily, PTO extends ContactProto>{
     readonly addrFamily: AF;
     readonly proto: PTO;
-    private readonly handler: ContactsHandler;
+    private handler: ContactsHandler;
 
     constructor(handler: ContactsHandler, addrFamily: AF, proto: PTO) {
         this.handler = handler;

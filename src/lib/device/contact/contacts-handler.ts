@@ -18,7 +18,7 @@ export class ContactsHandler {
 
     handle(frame: typeof ETHERNET_HEADER) {
         for (let contact of this.contacts) {
-            if (!contact.recieve) continue;
+            if (!contact || !contact.recieve) continue;
 
             if (contact.addrFamily == ContactAddrFamily.RAW) {
                 contact.recieve(frame.getBuffer())
@@ -101,7 +101,7 @@ export class ContactsHandler {
 
     closeContact(contact: Contact<ContactAddrFamily, ContactProto>) {
         let i = this.contacts.indexOf(contact);
-        if (i > 0)
+        if (i >= 0)
             delete this.contacts[i];
     }
 

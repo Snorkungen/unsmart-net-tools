@@ -149,7 +149,7 @@ export default class NeighborTable {
     }
 }
 
-const BROADCAST_MAC_ADDRESS = new MACAddress(Buffer.alloc(MACAddress.ADDRESS_LENGTH / 8, 0xff))
+export const BROADCAST_MAC_ADDRESS = new MACAddress(Buffer.alloc(MACAddress.ADDRESS_LENGTH / 8, 0xff))
 
 function createARPRequest(query: IPV4Address, iface: Interface): typeof ETHERNET_HEADER | null {
     if (!iface.isConnected || !iface.ipv4Address) {

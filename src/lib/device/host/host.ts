@@ -45,6 +45,7 @@ export class Host extends Device {
     listener(frame: typeof ETHERNET_HEADER, iface: Interface) {
         // inform about request
         this.log(frame, iface);
+        this.contactsHandler.handle(frame); // doing stuff
         if (frame.get("dmac").toString() != iface.macAddress.toString()) {
             if (!frame.get("dmac").isBroadcast()) {
                 // meant for wrong interface

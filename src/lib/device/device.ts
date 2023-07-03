@@ -2,6 +2,7 @@ import { MACAddress } from "../address/mac";
 import { UINT16 } from "../binary/struct";
 import { ETHERNET_HEADER } from "../header/ethernet";
 import { PCAP_GLOBAL_HEADER, PCAP_MAGIC_NUMBER, PCAP_RECORD_HEADER } from "../header/pcap";
+import { ContactsHandler } from "./contact/contacts-handler";
 import { Interface } from "./interface";
 import { Buffer } from "buffer";
 
@@ -17,6 +18,8 @@ let frames = new Map<string, Buffer>();
 export class Device {
     name = Math.floor(Math.random() * 10_000).toString() + "A";
     interfaces: Interface[] = [];
+
+    contactsHandler = new ContactsHandler(this)
 
     log(frame: typeof ETHERNET_HEADER, iface: Interface, type: "RECIEVE" | "SEND" = "RECIEVE") {
         // inform about request
@@ -36,6 +39,7 @@ export class Device {
 
     listener(frame: typeof ETHERNET_HEADER, iface: Interface) {
         this.log(frame, iface);
+        this.contactsHandler.handle(frame);
     }
 
     sendFrame(frame: typeof ETHERNET_HEADER, iface: Interface) {
