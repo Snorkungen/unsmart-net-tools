@@ -43,15 +43,15 @@ export class ContactsHandler {
     recieve(contact: Contact<ContactAddrFamily, ContactProto>, buf: Uint8Array) {
         switch (contact.addrFamily) {
             case ContactAddrFamily.RAW:
-                return this.recieveRAW(buf);
+                return this.recieveRAW(contact, buf);
             case ContactAddrFamily.IPv4:
-                return this.recieveIPv4(buf);
+                return this.recieveIPv4(contact, buf);
             case ContactAddrFamily.IPv6:
-                return this.recieveIPv6(buf);
+                return this.recieveIPv6(contact, buf);
         }
     }
 
-    private recieveRAW(buf: Uint8Array) {
+    private recieveRAW(contact: Contact<ContactAddrFamily, ContactProto>, buf: Uint8Array) {
         let eth_hdr = ETHERNET_HEADER.from(buf);
 
         let saddr = eth_hdr.get("smac");
@@ -65,10 +65,13 @@ export class ContactsHandler {
             }
         } else for (let iface of this.device.interfaces) {
             // send on specific interface
-            if (iface.macAddress.toString() == saddr.toString()) return iface.send(eth_hdr);
+            if (iface.macAddress.toString() == saddr.toString()) {
+                this.device.log(eth_hdr, iface, "SEND")
+                return iface.send(eth_hdr);
+            }
         }
     }
-    private recieveIPv4(buf: Uint8Array) {
+    private recieveIPv4(contact: Contact<ContactAddrFamily, ContactProto>, buf: Uint8Array) {
         let ip_hdr = IPV4_HEADER.from(buf),
             saddr = ip_hdr.get("saddr"),
             daddr = ip_hdr.get("daddr");
@@ -83,7 +86,7 @@ export class ContactsHandler {
             throw new Error("resolve destination IPv6 not implemented")
         }
     }
-    private recieveIPv6(buf: Uint8Array) {
+    private recieveIPv6(contact: Contact<ContactAddrFamily, ContactProto>, buf: Uint8Array) {
         let ip_hdr = IPV6_HEADER.from(buf),
             saddr = ip_hdr.get("saddr"),
             daddr = ip_hdr.get("daddr");
@@ -105,8 +108,8 @@ export class ContactsHandler {
             delete this.contacts[i];
     }
 
-    createContact(addrFamily: ContactAddrFamily, proto: ContactProto): Contact<typeof addrFamily, typeof proto> {
-        let contact = new Contact(this, addrFamily, proto);
+    createContact<AF extends ContactAddrFamily, PTO extends ContactProto>(addrFamily: AF, proto: PTO): Contact<AF, PTO> {
+        let contact = new Contact<AF, PTO>(this, addrFamily, proto);
         this.contacts.push(contact);
         return contact;
     }

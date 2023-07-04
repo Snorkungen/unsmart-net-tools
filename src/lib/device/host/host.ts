@@ -136,79 +136,9 @@ export class Host extends Device {
                         ethertype: ETHER_TYPES.IPv6,
                         payload: replyIPHdr.getBuffer()
                     }), iface);
-                } else if (icmpHdr.get("type") == ICMPV6_TYPES.NEIGHBOR_SOLICITATION) {
-                    // check if target is me
-                    let ndpHdr = ICMP_NDP_HEADER.from(icmpHdr.get("data"))
-                    if (ndpHdr.get("targetAddress").toString() != iface.ipv6Address!.toString()) {
-                        return;
-                    }
-                    // respond with neighbor solicitation
-
-                    let replyIcmpHdr = ICMP_HEADER.create({
-                        type: ICMPV6_TYPES.NEIGHBOR_ADVERTISMENT,
-                        data: ndpHdr.getBuffer()
-                    })
-
-                    // The actual spec <https://www.rfc-editor.org/rfc/rfc4443#section-2.3>
-                    let pseudoHdr = IPV6_PSEUDO_HEADER.create({
-                        saddr: iface.ipv6Address!,
-                        daddr: ipHdr.get("saddr"),
-                        len: replyIcmpHdr.size,
-                        nextHeader: PROTOCOLS.IPV6_ICMP,
-                    })
-
-                    replyIcmpHdr.set("csum", calculateChecksum(Buffer.concat([
-                        pseudoHdr.getBuffer(),
-                        replyIcmpHdr.getBuffer()
-                    ])));
-
-                    let replyIPHdr = IPV6_HEADER.create({
-                        saddr: iface.ipv6Address,
-                        daddr: ipHdr.get("saddr"),
-                        nextHeader: PROTOCOLS.IPV6_ICMP,
-                        payloadLength: replyIcmpHdr.size,
-                        payload: replyIcmpHdr.getBuffer()
-                    })
-
-                    return this.sendFrame(ETHERNET_HEADER.create({
-                        smac: iface.macAddress,
-                        dmac: frame.get("smac"),
-                        ethertype: ETHER_TYPES.IPv6,
-                        payload: replyIPHdr.getBuffer()
-                    }), iface);
                 }
             }
 
-        } else if (frame.get("ethertype") == ETHER_TYPES.ARP) {
-            // handle an arp packet
-            let arpHdr = ARP_HEADER.from(frame.get("payload"));
-
-            // console.info(`packet is an ARP(${arpHdr.get("oper") == 1 && "Request" || arpHdr.get("oper") == 2 && "Reply"})`)
-
-            if (arpHdr.get("oper") == ARP_OPCODES.REQUEST) {
-                // request
-
-                if (arpHdr.get("tpa").toString() != iface.ipv4Address!.toString()) {
-                    // ignore if not intended target
-                    return;
-                }
-
-                // reply to request
-                let replyArpHdr = ARP_HEADER.from(arpHdr.getBuffer());
-                replyArpHdr.set("oper", ARP_OPCODES.REPLY);
-                replyArpHdr.set("tha", iface.macAddress);
-                replyArpHdr.set("tpa", iface.ipv4Address!);
-
-                // wrap packet in ethernet frame
-                return this.sendFrame(ETHERNET_HEADER.create({
-                    dmac: frame.get("smac"),
-                    smac: iface.macAddress,
-                    ethertype: ETHER_TYPES.ARP,
-                    payload: replyArpHdr.getBuffer()
-                }), iface)
-
-                // idk know if i should add an entry to the arp table
-            }
         }
 
         this.statefulRecv(frame, iface)

@@ -10,6 +10,7 @@ import { ICMPV6_TYPES, ICMP_HEADER, ICMP_NDP_HEADER } from "../../header/icmp";
 import { IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
 import { Interface } from "../interface";
 import { Host } from "./host";
+import { Contact, ContactAddrFamily, ContactProto } from "../contact/contact";
 
 const ADDRESS_V6_SIMPLIFY = -1;
 
@@ -32,11 +33,122 @@ export default class NeighborTable {
 
     private host: Host;
 
+    private contact: Contact<ContactAddrFamily.RAW, ContactProto.RAW>
+
     constructor(host: Host, private timeout = 100) {
         this.host = host;
 
         this.version4 = new Map();
         this.version6 = new Map();
+
+        this.contact = this.host.contactsHandler.createContact(ContactAddrFamily.RAW, ContactProto.RAW);
+        this.contact.recieve = (buf) => {
+            let ethHdr = ETHERNET_HEADER.from(buf);
+            if (ethHdr.get("ethertype") == ETHER_TYPES.ARP) {
+                this.recieveARP(ethHdr)
+            } else if (ethHdr.get("ethertype") == ETHER_TYPES.IPv6) {
+                let ipHdr = IPV6_HEADER.from(ethHdr.get("payload"));
+                if (ipHdr.get("nextHeader") == PROTOCOLS.IPV6_ICMP) {
+                    this.reciveNDP(ethHdr, ipHdr)
+                }
+            }
+
+        }
+        this.contact.recieve.bind(this);
+    }
+
+    private recieveARP(ethHdr: typeof ETHERNET_HEADER) {
+        let arpHdr = ARP_HEADER.from(ethHdr.get("payload"));
+
+        if (arpHdr.get("oper") == ARP_OPCODES.REPLY) {
+            // add entry to neigbor map
+
+            let arpHdr = ARP_HEADER.from(ethHdr.get("payload"))
+
+            let iface = this.host.interfaces.find(({ macAddress }) => macAddress.toString() == arpHdr.get("sha").toString())
+            if (!iface) return;
+
+            this.version4.set(arpHdr.get("tpa").toString(), {
+                neighbor: arpHdr.get("spa"),
+                iface,
+                macAddress: ethHdr.get("smac"),
+                createdAt: Date.now()
+            })
+
+        } else if (arpHdr.get("oper") == ARP_OPCODES.REQUEST) {
+            // reply to request
+
+            for (let iface of this.host.interfaces) {
+                if (iface.ipv4Address?.toString() != arpHdr.get("tpa").toString()) {
+                    continue;
+                }
+
+                let replyARPHdr = arpHdr.create({
+                    oper: ARP_OPCODES.REPLY,
+                    tha: iface.macAddress
+                }), replyEthHdr = ETHERNET_HEADER.create({
+                    dmac: arpHdr.get("sha"),
+                    smac: iface.macAddress,
+                    ethertype: ETHER_TYPES.ARP,
+                    payload: replyARPHdr.getBuffer()
+                })
+
+                return this.contact.send(replyEthHdr.getBuffer())
+            }
+        }
+    }
+    private reciveNDP(ethHdr: typeof ETHERNET_HEADER, ipHdr: typeof IPV6_HEADER) {
+        let icmpHdr = ICMP_HEADER.from(ipHdr.get("payload"));
+        let ndpHdr = ICMP_NDP_HEADER.from(icmpHdr.get("data"));
+        if (icmpHdr.get("type") == ICMPV6_TYPES.NEIGHBOR_ADVERTISMENT) {
+            let iface = this.host.interfaces.find(({ macAddress }) => macAddress.toString() == ethHdr.get("dmac").toString())
+            if (!iface) return;
+
+            this.version6.set(ndpHdr.get("targetAddress").toString(ADDRESS_V6_SIMPLIFY), {
+                neighbor: ipHdr.get("saddr"),
+                iface,
+                macAddress: ethHdr.get("smac"),
+                createdAt: Date.now()
+            })
+        } else if (icmpHdr.get("type") == ICMPV6_TYPES.NEIGHBOR_SOLICITATION) {
+            let iface = this.host.interfaces.find(({ ipv6Address }) => ipv6Address?.toString() == ndpHdr.get("targetAddress").toString())
+
+            if (!iface) return;
+
+            // reply to ndp Request
+            let replyIcmpHdr = ICMP_HEADER.create({
+                type: ICMPV6_TYPES.NEIGHBOR_ADVERTISMENT,
+                data: ndpHdr.getBuffer()
+            })
+
+            // The actual spec <https://www.rfc-editor.org/rfc/rfc4443#section-2.3>
+            let pseudoHdr = IPV6_PSEUDO_HEADER.create({
+                saddr: iface.ipv6Address!,
+                daddr: ipHdr.get("saddr"),
+                len: replyIcmpHdr.size,
+                nextHeader: PROTOCOLS.IPV6_ICMP,
+            })
+
+            replyIcmpHdr.set("csum", calculateChecksum(Buffer.concat([
+                pseudoHdr.getBuffer(),
+                replyIcmpHdr.getBuffer()
+            ])));
+
+            let replyIPHdr = IPV6_HEADER.create({
+                saddr: iface.ipv6Address,
+                daddr: ipHdr.get("saddr"),
+                nextHeader: PROTOCOLS.IPV6_ICMP,
+                payloadLength: replyIcmpHdr.size,
+                payload: replyIcmpHdr.getBuffer()
+            }), replyEthHdr = ETHERNET_HEADER.create({
+                dmac: ethHdr.get("smac"),
+                smac: iface.macAddress,
+                ethertype: ETHER_TYPES.IPv6,
+                payload: replyIPHdr.getBuffer()
+            })
+
+            return this.contact.send(replyEthHdr.getBuffer())
+        }
     }
 
     private getVersion4(query: IPV4Address): NeighborEntry<IPV4Address> | null {
@@ -57,67 +169,53 @@ export default class NeighborTable {
     }
 
     discoverVersion4(query: IPV4Address): Promise<NeighborDiscoveryError> {
-
-        // in the future i would have sockets on the host 
-        // then this would have a callback that gets called
-
         return new Promise<NeighborDiscoveryError>((resolve) => {
-            let indices: Array<number> = []
+            let interval = setInterval((() => {
+                if (this.get(query)) {
+                    clearInterval(interval)
+                    resolve(NEIGHBOR_DISCOVERY_ERROR.NONE);
+                }
+            }).bind(this), 15); // Arbitrarily adding delays
+
             for (let iface of this.host.interfaces) {
                 let f = createARPRequest(query, iface)
                 if (!f) return;
-                indices.push(this.host.statefulSend(f, (frame, iface) => {
-                    let arpHdr = ARP_HEADER.from(frame.get("payload"))
 
-                    this.version4.set(query.toString(), {
-                        neighbor: query,
-                        iface,
-                        macAddress: frame.get("smac"),
-                        createdAt: Date.now()
-                    })
-
-                    // clean up
-                    indices.forEach(sidx => this.host.statefulClose(sidx))
-                    resolve(NEIGHBOR_DISCOVERY_ERROR.NONE);
-                }))
-
+                this.contact.send(f.getBuffer())
             }
+
             setTimeout(() => {
-                // clean up
-                indices.forEach(sidx => this.host.statefulClose(sidx))
-                resolve(NEIGHBOR_DISCOVERY_ERROR.TIMEOUT);
+                clearInterval(interval)
+                if (this.get(query))
+                    resolve(NEIGHBOR_DISCOVERY_ERROR.NONE);
+                else
+                    resolve(NEIGHBOR_DISCOVERY_ERROR.TIMEOUT);
             }, this.timeout);
         })
     };
 
     discoverVersion6(query: IPV6Address): Promise<NeighborDiscoveryError> {
         return new Promise<NeighborDiscoveryError>(resolve => {
-            let indices: Array<number> = []
+            let interval = setInterval((() => {
+                if (this.get(query)) {
+                    clearInterval(interval)
+                    resolve(NEIGHBOR_DISCOVERY_ERROR.NONE);
+                }
+            }).bind(this), 15); // Arbitrarily adding delays
 
             for (let iface of this.host.interfaces) {
                 let f = createNDPRequest(query, iface)
                 if (!f) return;
-                indices.push(this.host.statefulSend(f, (frame, iface) => {
-                    this.version6.set(query.toString(ADDRESS_V6_SIMPLIFY), {
-                        neighbor: query,
-                        iface,
-                        macAddress: frame.get("smac"),
-                        createdAt: Date.now()
-                    })
-
-                    // clean up
-                    indices.forEach(sidx => this.host.statefulClose(sidx))
-                    resolve(NEIGHBOR_DISCOVERY_ERROR.NONE);
-                }))
-
-                // clean up
-                indices.forEach(sidx => this.host.statefulClose(sidx))
+                
+                this.contact.send(f.getBuffer())
             }
 
             setTimeout(() => {
-                // clean up
-                indices.forEach(sidx => this.host.statefulClose(sidx))
-                resolve(NEIGHBOR_DISCOVERY_ERROR.TIMEOUT);
+                clearInterval(interval)
+                if (this.get(query))
+                    resolve(NEIGHBOR_DISCOVERY_ERROR.NONE);
+                else
+                    resolve(NEIGHBOR_DISCOVERY_ERROR.TIMEOUT);
             }, this.timeout);
         });
     };

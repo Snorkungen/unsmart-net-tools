@@ -77,35 +77,6 @@ iface_pc2.prefixLength = 64;
 swIface_pc1.connect(iface_pc1);
 swIface_pc2.connect(iface_pc2);
 
-let pc1_contact = pc1.contactsHandler.createContact(ContactAddrFamily.RAW, ContactProto.RAW);
-let arpHdr = createARPHeader({
-    oper: ARP_OPCODES.REQUEST,
-    sha: iface_pc1.macAddress,
-    spa: iface_pc1.ipv4Address,
-    tpa: iface_pc2.ipv4Address!
-}),
-    ethHdr = ETHERNET_HEADER.create({
-        dmac: BROADCAST_MAC_ADDRESS,
-        // smac: iface_pc1.macAddress,
-        ethertype: ETHER_TYPES.ARP,
-        payload: arpHdr.getBuffer()
-    })
-function stringifyStruct(struct: Struct<any>) {
-    let obj: any = {}
-
-    struct.order.forEach(k => {
-        obj[k] = struct.get(k) + ""
-    })
-
-    return JSON.stringify(obj, null, 2)
-}
-pc1_contact.recieve = (buf) => {
-    let eh = ETHERNET_HEADER.from(buf);
-    console.log(
-        stringifyStruct(eh)
-    )
-}
-
 export const TestingComponent: Component = () => {
 
     return (
@@ -113,14 +84,6 @@ export const TestingComponent: Component = () => {
             <header>
                 <h2>This is a component where trying things are acceptable.</h2>
             </header>
-            <button onClick={() => {
-                console.log(
-                    stringifyStruct(ethHdr)
-                )
-                pc1_contact.send(ethHdr.getBuffer())
-                console.log(pc1.contactsHandler)
-                pc1_contact.close()
-            }}>press me</button>
             <div>
                 <DeviceComponent device={pc1} />
                 <DeviceComponent device={networkSwitch} />

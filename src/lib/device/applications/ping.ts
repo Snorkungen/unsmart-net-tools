@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import { IPV4Address } from "../../address/ipv4";
 import { IPV6Address } from "../../address/ipv6";
 import { calculateChecksum } from "../../binary/checksum";
