@@ -43,7 +43,7 @@ export default class NeighborTable {
 
         // IDK if abstracting t'ings is worthwhile
         this.device.addService(
-            new DeviceServiceAddressResolution(this.device)
+            new DeviceServiceAddressResolution(this.device,this.contact)
         )
     }
     private getVersion4(query: IPV4Address): NeighborEntry<IPV4Address> | null {

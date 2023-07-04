@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import { calculateChecksum } from "../../binary/checksum";
 import { ARP_HEADER, ARP_OPCODES } from "../../header/arp";
 import { ETHERNET_HEADER, ETHER_TYPES } from "../../header/ethernet";

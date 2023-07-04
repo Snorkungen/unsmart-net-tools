@@ -6,6 +6,7 @@ import { ETHERNET_HEADER, ETHER_TYPES } from "../../header/ethernet";
 import { IPV4_HEADER, IPV6_HEADER } from "../../header/ip";
 import { Device } from "../device";
 import { Contact, ContactAddrFamily, ContactProto } from "./contact";
+import { calculateChecksum } from "../../binary/checksum";
 
 export const UNSET_MAC_ADDRESS = new MACAddress(Buffer.alloc(MACAddress.ADDRESS_LENGTH / 8, 0));
 export const UNSET_IPV4_ADDRESS = new IPV4Address(Buffer.alloc(IPV4Address.ADDRESS_LENGTH / 8, 0));
@@ -19,16 +20,16 @@ export class ContactsHandler {
     handle(frame: typeof ETHERNET_HEADER) {
         for (let contact of this.contacts) {
             if (!contact || !contact.recieve) continue;
-
+            
             if (contact.addrFamily == ContactAddrFamily.RAW) {
                 contact.recieve(frame.getBuffer())
             } else if (contact.addrFamily == ContactAddrFamily.IPv4) {
                 if (frame.get("ethertype") != ETHER_TYPES.IPv4) continue;
-
+                
                 contact.recieve(frame.get("payload"))
             } else if (contact.addrFamily == ContactAddrFamily.IPv6) {
                 if (frame.get("ethertype") != ETHER_TYPES.IPv6) continue;
-
+                
                 contact.recieve(frame.get("payload"))
             }
         }
@@ -71,34 +72,106 @@ export class ContactsHandler {
             }
         }
     }
-    private recieveIPv4(contact: Contact<ContactAddrFamily, ContactProto>, buf: Uint8Array) {
+    private async recieveIPv4(contact: Contact<ContactAddrFamily, ContactProto>, buf: Uint8Array) {
         let ip_hdr = IPV4_HEADER.from(buf),
             saddr = ip_hdr.get("saddr"),
             daddr = ip_hdr.get("daddr");
 
         if (saddr.toString() == UNSET_IPV4_ADDRESS.toString()) {
             // have some special sauce to determine a suitable interface
-            throw new Error("UNSET IPv4 not implemented")
+
+            let iface = this.device.interfaces.find(({ ipv4Address, ipv4SubnetMask }) => ipv4Address && ipv4SubnetMask?.compare(ipv4Address, daddr));
+            if (!iface) {
+                iface = this.device.interfaces.find(i => i.ipv4Address);
+            }
+            if (!iface) {
+                return; // no interface to choose from
+            }
+
+            ip_hdr.set("saddr", iface.ipv4Address!);
+
+            // recalculate checksum
+            ip_hdr.set("csum", 0);
+            ip_hdr.set("csum", calculateChecksum(ip_hdr.getBuffer().subarray(0, 20)));
+            this.recieveIPv4(contact, ip_hdr.getBuffer())
         } else for (let iface of this.device.interfaces) {
             if (!iface.ipv4Address || iface.ipv4Address.toString() != saddr.toString()) continue;
 
-            // encapsulate packet
-            throw new Error("resolve destination IPv6 not implemented")
+            if (!iface.ipv4SubnetMask?.compare(saddr, daddr)) {
+                // Sanity Check Ensure daddr is the same subnet because routing not Implented
+                throw new Error("Routing not implemented")
+            }
+
+            let dmac: MACAddress;
+
+            if (saddr.toString() == daddr.toString()) {
+                // destination is self
+                dmac = iface.macAddress;
+            } else {
+                let r = await this.device.neighborTable.getDiscover(daddr);
+                if (typeof r == "number") {
+                    // was error return
+                    throw new Error(r + "")
+                }
+                dmac = r.macAddress;
+            }
+
+            let eth_hdr = ETHERNET_HEADER.create({
+                smac: iface.macAddress,
+                dmac: dmac,
+                ethertype: ETHER_TYPES.IPv4,
+                payload: ip_hdr.getBuffer()
+            });
+
+            this.device.log(eth_hdr, iface, "SEND")
+            return iface.send(eth_hdr);
+
         }
     }
-    private recieveIPv6(contact: Contact<ContactAddrFamily, ContactProto>, buf: Uint8Array) {
+    private async recieveIPv6(contact: Contact<ContactAddrFamily, ContactProto>, buf: Uint8Array) {
         let ip_hdr = IPV6_HEADER.from(buf),
             saddr = ip_hdr.get("saddr"),
             daddr = ip_hdr.get("daddr");
 
         if (saddr.toString() == UNSET_IPV6_ADDRESS.toString()) {
             // have some special sauce to determine a suitable interface
+
+            let iface = this.device.interfaces.find(({ ipv6Address }) => ipv6Address && !ipv6Address.isLinkLocal());
+            if (!iface) {
+                iface = this.device.interfaces.find(i => i.ipv6Address);
+            }
+            if (!iface) {
+                return; // no interface to choose from
+            }
+
             throw new Error("UNSET IPv6 not implemented")
         } else for (let iface of this.device.interfaces) {
             if (!iface.ipv6Address || iface.ipv6Address.toString() != saddr.toString()) continue;
 
-            // encapsulate packet
-            throw new Error("resolve destination IPv6 not implemented")
+            // IMPORTANT I'm unsure how i want to do routing
+
+            let dmac: MACAddress;
+            if (saddr.toString() == daddr.toString()) {
+                // destination is self
+                dmac = iface.macAddress;
+            } else {
+                let r = await this.device.neighborTable.getDiscover(daddr);
+                if (typeof r == "number") {
+                    // was error return
+                    throw new Error(r + "")
+                }
+                dmac = r.macAddress;
+            }
+
+            let eth_hdr = ETHERNET_HEADER.create({
+                smac: iface.macAddress,
+                dmac: dmac,
+                ethertype: ETHER_TYPES.IPv6,
+                payload: ip_hdr.getBuffer()
+            });
+
+            this.device.log(eth_hdr, iface, "SEND")
+            return iface.send(eth_hdr);
         }
     }
 

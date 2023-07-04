@@ -12,7 +12,11 @@ import { ETHERNET_HEADER, ETHER_TYPES } from "../lib/header/ethernet";
 import { MACAddress } from "../lib/address/mac";
 import { BROADCAST_MAC_ADDRESS } from "../lib/device/neighbor-table";
 import { Struct } from "../lib/binary";
-
+import { calculateChecksum } from "../lib/binary/checksum";
+import { resolveSendingInformationVersion4 } from "../lib/device/host/resolve-sending-information";
+import { ICMP_ECHO_HEADER, ICMP_HEADER, ICMPV4_TYPES, ICMPV6_TYPES } from "../lib/header/icmp";
+import { createIPV4Header, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../lib/header/ip";
+import { Buffer } from "buffer";
 const selectContents = (ev: MouseEvent) => {
     if (!(ev.currentTarget instanceof HTMLElement)) return;
     let range = document.createRange();
@@ -77,6 +81,31 @@ iface_pc2.prefixLength = 64;
 swIface_pc1.connect(iface_pc1);
 swIface_pc2.connect(iface_pc2);
 
+let echoHdr = ICMP_ECHO_HEADER.create({
+    id: 342,
+    seq: 1
+}), icmpHdr = ICMP_HEADER.create({
+    type: ICMPV6_TYPES.ECHO_REQUEST,
+    data: echoHdr.getBuffer()
+});
+
+
+// The actual spec <https://www.rfc-editor.org/rfc/rfc4443#section-2.3>
+let pseudoHdr = IPV6_PSEUDO_HEADER.create({
+    saddr: iface_pc1.ipv6Address,
+    daddr: iface_pc1.ipv6Address,
+    len: icmpHdr.size,
+    nextHeader: PROTOCOLS.IPV6_ICMP,
+})
+
+icmpHdr.set("csum", calculateChecksum(Buffer.concat([pseudoHdr.getBuffer(), icmpHdr.getBuffer()])));
+
+let ipHdr = IPV6_HEADER.create({
+    saddr: iface_pc1.ipv6Address,
+    daddr: iface_pc1.ipv6Address,
+    nextHeader: PROTOCOLS.IPV6_ICMP,
+    payload: icmpHdr.getBuffer()
+})
 export const TestingComponent: Component = () => {
 
     return (
@@ -84,6 +113,12 @@ export const TestingComponent: Component = () => {
             <header>
                 <h2>This is a component where trying things are acceptable.</h2>
             </header>
+            <button onClick={() => {    
+                let contact = pc1.contactsHandler.createContact(ContactAddrFamily.IPv6, ContactProto.RAW);
+                contact.send(ipHdr.getBuffer()
+                )
+                contact.close()
+            }}>Press me</button>
             <div>
                 <DeviceComponent device={pc1} />
                 <DeviceComponent device={networkSwitch} />
