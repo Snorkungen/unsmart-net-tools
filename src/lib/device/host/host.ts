@@ -2,7 +2,7 @@ import { Buffer } from "buffer";
 import { Interface } from "../interface";
 import { Device } from "../device";
 
-import NeighborTable from "./neighbor-table";
+import NeighborTable from "../neighbor-table";
 import resolveSendingInformation from "./resolve-sending-information";
 import { IPV4Address } from "../../address/ipv4";
 import { IPV6Address, ALL_LINK_LOCAL_NODES_ADDRESSV6 } from "../../address/ipv6";
@@ -36,8 +36,7 @@ function ignoreIPPacketHost(address: IPV4Address | IPV6Address, iface: Interface
     return true;
 }
 
-export class Host extends Device {
-    neighborTable = new NeighborTable(this);
+export class Host extends Device { 
     /**
     This function only replies to requests for now
     It might not in the future

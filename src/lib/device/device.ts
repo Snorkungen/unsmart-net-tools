@@ -5,6 +5,8 @@ import { PCAP_GLOBAL_HEADER, PCAP_MAGIC_NUMBER, PCAP_RECORD_HEADER } from "../he
 import { ContactsHandler } from "./contact/contacts-handler";
 import { Interface } from "./interface";
 import { Buffer } from "buffer";
+import DeviceService from "./service/service";
+import NeighborTable from "./neighbor-table";
 
 let macAddressCount = 0;
 let startBuf = Buffer.from([0xfa, 0xff, 0x0f, 0])
@@ -17,9 +19,14 @@ let frames = new Map<string, Buffer>();
 
 export class Device {
     name = Math.floor(Math.random() * 10_000).toString() + "A";
-    interfaces: Interface[] = [];
 
+    interfaces: Interface[] = [];
     contactsHandler = new ContactsHandler(this)
+
+    neighborTable: NeighborTable = new NeighborTable(this);
+
+    // just too keep a reference to services
+    services: Array<DeviceService> = [];
 
     log(frame: typeof ETHERNET_HEADER, iface: Interface, type: "RECIEVE" | "SEND" = "RECIEVE") {
         // inform about request
@@ -93,5 +100,13 @@ export class Device {
         })
 
         return file;
+    }
+
+    addService(service: DeviceService) {
+        if (!this.services) {
+            this.services = [];
+        }
+
+        this.services.push(service);
     }
 }

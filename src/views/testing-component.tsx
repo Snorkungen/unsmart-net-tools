@@ -10,7 +10,7 @@ import { ContactAddrFamily, ContactProto } from "../lib/device/contact/contact";
 import { ARP_OPCODES, createARPHeader } from "../lib/header/arp";
 import { ETHERNET_HEADER, ETHER_TYPES } from "../lib/header/ethernet";
 import { MACAddress } from "../lib/address/mac";
-import { BROADCAST_MAC_ADDRESS } from "../lib/device/host/neighbor-table";
+import { BROADCAST_MAC_ADDRESS } from "../lib/device/neighbor-table";
 import { Struct } from "../lib/binary";
 
 const selectContents = (ev: MouseEvent) => {

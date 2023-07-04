@@ -2,8 +2,8 @@ import { IPV4Address } from "../../address/ipv4";
 import { IPV6Address } from "../../address/ipv6";
 import { createMask } from "../../address/mask";
 import { Host } from "./host";
-import { NEIGHBOR_DISCOVERY_ERROR } from "./neighbor-table";
-import { NeighborEntry } from "./neighbor-table";
+import { NEIGHBOR_DISCOVERY_ERROR } from "../neighbor-table";
+import { NeighborEntry } from "../neighbor-table";
 
 export async function resolveSendingInformationVersion4(host: Host, address: IPV4Address): Promise<NeighborEntry<IPV4Address>> {
     // check if inside subnet   
