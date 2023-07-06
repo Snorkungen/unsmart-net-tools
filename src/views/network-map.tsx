@@ -303,71 +303,11 @@ export default function NetworkMapViewer(): JSX.Element {
     nmap.addDevice(nmDevice_pc2)
     nmap.addDevice(nmDevice_pc3)
     nmap.addDevice(nmDevice_sw)
-    createStore()
-    let [devices, setDevices] = createStore<{ device: Device, x: number; y: number; }[]>([
-        {
-            device: networkSwitch,
-            x: 120,
-            y: 200,
-        }, {
-            device: pc1,
-            x: 100, y: 100
-        }, {
-            device: pc2,
-            x: 200, y: 200
-        }, {
-            device: pc3,
-            x: 300, y: 300
-        }
-    ])
 
     return <div style={{ width: "100%" }} >
 
         <svg width={"100%"} height={500} >
             <g ref={(el => { nmap.container = el; nmap.update() })}></g>
-        </svg>
-
-        <svg width={"100%"} height={500} >
-            <g >
-                <For each={devices}>{(device, i) => {
-                    let mouseIsDown = false;
-                    let prevMousePos: { x: number, y: number } | undefined = undefined;
-                    return <g onMouseDown={(ev) => {
-                        mouseIsDown = true;
-                        prevMousePos = { x: ev.clientX, y: ev.clientY }
-                    }}
-                        onMouseMove={(ev) => {
-                            if (!mouseIsDown || !prevMousePos) return;
-
-                            let diffX = ev.clientX - prevMousePos.x, diffY = ev.clientY - prevMousePos.y;
-
-                            // device.x += diffX;
-                            // device.y += diffY;
-
-                            setDevices(d => d.device == device.device, {
-                                x: device.x + diffX,
-                                y: device.y + diffY
-                            })
-                        }}
-                        onMouseUp={() => mouseIsDown = false}
-                        onMouseLeave={() => mouseIsDown = false}
-                    >
-                        <rect
-                            x={device.x}
-                            y={device.y}
-                            fill="#2270F1"
-                            width={50} height={50}
-                        />
-                        <text
-                            x={device.x + 10}
-                            y={device.y + 20}
-                        >{device.device.name}</text>
-                        <For each={device.device.interfaces}>{(iface, i) => (
-                            <rect x={device.x + (i() * 14)} y={device.y + 50} width={10} height={10} fill={iface.isConnected ? "green" : "red"} />
-                        )}</For>
-                    </g>
-                }}</For>
-            </g>
         </svg>
 
     </div>
