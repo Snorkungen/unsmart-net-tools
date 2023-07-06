@@ -6,6 +6,7 @@ import { Host } from "../lib/device/host";
 import { Device } from "../lib/device/device";
 import { NetworkSwitch } from "../lib/device/network-switch";
 import { Interface } from "../lib/device/interface";
+import { createStore } from "solid-js/store";
 
 let devices: NetworkMapDevice[] = [];
 let ifaceConnections: { master: NetworkMapInterface; slave: NetworkMapInterface; path: JSX.Element }[] = [];
@@ -81,7 +82,7 @@ class NetworkMapDevice {
         this.rect.setAttribute("height", height + "")
         this.rect.setAttribute("fill", "#4f3f3f")
         this.text.setAttribute("x", this.x + 10 + "")
-        this.text.setAttribute("y", this.y + 20+ "")
+        this.text.setAttribute("y", this.y + 20 + "")
         this.text.textContent = this.device.name;
 
         this.nmInterfaces.forEach((iface) => iface.update())
@@ -125,55 +126,6 @@ class NetworkMapDevice {
     }
 
 }
-
-let networkSwitch = new NetworkSwitch();
-networkSwitch.name = "SW1"
-
-let swIface_pc1 = networkSwitch.createInterface();
-let swIface_pc2 = networkSwitch.createInterface();
-let swIface_pc3 = networkSwitch.createInterface();
-
-let pc1 = new Host();
-let pc2 = new Host();
-let pc3 = new Host();
-pc1.name = "PC1"
-pc2.name = "PC2"
-pc3.name = "PC3"
-
-let iface_pc1 = pc1.createInterface();
-let iface_pc2 = pc2.createInterface();
-let iface_pc3 = pc3.createInterface();
-
-
-iface_pc1.ipv4Address = new IPV4Address("192.168.1.10")
-iface_pc1.ipv4SubnetMask = createMask(IPV4Address, 24);
-
-swIface_pc1.connect(iface_pc1);
-swIface_pc2.connect(iface_pc2);
-swIface_pc3.connect(iface_pc3);
-
-let nmDevice_sw = new NetworkMapDevice(120, 200, networkSwitch);
-let nmDevice_pc1 = new NetworkMapDevice(100, 100, pc1);
-let nmDevice_pc2 = new NetworkMapDevice(200, 200, pc2);
-let nmDevice_pc3 = new NetworkMapDevice(300, 200, pc3);
-
-export default function NetworkMapViewer(): JSX.Element {
-
-    let nmap = new NetworkMap();
-    nmap.addDevice(nmDevice_pc1)
-    nmap.addDevice(nmDevice_pc2)
-    nmap.addDevice(nmDevice_pc3)
-    nmap.addDevice(nmDevice_sw)
-
-    return <div style={{ width: "100%" }} >
-
-        <svg width={"100%"} height={500} >
-            <g ref={(el => { nmap.container = el; nmap.update() })}></g>
-        </svg>
-
-    </div>
-};
-
 interface NetworkMapConnection {
     master: NetworkMapInterface;
     slave: NetworkMapInterface;
@@ -191,13 +143,13 @@ class NetworkMap {
         this.update()
     }
 
-    updateConnections () {
+    updateConnections() {
         // let prevConnections = this.connections.slice();
         // this.calculateConnections();
         // if (prevConnections.length != this.connections.length) {
         //     return this.update()
         // }
-        for(let connection of this.connections) {
+        for (let connection of this.connections) {
             (connection.path as SVGPathElement).setAttribute("d", this.calculateConnectionPath(connection.master, connection.slave));
         }
     }
@@ -312,3 +264,112 @@ class NetworkMap {
         </g>
     }
 }
+
+let networkSwitch = new NetworkSwitch();
+networkSwitch.name = "SW1"
+
+let swIface_pc1 = networkSwitch.createInterface();
+let swIface_pc2 = networkSwitch.createInterface();
+let swIface_pc3 = networkSwitch.createInterface();
+
+let pc1 = new Host();
+let pc2 = new Host();
+let pc3 = new Host();
+pc1.name = "PC1"
+pc2.name = "PC2"
+pc3.name = "PC3"
+
+let iface_pc1 = pc1.createInterface();
+let iface_pc2 = pc2.createInterface();
+let iface_pc3 = pc3.createInterface();
+
+
+iface_pc1.ipv4Address = new IPV4Address("192.168.1.10")
+iface_pc1.ipv4SubnetMask = createMask(IPV4Address, 24);
+
+swIface_pc1.connect(iface_pc1);
+swIface_pc2.connect(iface_pc2);
+swIface_pc3.connect(iface_pc3);
+
+let nmDevice_sw = new NetworkMapDevice(120, 200, networkSwitch);
+let nmDevice_pc1 = new NetworkMapDevice(100, 100, pc1);
+let nmDevice_pc2 = new NetworkMapDevice(200, 200, pc2);
+let nmDevice_pc3 = new NetworkMapDevice(300, 200, pc3);
+
+export default function NetworkMapViewer(): JSX.Element {
+
+    let nmap = new NetworkMap();
+    nmap.addDevice(nmDevice_pc1)
+    nmap.addDevice(nmDevice_pc2)
+    nmap.addDevice(nmDevice_pc3)
+    nmap.addDevice(nmDevice_sw)
+    createStore()
+    let [devices, setDevices] = createStore<{ device: Device, x: number; y: number; }[]>([
+        {
+            device: networkSwitch,
+            x: 120,
+            y: 200,
+        }, {
+            device: pc1,
+            x: 100, y: 100
+        }, {
+            device: pc2,
+            x: 200, y: 200
+        }, {
+            device: pc3,
+            x: 300, y: 300
+        }
+    ])
+
+    return <div style={{ width: "100%" }} >
+
+        <svg width={"100%"} height={500} >
+            <g ref={(el => { nmap.container = el; nmap.update() })}></g>
+        </svg>
+
+        <svg width={"100%"} height={500} >
+            <g >
+                <For each={devices}>{(device, i) => {
+                    let mouseIsDown = false;
+                    let prevMousePos: { x: number, y: number } | undefined = undefined;
+                    return <g onMouseDown={(ev) => {
+                        mouseIsDown = true;
+                        prevMousePos = { x: ev.clientX, y: ev.clientY }
+                    }}
+                        onMouseMove={(ev) => {
+                            if (!mouseIsDown || !prevMousePos) return;
+
+                            let diffX = ev.clientX - prevMousePos.x, diffY = ev.clientY - prevMousePos.y;
+
+                            // device.x += diffX;
+                            // device.y += diffY;
+
+                            setDevices(d => d.device == device.device, {
+                                x: device.x + diffX,
+                                y: device.y + diffY
+                            })
+                        }}
+                        onMouseUp={() => mouseIsDown = false}
+                        onMouseLeave={() => mouseIsDown = false}
+                    >
+                        <rect
+                            x={device.x}
+                            y={device.y}
+                            fill="#2270F1"
+                            width={50} height={50}
+                        />
+                        <text
+                            x={device.x + 10}
+                            y={device.y + 20}
+                        >{device.device.name}</text>
+                        <For each={device.device.interfaces}>{(iface, i) => (
+                            <rect x={device.x + (i() * 14)} y={device.y + 50} width={10} height={10} fill={iface.isConnected ? "green" : "red"} />
+                        )}</For>
+                    </g>
+                }}</For>
+            </g>
+        </svg>
+
+    </div>
+};
+
