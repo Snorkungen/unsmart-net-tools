@@ -22,11 +22,6 @@ class NetworkMapInterface {
     connectorStroke = "#33e42d"
     connectorStrokeHighlight = "#cc2e12"
 
-    update() {
-        this.x = this.nmDevice.x + (this.i * 14);
-        this.y = this.nmDevice.y + 50;
-
-    }
 
     constructor(nmDevice: NetworkMapDevice, iface: Interface, i: number) {
         this.nmDevice = nmDevice;
@@ -37,14 +32,24 @@ class NetworkMapInterface {
         this.y = this.nmDevice.y + 50;
     }
 
-    render() {
+    element: SVGRectElement = <rect x={0} y={0} width={0} height={0} /> as SVGRectElement
+
+    update() {
         this.x = this.nmDevice.x + (this.i * 14);
         this.y = this.nmDevice.y + 50;
 
         let width = 10, height = width;
 
+        this.element.setAttribute("x", this.x + "")
+        this.element.setAttribute("y", this.y + "")
+        this.element.setAttribute("width", width + "")
+        this.element.setAttribute("height", height + "")
+        this.element.setAttribute("fill", this.iface.isConnected ? "green" : "red")
+    }
 
-        return <rect x={this.x} y={this.y} width={width} height={height} fill={this.iface.isConnected ? "green" : "red"} />
+    render() {
+        this.update()
+        return this.element;
     }
 }
 class NetworkMapDevice {
@@ -67,10 +72,32 @@ class NetworkMapDevice {
 
     map?: NetworkMap;
     update() {
+        let width = 50, height = width;
+
+
+        this.rect.setAttribute("x", this.x + "")
+        this.rect.setAttribute("y", this.y + "")
+        this.rect.setAttribute("width", width + "")
+        this.rect.setAttribute("height", height + "")
+        this.rect.setAttribute("fill", "#4f3f3f")
+        this.text.setAttribute("x", this.x + 10 + "")
+        this.text.setAttribute("y", this.y + 20+ "")
+        this.text.textContent = this.device.name;
+
+        this.nmInterfaces.forEach((iface) => iface.update())
+
         if (!this.map) return;
-        this.map.update()
+
+        this.map.updateConnections()
+        // this.map.update()
     }
+
+    rect: SVGRectElement = <rect /> as SVGRectElement;
+    text: SVGTextElement = <text /> as SVGTextElement;
+
     render() {
+
+        this.update()
         return <g onMouseDown={(ev) => {
             this.mouseIsDown = true;
             this.mouseDownPos = { x: ev.clientX, y: ev.clientY }
@@ -91,9 +118,9 @@ class NetworkMapDevice {
             onMouseUp={() => this.mouseIsDown = false}
             onMouseLeave={() => this.mouseIsDown = false}
         >
-            <rect x={this.x} y={this.y} width={50} height={50} fill="#4f3f3f" />
-            <text x={this.x + 10} y={this.y + 20}>{this.device.name}</text>
-            {this.nmInterfaces.map(iface => iface.render())}
+            {this.rect}
+            {this.text}
+            {this.nmInterfaces.map(iface => iface.render() as any)}
         </g>
     }
 
@@ -162,6 +189,17 @@ class NetworkMap {
 
     constructor() {
         this.update()
+    }
+
+    updateConnections () {
+        // let prevConnections = this.connections.slice();
+        // this.calculateConnections();
+        // if (prevConnections.length != this.connections.length) {
+        //     return this.update()
+        // }
+        for(let connection of this.connections) {
+            (connection.path as SVGPathElement).setAttribute("d", this.calculateConnectionPath(connection.master, connection.slave));
+        }
     }
 
     private findTarget(iface: NetworkMapInterface): NetworkMapInterface | null {
