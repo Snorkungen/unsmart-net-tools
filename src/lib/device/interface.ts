@@ -57,6 +57,8 @@ export class Interface {
     }
 
     send(frame: TEthernetFrame) {
+
+
         if (frame.get("dmac").toString() == this.macAddress.toString()) {
             // allow for sending packets to itself
             return this.recieve(frame)
@@ -79,6 +81,8 @@ export class Interface {
             }
         }
 
+        if (this.onSend) this.onSend()
+
         return this.target!.recieve(frame);
     }
 
@@ -91,6 +95,19 @@ export class Interface {
         // inteface doesn't deal with vlans
 
         // recieve doesn't return anything 
-        return this.forwardCallback(frame, this);
+
+        if (this.onRecv) this.onRecv();
+
+        if (this.recvWait) {
+            setTimeout(() => this.forwardCallback(frame, this), this.recvWait)
+        } else {
+
+            return this.forwardCallback(frame, this);
+        }
     }
+
+    onRecv?: () => void;
+    onSend?: () => void;
+
+    recvWait?: number;
 }

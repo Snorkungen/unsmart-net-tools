@@ -7,9 +7,7 @@ import { Device } from "../lib/device/device";
 import { NetworkSwitch } from "../lib/device/network-switch";
 import { Interface } from "../lib/device/interface";
 import { createStore } from "solid-js/store";
-
-let devices: NetworkMapDevice[] = [];
-let ifaceConnections: { master: NetworkMapInterface; slave: NetworkMapInterface; path: JSX.Element }[] = [];
+import ping from "../lib/device/applications/ping";
 
 class NetworkMapInterface {
     iface: Interface;
@@ -31,6 +29,20 @@ class NetworkMapInterface {
 
         this.x = this.nmDevice.x + (this.i * 14);
         this.y = this.nmDevice.y + 50;
+
+
+        iface.onRecv = this.onRecv.bind(this)
+        iface.onSend = this.onSend.bind(this)
+        iface.recvWait = INTERFACE_ANIM_DELAY;
+    }
+
+    onSend() {
+        this.element.setAttribute("fill", "orange");
+        setTimeout(() => this.element.setAttribute("fill", this.iface.isConnected ? "green" : "red"), INTERFACE_ANIM_DELAY)
+    }
+    onRecv() {
+        this.element.setAttribute("fill", "purple");
+        setTimeout(() => this.element.setAttribute("fill", this.iface.isConnected ? "green" : "red"), INTERFACE_ANIM_DELAY)
     }
 
     element: SVGRectElement = <rect x={0} y={0} width={0} height={0} /> as SVGRectElement
@@ -64,8 +76,6 @@ class NetworkMapDevice {
         this.device = device;
 
         this.nmInterfaces = this.device.interfaces.map((iface, i) => new NetworkMapInterface(this, iface, i));
-
-        devices.push(this)
     }
 
     mouseIsDown = false;
@@ -265,6 +275,8 @@ class NetworkMap {
     }
 }
 
+const INTERFACE_ANIM_DELAY = 1000;
+
 let networkSwitch = new NetworkSwitch();
 networkSwitch.name = "SW1"
 
@@ -279,6 +291,10 @@ pc1.name = "PC1"
 pc2.name = "PC2"
 pc3.name = "PC3"
 
+pc1.neighborTable.timeout = pc1.neighborTable.timeout * INTERFACE_ANIM_DELAY; 
+pc2.neighborTable.timeout = pc2.neighborTable.timeout * INTERFACE_ANIM_DELAY; 
+pc3.neighborTable.timeout = pc3.neighborTable.timeout * INTERFACE_ANIM_DELAY; 
+
 let iface_pc1 = pc1.createInterface();
 let iface_pc2 = pc2.createInterface();
 let iface_pc3 = pc3.createInterface();
@@ -286,6 +302,8 @@ let iface_pc3 = pc3.createInterface();
 
 iface_pc1.ipv4Address = new IPV4Address("192.168.1.10")
 iface_pc1.ipv4SubnetMask = createMask(IPV4Address, 24);
+iface_pc2.ipv4Address = new IPV4Address("192.168.1.20")
+iface_pc2.ipv4SubnetMask = createMask(IPV4Address, 24);
 
 swIface_pc1.connect(iface_pc1);
 swIface_pc2.connect(iface_pc2);
@@ -309,7 +327,13 @@ export default function NetworkMapViewer(): JSX.Element {
         <svg width={"100%"} height={500} >
             <g ref={(el => { nmap.container = el; nmap.update() })}></g>
         </svg>
-
+        <button
+            onClick={() => {
+                ping(pc2, iface_pc1.ipv4Address!).then(() => {
+                    console.log("%c ECHO Reply recieved: " + pc2.name, ['background: green', 'color: white', 'display: block', 'text-align: center', 'font-size: 24px'].join(';'))
+                })
+            }}
+        >press Me</button>
     </div>
 };
 

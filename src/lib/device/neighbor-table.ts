@@ -33,7 +33,7 @@ export default class NeighborTable {
     private device: Device;
     private contact: Contact<ContactAddrFamily.RAW, ContactProto.RAW>
 
-    constructor(device: Device, private timeout = 100) {
+    constructor(device: Device, public timeout = 100) {
         this.device = device;
 
         this.version4 = new Map();
