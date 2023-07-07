@@ -1,7 +1,8 @@
 import { Buffer } from "buffer";
 import { describe, test, expect } from "vitest";
-import { IPV4Address, calculateSubnetIPV4, IPV4_CLASS_A, IPV4_CLASS_B, IPV4_CLASS_C, classifyIPV4Address } from "../../lib/address/ipv4";
+import { IPV4Address, calculateSubnetIPV4, IPV4_CLASS_A, IPV4_CLASS_B, IPV4_CLASS_C, classifyIPV4Address, reservedAddresses } from "../../lib/address/ipv4";
 import { createMask } from "../../lib/address/mask";
+import { createLinkLocalIPV4Address } from "../../lib/address/ipv4/link-local";
 
 describe("IPV4 Address", () => {
     test("toString", () => {
@@ -72,5 +73,18 @@ describe("IPV4 Address", () => {
 
             expect(c == IPV4_CLASS_A).eq(true);
         })
+    })
+
+    test("create link-local", () => {
+        const LINK_LOCAL_ENTRY = reservedAddresses.find(([, , scope]) => scope == "LINK_LOCAL")!
+        let linkLocalMask = createMask(IPV4Address, LINK_LOCAL_ENTRY[1]);
+        let linkLocalNetID = new IPV4Address(LINK_LOCAL_ENTRY[0]);
+
+        for (let i = 0; i < 1_000; i++) {
+            let llAddr = createLinkLocalIPV4Address();
+            expect(linkLocalMask.compare(linkLocalNetID, llAddr)).to.eq(true);
+            expect(llAddr.buffer[3], llAddr.toString()).not.eq(255)
+            expect(llAddr.buffer[3], llAddr.toString()).not.eq(0)
+        }
     })
 })
