@@ -28,12 +28,14 @@ export class Device {
     // just too keep a reference to services
     services: Array<DeviceService> = [];
 
-    log(frame: typeof ETHERNET_HEADER, iface: Interface, type: "RECIEVE" | "SEND" = "RECIEVE") {
+    log(frame: typeof ETHERNET_HEADER, iface: Interface, type: "RECIEVE" | "SEND" | "DISCARD" = "RECIEVE") {
         // inform about request
         if (type == "RECIEVE") {
             console.info(`"${this.name}" recieved on interface: ${iface.ifID}, from ${frame.get("smac").toString()}`)
         } else if (type == "SEND") {
             // console.info(`"${this.name}" sent from interface: ${iface.ifID}, to ${frame.get("dmac").toString()}`)
+        } else if(type == "DISCARD") {
+            console.info(`"${this.name}" recieved on interface: ${iface.ifID}, from ${frame.get("smac").toString()}, Has been DISCARDED!`)
         }
 
         // dont add frame if frame is sent to self
