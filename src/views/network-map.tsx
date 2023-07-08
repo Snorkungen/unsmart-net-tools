@@ -27,7 +27,7 @@ class NetworkMapInterface {
         this.i = i;
 
         this.x = this.nmDevice.x + (this.i * 14);
-        this.y = this.nmDevice.y + 50;
+        this.y = this.nmDevice.y + this.nmDevice.height;
 
 
         iface.onRecv = this.onRecv.bind(this)
@@ -37,18 +37,22 @@ class NetworkMapInterface {
 
     onSend() {
         this.element.setAttribute("fill", "orange");
-        setTimeout(() => this.element.setAttribute("fill", this.iface.isConnected ? "green" : "red"), INTERFACE_ANIM_DELAY)
+        setTimeout(() => {
+            this.element.setAttribute("fill", this.iface.isConnected ? "green" : "red")
+        }, INTERFACE_ANIM_DELAY)
     }
     onRecv() {
         this.element.setAttribute("fill", "purple");
-        setTimeout(() => this.element.setAttribute("fill", this.iface.isConnected ? "green" : "red"), INTERFACE_ANIM_DELAY)
+        setTimeout(() => {
+            this.element.setAttribute("fill", this.iface.isConnected ? "green" : "red")
+        }, INTERFACE_ANIM_DELAY)
     }
 
     element: SVGRectElement = <rect x={0} y={0} width={0} height={0} /> as SVGRectElement
 
     update() {
-        this.x = this.nmDevice.x + (this.i * 14);
-        this.y = this.nmDevice.y + 50;
+        this.x = this.nmDevice.x + (this.i * 15);
+        this.y = this.nmDevice.y + this.nmDevice.height;
 
         let width = 10, height = width;
 
@@ -67,11 +71,15 @@ class NetworkMapInterface {
 class NetworkMapDevice {
     x: number;
     y: number;
+    width:number;
+    height:number;
     device: Device;
     nmInterfaces: Array<NetworkMapInterface>
     constructor(x: number, y: number, device: Device) {
         this.x = x;
         this.y = y;
+        this.width = 50;
+        this.height = this.width;
         this.device = device;
 
         this.nmInterfaces = this.device.interfaces.map((iface, i) => new NetworkMapInterface(this, iface, i));
@@ -82,13 +90,15 @@ class NetworkMapDevice {
 
     map?: NetworkMap;
     update() {
-        let width = 50, height = width;
-
+        if (this.device instanceof NetworkSwitch) {
+            this.width = 75;
+            this.height = 25
+        }
 
         this.rect.setAttribute("x", this.x + "")
         this.rect.setAttribute("y", this.y + "")
-        this.rect.setAttribute("width", width + "")
-        this.rect.setAttribute("height", height + "")
+        this.rect.setAttribute("width", this.width + "")
+        this.rect.setAttribute("height", this.height + "")
         this.rect.setAttribute("fill", "#4f3f3f")
         this.text.setAttribute("x", this.x + 10 + "")
         this.text.setAttribute("y", this.y + 20 + "")
@@ -224,14 +234,17 @@ class NetworkMap {
                 })()
 
                 if (!connectionMaster) continue;
+
+                let path = <path d={this.calculateConnectionPath(iface, target)} stroke={iface.connectorStroke} stroke-width={5} fill="none"
+                    stroke-linejoin="round"
+                    onMouseEnter={(e) => e.currentTarget.style.stroke = iface.connectorStrokeHighlight}
+                    onMouseLeave={(e) => e.currentTarget.style.stroke = iface.connectorStroke}
+                />
+
                 this.connections.push({
                     master: iface,
                     slave: target,
-                    path: <path d={this.calculateConnectionPath(iface, target)} stroke={iface.connectorStroke} stroke-width={2} fill="none"
-                        stroke-linejoin="round"
-                        onMouseEnter={(e) => e.currentTarget.style.stroke = iface.connectorStrokeHighlight}
-                        onMouseLeave={(e) => e.currentTarget.style.stroke = iface.connectorStroke}
-                    />
+                    path: path
                 })
 
                 touched.push(iface);
@@ -281,17 +294,18 @@ let networkSwitch2 = new NetworkSwitch();
 networkSwitch.name = "SW1"
 networkSwitch2.name = "SW2"
 
+let swIface_trunk = networkSwitch.createInterface();
+let swIface2_trunk = networkSwitch2.createInterface();
+swIface_trunk.connect(swIface2_trunk);
+
 let swIface_pc1 = networkSwitch.createInterface();
 let swIface_pc2 = networkSwitch.createInterface();
 let swIface_pc3 = networkSwitch.createInterface();
 let swIface_pc4 = networkSwitch.createInterface();
 
-let swIface_trunk = networkSwitch.createInterface();
 
-let swIface2_trunk = networkSwitch2.createInterface();
 let swIface2_pc5 = networkSwitch2.createInterface();
 
-swIface_trunk.connect(swIface2_trunk);
 
 let vlan10: Interface["vlan"] = {
     type: "access",
@@ -356,14 +370,14 @@ swIface_pc4.connect(iface_pc4);
 
 swIface2_pc5.connect(iface_pc5)
 
-let nmDevice_sw = new NetworkMapDevice(120, 200, networkSwitch);
-let nmDevice_pc1 = new NetworkMapDevice(100, 100, pc1);
-let nmDevice_pc2 = new NetworkMapDevice(200, 200, pc2);
-let nmDevice_pc3 = new NetworkMapDevice(300, 200, pc3);
+let nmDevice_sw = new NetworkMapDevice(50, 50, networkSwitch);
+let nmDevice_pc1 = new NetworkMapDevice(150, 50, pc1);
+let nmDevice_pc2 = new NetworkMapDevice(220, 50, pc2);
+let nmDevice_pc3 = new NetworkMapDevice(290, 50, pc3);
 
-let nmDevice_pc4 = new NetworkMapDevice(400, 60, pc4);
-let nmDevice_pc5 = new NetworkMapDevice(300, 340, pc5);
-let nmDevice_sw2 = new NetworkMapDevice(380, 340, networkSwitch2);
+let nmDevice_pc4 = new NetworkMapDevice(400, 50, pc4);
+let nmDevice_pc5 = new NetworkMapDevice(400, 350, pc5);
+let nmDevice_sw2 = new NetworkMapDevice(100, 350, networkSwitch2);
 
 
 export default function NetworkMapViewer(): JSX.Element {
@@ -394,7 +408,7 @@ export default function NetworkMapViewer(): JSX.Element {
         <button
             onClick={() => {
                 ping(pc4, iface_pc5.ipv4Address!).then(() => {
-                    console.log("%c ECHO Reply recieved: " + pc2.name, ['background: green', 'color: white', 'display: block', 'text-align: center', 'font-size: 24px'].join(';'))
+                    console.log("%c ECHO Reply recieved: " + pc5.name, ['background: green', 'color: white', 'display: block', 'text-align: center', 'font-size: 24px'].join(';'))
                 })
             }}
         >Ping IPV4 pc4 =&gt pc5</button>
