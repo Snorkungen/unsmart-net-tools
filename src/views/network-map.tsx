@@ -6,7 +6,6 @@ import { Host } from "../lib/device/host";
 import { Device } from "../lib/device/device";
 import { NetworkSwitch } from "../lib/device/network-switch";
 import { Interface } from "../lib/device/interface";
-import { createStore } from "solid-js/store";
 import ping from "../lib/device/applications/ping";
 
 class NetworkMapInterface {
@@ -275,44 +274,97 @@ class NetworkMap {
     }
 }
 
-const INTERFACE_ANIM_DELAY = 1000;
+const INTERFACE_ANIM_DELAY = 900;
 
 let networkSwitch = new NetworkSwitch();
+let networkSwitch2 = new NetworkSwitch();
 networkSwitch.name = "SW1"
+networkSwitch2.name = "SW2"
 
 let swIface_pc1 = networkSwitch.createInterface();
 let swIface_pc2 = networkSwitch.createInterface();
 let swIface_pc3 = networkSwitch.createInterface();
+let swIface_pc4 = networkSwitch.createInterface();
 
-let pc1 = new Host();
-let pc2 = new Host();
-let pc3 = new Host();
-pc1.name = "PC1"
-pc2.name = "PC2"
-pc3.name = "PC3"
+let swIface_trunk = networkSwitch.createInterface();
 
-pc1.neighborTable.timeout = pc1.neighborTable.timeout * INTERFACE_ANIM_DELAY; 
-pc2.neighborTable.timeout = pc2.neighborTable.timeout * INTERFACE_ANIM_DELAY; 
-pc3.neighborTable.timeout = pc3.neighborTable.timeout * INTERFACE_ANIM_DELAY; 
+let swIface2_trunk = networkSwitch2.createInterface();
+let swIface2_pc5 = networkSwitch2.createInterface();
+
+swIface_trunk.connect(swIface2_trunk);
+
+let vlan10: Interface["vlan"] = {
+    type: "access",
+    vids: [10]
+}, vlan20: Interface["vlan"] = {
+    type: "access",
+    vids: [20]
+}, vlanTrunk: Interface["vlan"] = {
+    type: "trunk",
+    vids: [1, /*10,*/ 20]
+}
+
+swIface_pc1.vlan = vlan10;
+swIface_pc2.vlan = vlan10;
+swIface_pc3.vlan = vlan10;
+
+// vlan test
+swIface_pc4.vlan = vlan20;
+swIface2_pc5.vlan = vlan20;
+
+swIface_trunk.vlan = vlanTrunk;
+swIface2_trunk.vlan = vlanTrunk;
+
+const createHost = (name: string) => {
+    let host = new Host();
+    host.name = name;
+    host.neighborTable.timeout = host.neighborTable.timeout * INTERFACE_ANIM_DELAY;
+    return host;
+}
+
+let pc1 = createHost("PC1")
+let pc2 = createHost("PC2")
+let pc3 = createHost("PC3")
+
+// vlan test
+let pc4 = createHost("PC4")
+let pc5 = createHost("PC5")
 
 let iface_pc1 = pc1.createInterface();
 let iface_pc2 = pc2.createInterface();
 let iface_pc3 = pc3.createInterface();
 
+// vlan test
+let iface_pc4 = pc4.createInterface();
+let iface_pc5 = pc5.createInterface();
 
 iface_pc1.ipv4Address = new IPV4Address("192.168.1.10")
 iface_pc1.ipv4SubnetMask = createMask(IPV4Address, 24);
 iface_pc2.ipv4Address = new IPV4Address("192.168.1.20")
 iface_pc2.ipv4SubnetMask = createMask(IPV4Address, 24);
 
+
+iface_pc4.ipv4Address = new IPV4Address("172.16.0.40")
+iface_pc4.ipv4SubnetMask = createMask(IPV4Address, 24);
+iface_pc5.ipv4Address = new IPV4Address("172.16.0.50")
+iface_pc5.ipv4SubnetMask = createMask(IPV4Address, 24);
+
 swIface_pc1.connect(iface_pc1);
 swIface_pc2.connect(iface_pc2);
 swIface_pc3.connect(iface_pc3);
+swIface_pc4.connect(iface_pc4);
+
+swIface2_pc5.connect(iface_pc5)
 
 let nmDevice_sw = new NetworkMapDevice(120, 200, networkSwitch);
 let nmDevice_pc1 = new NetworkMapDevice(100, 100, pc1);
 let nmDevice_pc2 = new NetworkMapDevice(200, 200, pc2);
 let nmDevice_pc3 = new NetworkMapDevice(300, 200, pc3);
+
+let nmDevice_pc4 = new NetworkMapDevice(400, 60, pc4);
+let nmDevice_pc5 = new NetworkMapDevice(300, 340, pc5);
+let nmDevice_sw2 = new NetworkMapDevice(380, 340, networkSwitch2);
+
 
 export default function NetworkMapViewer(): JSX.Element {
 
@@ -321,6 +373,11 @@ export default function NetworkMapViewer(): JSX.Element {
     nmap.addDevice(nmDevice_pc2)
     nmap.addDevice(nmDevice_pc3)
     nmap.addDevice(nmDevice_sw)
+
+    // vlan test
+    nmap.addDevice(nmDevice_pc4)
+    nmap.addDevice(nmDevice_pc5)
+    nmap.addDevice(nmDevice_sw2)
 
     return <div style={{ width: "100%" }} >
 
@@ -333,7 +390,14 @@ export default function NetworkMapViewer(): JSX.Element {
                     console.log("%c ECHO Reply recieved: " + pc2.name, ['background: green', 'color: white', 'display: block', 'text-align: center', 'font-size: 24px'].join(';'))
                 })
             }}
-        >press Me</button>
+        >Ping IPV4 pc2 =&gt pc1</button>
+        <button
+            onClick={() => {
+                ping(pc4, iface_pc5.ipv4Address!).then(() => {
+                    console.log("%c ECHO Reply recieved: " + pc2.name, ['background: green', 'color: white', 'display: block', 'text-align: center', 'font-size: 24px'].join(';'))
+                })
+            }}
+        >Ping IPV4 pc4 =&gt pc5</button>
     </div>
 };
 

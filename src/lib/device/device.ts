@@ -35,7 +35,7 @@ export class Device {
         } else if (type == "SEND") {
             // console.info(`"${this.name}" sent from interface: ${iface.ifID}, to ${frame.get("dmac").toString()}`)
         } else if(type == "DISCARD") {
-            console.info(`"${this.name}" recieved on interface: ${iface.ifID}, from ${frame.get("smac").toString()}, Has been DISCARDED!`)
+            console.info(`"${this.name}", Discarded frame!`)
         }
 
         // dont add frame if frame is sent to self

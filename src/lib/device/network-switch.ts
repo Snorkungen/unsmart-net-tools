@@ -85,6 +85,7 @@ export class NetworkSwitch extends Device {
 
             // check if VID is allowed for interface
             if (!iface.vlan.vids.includes(vlanHdr.get("vid"))) {
+                return; // just return no logging, It's confusing
                 return this.log(frame, iface, "DISCARD"); // "Cannot send; VID not in ifaces access list"
             }
 
@@ -94,6 +95,7 @@ export class NetworkSwitch extends Device {
         } else if (iface.vlan.type == "trunk") {
             if (frame.get("ethertype") != ETHER_TYPES.VLAN) {
                 // if untagged discard
+                return; // just return no logging, It's confusing
                 return this.log(frame, iface, "DISCARD")
             }
 
@@ -101,6 +103,7 @@ export class NetworkSwitch extends Device {
 
             // check if VID is allowed for interface
             if (!iface.vlan.vids.includes(vlanHdr.get("vid"))) {
+                return; // just return no logging, It's confusing
                 return this.log(frame, iface, "DISCARD"); // "Cannot send; VID not in ifaces access list"
             }
 
