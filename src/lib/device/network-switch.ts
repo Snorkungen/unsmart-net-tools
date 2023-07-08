@@ -75,7 +75,6 @@ export class NetworkSwitch extends Device {
         }
 
         // Do some fanciful vlan logic
-
         if (iface.vlan.type == "access") {
             if (frame.get("ethertype") != ETHER_TYPES.VLAN) {
                 // if untagged pass through
@@ -111,12 +110,27 @@ export class NetworkSwitch extends Device {
 
         return super.sendFrame(frame, iface);
     }
+
+    createInterface(): Interface {
+        let iface = super.createInterface()
+
+        // This is hacky but i think it is valid
+        iface.vlan = {
+            type: "access",
+            vids: [1]
+        }
+
+        return iface;
+    }
 }
 
 function untagFrame(frame: typeof ETHERNET_HEADER, vlanHdr: typeof ETHERNET_DOT1Q_HEADER) {
-    frame.set("ethertype", vlanHdr.get("ethertype"));
-    frame.set("payload", vlanHdr.get("payload"));
-    return frame;
+    return ETHERNET_HEADER.create({
+        dmac: frame.get("dmac"),
+        smac: frame.get("smac"),
+        ethertype: vlanHdr.get("ethertype"),
+        payload: vlanHdr.get("payload")
+    });
 }
 
 function tagFrame(frame: typeof ETHERNET_HEADER, vid: number, pcp: number = 0, dei: number = 0): typeof ETHERNET_HEADER {
