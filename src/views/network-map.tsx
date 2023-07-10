@@ -7,6 +7,7 @@ import { Device } from "../lib/device/device";
 import { NetworkSwitch } from "../lib/device/network-switch";
 import { Interface } from "../lib/device/interface";
 import ping from "../lib/device/applications/ping";
+import { TTY } from "../components/tty";
 
 class NetworkMapInterface {
     iface: Interface;
@@ -412,6 +413,8 @@ export default function NetworkMapViewer(): JSX.Element {
                 })
             }}
         >Ping IPV4 pc4 =&gt pc5</button>
+
+        <TTY device={pc1} />
     </div>
 };
 
