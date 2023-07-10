@@ -1,4 +1,4 @@
-import { Accessor, Component, For, createSignal } from "solid-js";
+import { Accessor, Component, For, Show, createEffect, createSignal } from "solid-js";
 import { JSX } from "solid-js/jsx-runtime";
 import { IPV4Address } from "../lib/address/ipv4";
 import { createMask } from "../lib/address/mask";
@@ -8,6 +8,8 @@ import { NetworkSwitch } from "../lib/device/network-switch";
 import { Interface } from "../lib/device/interface";
 import ping from "../lib/device/applications/ping";
 import { TTY } from "../components/tty";
+
+const [ttyDevice , setTTYDevice] = createSignal<Device| null>(null,{"equals" : false});
 
 class NetworkMapInterface {
     iface: Interface;
@@ -138,6 +140,10 @@ class NetworkMapDevice {
             }}
             onMouseUp={() => this.mouseIsDown = false}
             onMouseLeave={() => this.mouseIsDown = false}
+
+            onClick={() => {
+                setTTYDevice(this.device)
+            }}
         >
             {this.rect}
             {this.text}
@@ -382,7 +388,6 @@ let nmDevice_sw2 = new NetworkMapDevice(100, 350, networkSwitch2);
 
 
 export default function NetworkMapViewer(): JSX.Element {
-
     let nmap = new NetworkMap();
     nmap.addDevice(nmDevice_pc1)
     nmap.addDevice(nmDevice_pc2)
@@ -414,7 +419,9 @@ export default function NetworkMapViewer(): JSX.Element {
             }}
         >Ping IPV4 pc4 =&gt pc5</button>
 
-        <TTY device={pc1} />
+        <Show when={ttyDevice()} >
+            <TTY device={ttyDevice()!} />
+        </Show>
     </div>
 };
 

@@ -1,4 +1,4 @@
-import { Component } from "solid-js";
+import { Component, createMemo } from "solid-js";
 import { Device } from "../lib/device/device";
 import { IPV4Address } from "../lib/address/ipv4";
 import ping from "../lib/device/applications/ping";
@@ -39,10 +39,10 @@ function parseArgs(args: string): string[] {
     return argv;
 }
 
-export const TTY: Component<{ device: Device }> = ({ device }) => {
+export const TTY: Component<{ device: Device }> = (props) => {
     const programs: Record<string, Program> = {
         "echo": (writer: (inp: string) => void, args: string) => new Promise(resolve => {
-            cancel = () => {resolve(-1); writer = () => null}
+            cancel = () => { resolve(-1); writer = () => null }
             let argv = parseArgs(args);
             for (let a of argv.slice(1)) {
                 writer(a)
@@ -50,8 +50,8 @@ export const TTY: Component<{ device: Device }> = ({ device }) => {
             resolve(0)
         }),
         "ifinfo": (writer) => new Promise(resolve => {
-            cancel = () => {resolve(-1); writer = () => null}
-            for (let iface of device.interfaces) {
+            cancel = () => { resolve(-1); writer = () => null }
+            for (let iface of props.device.interfaces) {
                 writer(iface.ifID + ":" + iface.macAddress);
                 if (iface.ipv4Address) {
                     writer(":" + iface.ipv4Address.toString())
@@ -67,29 +67,29 @@ export const TTY: Component<{ device: Device }> = ({ device }) => {
         }),
         "ping": (writer: (inp: string) => void, args: string) => new Promise(async resolve => {
             let count = 10;
-            cancel = () => {resolve(-1); writer = () => null; count = 0};
+            cancel = () => { resolve(-1); writer = () => null; count = 0 };
 
             let [, target] = parseArgs(args);
-            let tmp = device.interfaces[0].recvWait;
-            device.interfaces[0].recvWait = 10;
+            let tmp = props.device.interfaces[0].recvWait;
+            props.device.interfaces[0].recvWait = 10;
             if (IPV4Address.validate(target)) {
                 let addr = new IPV4Address(target)
                 for (let i = 0; i < count; i++) {
-                    await ping(device as Host, addr, 120, i).then(() => {
+                    await ping(props.device as Host, addr, 120, i).then(() => {
                         writer(`response ${target}: seq ${i}`)
                         i < 9 && writer("\n")
                     })
                 }
             }
 
-            device.interfaces[0].recvWait = tmp;
+            props.device.interfaces[0].recvWait = tmp;
             resolve(0)
         })
     }
 
     let cancel: () => void = () => null;
 
-    const ttyPrompt = `<${device.name}>`
+    const ttyPrompt = createMemo(() => `<${props.device.name}>`);
 
 
     let entries: string[] = [], entryIndex = 0;
@@ -107,10 +107,10 @@ export const TTY: Component<{ device: Device }> = ({ device }) => {
                     elem.textContent += text
                     elem.scrollTop = elem.scrollHeight;
                 }
+                let line = elem.textContent!.split("\n").at(-1)?.substring(ttyPrompt().length)
                 const clearLine = () => {
-                    elem.textContent = elem.textContent!.substring(0, e.currentTarget.textContent!.length - elem.textContent!.split("\n").at(-1)?.substring(ttyPrompt.length).length!);
+                    elem.textContent = elem.textContent!.substring(0, elem.textContent!.length - line!.length!);
                 }
-                let line = elem.textContent!.split("\n").at(-1)?.substring(ttyPrompt.length)
 
                 if (e.ctrlKey && e.key.toLowerCase() == "c") {
                     cancel()
@@ -120,7 +120,6 @@ export const TTY: Component<{ device: Device }> = ({ device }) => {
                     case "Tab":
                         if (tabOptionsIndex < 0 && line) {
                             // calculate options
-                            console.log("jkldfjskl")
                             if (line.length < 1 || line.includes(" ")) {
                                 break;
                             }
@@ -129,7 +128,6 @@ export const TTY: Component<{ device: Device }> = ({ device }) => {
                                 let b = true;
                                 for (let i = 0; i < line!.length; i++) {
                                     if (line![i] != key[i]) {
-                                        console.log(line![i], key[i])
                                         b = false;
                                         break;
                                     }
@@ -140,7 +138,6 @@ export const TTY: Component<{ device: Device }> = ({ device }) => {
                             }, []);
                             tabOptionsIndex = 0;
                         }
-                        console.log(tabOptions, tabOptionsIndex)
                         if (tabOptions.length <= 0) break;
 
                         clearLine()
@@ -154,7 +151,7 @@ export const TTY: Component<{ device: Device }> = ({ device }) => {
 
                         break;
                     case "Backspace":
-                        if (e.currentTarget.textContent!.split("\n").at(-1) == ttyPrompt) break;
+                        if (e.currentTarget.textContent!.split("\n").at(-1) == ttyPrompt()) break;
                         e.currentTarget.textContent = e.currentTarget.textContent!.substring(0, e.currentTarget.textContent!.length - 1)
                         break;
 
@@ -167,7 +164,7 @@ export const TTY: Component<{ device: Device }> = ({ device }) => {
                     case "ArrowDown":
                         if (entryIndex < entries.length - 1) entryIndex++;
                         if (!entries[entryIndex]) break;
-                        elem.textContent = elem.textContent!.substring(0, e.currentTarget.textContent!.length - elem.textContent!.split("\n").at(-1)?.substring(ttyPrompt.length).length!)
+                        clearLine();
                         writer(entries[entryIndex])
 
                         break;
@@ -176,7 +173,6 @@ export const TTY: Component<{ device: Device }> = ({ device }) => {
                         entryIndex = entries.push(line!);
                         tabOptions = [], tabOptionsIndex = -1;
 
-
                         e.currentTarget.textContent += "\n";
                         e.currentTarget.scrollTop = e.currentTarget.scrollHeight;
 
@@ -184,10 +180,10 @@ export const TTY: Component<{ device: Device }> = ({ device }) => {
                         let f = programs[key]
                         if (typeof f == "function") {
                             f(writer, line!).then(() => {
-                                writer("\n" + ttyPrompt)
+                                writer("\n" + ttyPrompt())
                             })
                         } else {
-                            writer(ttyPrompt)
+                            writer(ttyPrompt())
                         }
                         break;
 
@@ -199,7 +195,7 @@ export const TTY: Component<{ device: Device }> = ({ device }) => {
             }}
 
         >
-            {ttyPrompt}
+            {ttyPrompt()}
         </textarea>
     </div >
 }
