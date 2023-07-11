@@ -1,91 +1,10 @@
 import { Component, createMemo } from "solid-js";
 import { Device } from "../lib/device/device";
-import { IPV4Address } from "../lib/address/ipv4";
-import ping from "../lib/device/applications/ping";
-import { Host } from "../lib/device/host";
 
-type Program = (writer: (inp: string) => void, args: string) => Promise<number>;
-
-function parseArgs(args: string): string[] {
-    let argv: string[] = [];
-
-    let p = 0, i = 0, c: string;
-    while (p < args.length) {
-        c = args[p];
-
-        if (c == '"') {
-            p++
-            while (p < args.length) {
-                c = args[p];
-
-                if (c == '"') {
-                    p++;
-                    break;
-                } else if (c) {
-                    argv[i] ? argv[i] += c : argv[i] = c;
-                }
-                p++;
-            }
-            continue;
-        } else if (c == " ") {
-            i++;
-        } else {
-            argv[i] ? argv[i] += c : argv[i] = c;
-        }
-
-        p++;
-    }
-
-    return argv;
-}
+import { registerTTYPrograms, parseArgs } from "../lib/tty/program/";
 
 export const TTY: Component<{ device: Device }> = (props) => {
-    const programs: Record<string, Program> = {
-        "echo": (writer: (inp: string) => void, args: string) => new Promise(resolve => {
-            cancel = () => { resolve(-1); writer = () => null }
-            let argv = parseArgs(args);
-            for (let a of argv.slice(1)) {
-                writer(a)
-            }
-            resolve(0)
-        }),
-        "ifinfo": (writer) => new Promise(resolve => {
-            cancel = () => { resolve(-1); writer = () => null }
-            for (let iface of props.device.interfaces) {
-                writer(iface.ifID + ":" + iface.macAddress);
-                if (iface.ipv4Address) {
-                    writer(":" + iface.ipv4Address.toString())
-                    if (iface.ipv4SubnetMask) writer("/" + iface.ipv4SubnetMask.length)
-                }
-                if (iface.ipv6Address) {
-                    writer(":" + iface.ipv6Address.toString())
-                    typeof iface.prefixLength == "number" && writer("/" + iface.prefixLength)
-                }
-                writer("\n")
-            }
-            resolve(0);
-        }),
-        "ping": (writer: (inp: string) => void, args: string) => new Promise(async resolve => {
-            let count = 10;
-            cancel = () => { resolve(-1); writer = () => null; count = 0 };
-
-            let [, target] = parseArgs(args);
-            let tmp = props.device.interfaces[0].recvWait;
-            props.device.interfaces[0].recvWait = 10;
-            if (IPV4Address.validate(target)) {
-                let addr = new IPV4Address(target)
-                for (let i = 0; i < count; i++) {
-                    await ping(props.device as Host, addr, 120, i).then(() => {
-                        writer(`response ${target}: seq ${i}`)
-                        i < 9 && writer("\n")
-                    })
-                }
-            }
-
-            props.device.interfaces[0].recvWait = tmp;
-            resolve(0)
-        })
-    }
+    const programs = registerTTYPrograms(props.device);
 
     let cancel: () => void = () => null;
 
@@ -176,12 +95,15 @@ export const TTY: Component<{ device: Device }> = (props) => {
                         e.currentTarget.textContent += "\n";
                         e.currentTarget.scrollTop = e.currentTarget.scrollHeight;
 
-                        let [key] = parseArgs(line!);
-                        let f = programs[key]
-                        if (typeof f == "function") {
-                            f(writer, line!).then(() => {
-                                writer("\n" + ttyPrompt())
-                            })
+                        let [key] = parseArgs(line!),
+                            entry = programs[key];
+
+                        if (typeof entry == "function") {
+                            let prog = programs[key]({ write: writer }, props.device);
+                            cancel = prog.cancel
+                            prog.run(line!)
+                                .then(_ => writer("\n" + ttyPrompt()))
+                                .catch(e => { console.error(e); writer("\n" + ttyPrompt()) })
                         } else {
                             writer(ttyPrompt())
                         }
