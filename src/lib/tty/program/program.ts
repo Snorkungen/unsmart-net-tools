@@ -1,6 +1,8 @@
 import { Device } from "../../device/device";
+import { ttyProgramClear } from "./clear";
 import { ttyProgramEcho } from "./echo";
 import { registerTTYProgramHelp } from "./help";
+import { ttyProgramIfinfo } from "./ifinfo";
 
 export enum TTYProgramStatus {
     OK,
@@ -21,6 +23,7 @@ export type TTYProgram = (writer: TTYWriter, device: Device) => {
 
 export type TTYWriter = {
     write(text: string): void;
+    clear(): void;
 }
 
 export function registerTTYPrograms(device: Device): Record<string, TTYProgram> {
@@ -28,7 +31,10 @@ export function registerTTYPrograms(device: Device): Record<string, TTYProgram> 
 
     programs["help"] = registerTTYProgramHelp(device, programs);
     programs["echo"] = ttyProgramEcho;
-    
+    programs["clear"] = ttyProgramClear;
+
+    programs["ifinfo"] = ttyProgramIfinfo;
+
     return programs;
 };
 

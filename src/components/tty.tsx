@@ -99,7 +99,7 @@ export const TTY: Component<{ device: Device }> = (props) => {
                             entry = programs[key];
 
                         if (typeof entry == "function") {
-                            let prog = programs[key]({ write: writer }, props.device);
+                            let prog = programs[key]({ write: writer, clear() { elem.textContent = "" } }, props.device);
                             cancel = prog.cancel
                             prog.run(line!)
                                 .then(_ => writer("\n" + ttyPrompt()))
