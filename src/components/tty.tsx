@@ -1,7 +1,7 @@
 import { Component, createMemo } from "solid-js";
 import { Device } from "../lib/device/device";
 
-import { registerTTYPrograms, parseArgs } from "../lib/tty/program/";
+import { registerTTYPrograms, parseArgs, resolveTTYProgram, TTYWriter } from "../lib/tty/program/";
 
 export const TTY: Component<{ device: Device }> = (props) => {
     const programs = registerTTYPrograms(props.device);
@@ -17,19 +17,26 @@ export const TTY: Component<{ device: Device }> = (props) => {
     return <div>
         <textarea
             rows={10}
-            style={{ width: "100%" }}
+            style={{ width: "100%", "font-family": "monospace" }}
             onKeyDown={(e) => {
                 e.preventDefault();
 
                 let elem = e.currentTarget;
-                const writer = (text: string) => {
-                    elem.textContent += text
-                    elem.scrollTop = elem.scrollHeight;
-                }
                 let line = elem.textContent!.split("\n").at(-1)?.substring(ttyPrompt().length)
-                const clearLine = () => {
-                    elem.textContent = elem.textContent!.substring(0, elem.textContent!.length - line!.length!);
+
+                const writer: TTYWriter = {
+                    write: (text: string) => {
+                        elem.textContent += text
+                        elem.scrollTop = elem.scrollHeight;
+                    },
+
+                    clear() { elem.textContent = "tty cleared!" },
+                    clearLine() {
+                        elem.textContent = elem.textContent!.substring(0, elem.textContent!.length - line!.length!);
+                    }
                 }
+
+       
 
                 if (e.ctrlKey && e.key.toLowerCase() == "c") {
                     cancel()
@@ -59,8 +66,8 @@ export const TTY: Component<{ device: Device }> = (props) => {
                         }
                         if (tabOptions.length <= 0) break;
 
-                        clearLine()
-                        writer(tabOptions[tabOptionsIndex])
+                        writer.clearLine();
+                        writer.write(tabOptions[tabOptionsIndex])
 
                         if (tabOptionsIndex < tabOptions.length - 1) {
                             tabOptionsIndex++;
@@ -77,14 +84,15 @@ export const TTY: Component<{ device: Device }> = (props) => {
                     case "ArrowUp":
                         if (entryIndex > 0) entryIndex--;
                         if (!entries[entryIndex]) break;
-                        clearLine();
-                        writer(entries[entryIndex])
+
+                        writer.clearLine();
+                        writer.write(entries[entryIndex])
                         break;
                     case "ArrowDown":
                         if (entryIndex < entries.length - 1) entryIndex++;
                         if (!entries[entryIndex]) break;
-                        clearLine();
-                        writer(entries[entryIndex])
+                        writer.clearLine();
+                        writer.write(entries[entryIndex])
 
                         break;
 
@@ -98,14 +106,16 @@ export const TTY: Component<{ device: Device }> = (props) => {
                         let [key] = parseArgs(line!),
                             entry = programs[key];
 
-                        if (typeof entry == "function") {
-                            let prog = programs[key]({ write: writer, clear() { elem.textContent = "" } }, props.device);
+                        let prog = resolveTTYProgram(entry, line!, writer, props.device)
+
+
+                        if (!!prog) {
                             cancel = prog.cancel
                             prog.run(line!)
-                                .then(_ => writer("\n" + ttyPrompt()))
-                                .catch(e => { console.error(e); writer("\n" + ttyPrompt()) })
+                                .then(_ => writer.write("\n" + ttyPrompt()))
+                                .catch(e => { console.error(e); writer.write("\n" + ttyPrompt()) })
                         } else {
-                            writer(ttyPrompt())
+                            writer.write(ttyPrompt())
                         }
                         break;
 

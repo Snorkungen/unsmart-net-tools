@@ -1,4 +1,5 @@
-import { TTYProgram, TTYProgramStatus, parseArgs } from "./program";
+import { BaseAddress } from "../../address/base";
+import { TTYProgram, TTYProgramStatus, formatTable, parseArgs } from "./program";
 
 let cancel = () => { };
 
@@ -66,5 +67,55 @@ export const ttyProgramIfinfo: TTYProgram = (writer, device) => ({
 
             resolve(TTYProgramStatus.OK)
         })
+    },
+    sub: {
+        "brief": brief
     }
 })
+
+function cidrNotate(addr?: BaseAddress, len?: number): string {
+    if (!addr) return "";
+
+    let str = addr.toString();
+
+    if (len) {
+        str += "/" + len.toString();
+    }
+
+    return str;
+}
+
+
+export const brief: TTYProgram = (writer, device) => {
+    return {
+        about: {
+            description: "Displays information about an interface.",
+            content: "",
+        },
+        cancel() { },
+        run(args) {
+            return new Promise(resolve => {
+                this.cancel = () => { resolve(TTYProgramStatus.CANCELED) };
+
+                let [, , argv] = parseArgs(args);
+
+
+                let row = ["IF_ID", "MAC", "IPv4", "IPv6", "VLAN"];
+                let rows = device.interfaces.map((iface) => (
+                    [iface.ifID.toString(), iface.macAddress.toString(),
+                    cidrNotate(iface.ipv4Address, iface.ipv4SubnetMask?.length,),
+                    cidrNotate(iface.ipv6Address, iface.prefixLength),
+                    iface.vlan ? iface.vlan.type : ""
+                    ]
+                ));
+
+
+                let str = formatTable([row].concat(rows), "  ")
+
+                writer.write(str)
+
+                resolve(TTYProgramStatus.OK);
+            })
+        },
+    }
+}
