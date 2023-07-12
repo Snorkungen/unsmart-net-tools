@@ -3,6 +3,7 @@ import { ttyProgramClear } from "./clear";
 import { ttyProgramEcho } from "./echo";
 import { ttyProgramHelp } from "./help";
 import { ttyProgramIfinfo } from "./ifinfo";
+import { ttyProgramPing } from "./ping";
 
 export * from "./helpers"
 
@@ -49,6 +50,6 @@ export function registerTTYPrograms(): TTYPrograms {
     };
 
     programs["ifinfo"] = ttyProgramIfinfo;
-
+    programs["ping"] = ttyProgramPing;
     return programs;
 };
