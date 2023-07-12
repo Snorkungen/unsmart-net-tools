@@ -52,7 +52,3 @@ export function registerTTYPrograms(): TTYPrograms {
 
     return programs;
 };
-
-function test(p: TTYProgram) {
-
-}

@@ -16,6 +16,7 @@ export const TTY: Component<{ device: Device }> = (props) => {
 
     return <div>
         <textarea
+            spellcheck={false} autocapitalize="off" autocomplete="off"
             rows={10}
             style={{ width: "100%", "font-family": "monospace" }}
             onKeyDown={(e) => {
@@ -38,7 +39,7 @@ export const TTY: Component<{ device: Device }> = (props) => {
 
 
 
-                if (e.ctrlKey && e.key.toLowerCase() == "c") {
+                if (e.ctrlKey && e.key == "c") {
                     cancel()
                 }
 
