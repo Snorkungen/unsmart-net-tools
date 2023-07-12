@@ -46,5 +46,9 @@ describe("IPV6 Address", () => {
 
     })
 
-    
+    test("validate address", ()=> {
+        // these test are useless
+        expect(IPV6Address.validate("::1")).eq(true)
+        expect(IPV6Address.validate("_1")).eq(false)
+    })
 })
