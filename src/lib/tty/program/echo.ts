@@ -1,14 +1,8 @@
-import { TTYProgram, TTYProgramStatus, parseArgs } from "./program";
+import { TTYProgram, TTYProgramInitializer, TTYProgramMetaData, TTYProgramStatus, parseArgs } from "./program";
 
 
 let cancel = () => { };
-export const ttyProgramEcho: TTYProgram = writer => ({
-    about: {
-        description: "echoes the given input",
-        content: `
-                echo [...input]
-                `
-    },
+export const ttyProgramEcho: TTYProgram = Object.assign<TTYProgramInitializer, TTYProgramMetaData>(writer => ({
     cancel,
     run(args) {
         return new Promise(resolve => {
@@ -21,4 +15,11 @@ export const ttyProgramEcho: TTYProgram = writer => ({
             resolve(TTYProgramStatus.OK)
         })
     }
+}), {
+    about: {
+        description: "echoes the given input",
+        content: `
+            echo [...input]
+            `
+    },
 })

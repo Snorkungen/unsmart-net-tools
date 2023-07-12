@@ -1,58 +1,50 @@
-import { Device } from "../../device/device";
-import { TTYProgram, TTYProgramStatus, formatTable, parseArgs } from "./program";
+import { TTYProgram, TTYProgramInitializer, TTYProgramMetaData, TTYProgramStatus, formatTable, parseArgs, resolveTTYProgram } from "./program";
 
-export function registerTTYProgramHelp(device: Device, programs: Record<string, TTYProgram>) {
-    const ttyProgramHelp: TTYProgram = (writer) => {
-        let cancel = () => { };
-        return {
-            about: {
-                description: "Displays information about programs.",
-                content: formatTable([
-                    [],
-                    ["<help>", "Displays the descriptions of all available programs."],
-                    [],
-                    ["<help [...program_name]>", "Displays all information available about the specified program."]
-                ], " ")
 
-            },
-            cancel,
-            run(args) {
-                return new Promise(resolve => {
-                    cancel = () => { resolve(TTYProgramStatus.CANCELED); }
+export const ttyProgramHelp: TTYProgram = Object.assign<TTYProgramInitializer, TTYProgramMetaData>((writer, dev, programs) => {
+    let cancel = () => { };
+    return {
+        cancel,
+        run(args) {
+            return new Promise(resolve => {
+                cancel = () => { resolve(TTYProgramStatus.CANCELED); }
 
-                    let [, ...names] = parseArgs(args);
+                let [, ...argv] = parseArgs(args);
 
-                    if (names.length == 0) {
+                if (argv.length == 0) {
 
-                        let row = ["Program", "Description"];
-                        let rows = Object.keys(programs).map(name => {
-                            let desc = "";
-                            let entry = programs[name];
-                            if (typeof entry == "function") {
-                                desc = entry(writer, device).about.description;
-                            }
-                            return [name, desc]
-                        })
-
-                        writer.write(
-                            formatTable([row].concat(rows), "\t\t")
-                        )
-
-                    } else for (let name of names) {
+                    let row = ["Program", "Description"];
+                    let rows = Object.keys(programs).map(name => {
+                        let desc = "";
                         let entry = programs[name];
-                        if (typeof entry != "function") continue;
-                        let prog = programs[name](writer, device);
+                        if (typeof entry == "function") {
+                            desc = entry.about.description;
+                        }
+                        return [name, desc]
+                    })
 
-                        // In future resolve the specified program
+                    writer.write(
+                        formatTable([row].concat(rows), "\t\t")
+                    )
 
-                        writer.write(`${name}:\t\t${prog.about.description}\n${prog.about.content}\n`)
-                    }
-                    resolve(TTYProgramStatus.OK)
-                })
-            },
-        }
+                } else {
+             
+                    let entry: TTYProgram | undefined = resolveTTYProgram(programs[argv[0]], args, 1);
+                    if (typeof entry != "function") return resolve(TTYProgramStatus.CANCELED);
+
+                    writer.write(`${argv.join(" ")}:\t\t${entry.about.description}\n${entry.about.content}\n`)
+                }
+
+                resolve(TTYProgramStatus.OK)
+            })
+        },
     }
-
-
-    return ttyProgramHelp;
-}
+}, {
+    about: {
+        description: "Displays information about programs.",
+        content: `
+                <help> Displays all available programs.
+                <help [program name]> Displays information about the specified program.
+            `
+    },
+});

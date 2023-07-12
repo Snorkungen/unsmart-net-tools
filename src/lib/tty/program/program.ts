@@ -1,10 +1,16 @@
 import { Device } from "../../device/device";
 import { ttyProgramClear } from "./clear";
 import { ttyProgramEcho } from "./echo";
-import { registerTTYProgramHelp } from "./help";
+import { ttyProgramHelp } from "./help";
 import { ttyProgramIfinfo } from "./ifinfo";
 
 export * from "./helpers"
+
+export type TTYPrograms = {
+    help: TTYProgram;
+    echo: TTYProgram;
+    clear: TTYProgram;
+} & Record<string, TTYProgram>;
 
 export enum TTYProgramStatus {
     OK,
@@ -17,13 +23,16 @@ export type TTYProgramAbout = {
     content: string;
 }
 
-export interface TTYProgram {
-    (writer: TTYWriter, device: Device): {
-        about: TTYProgramAbout;
-        cancel(): void;
-        run(args: string): Promise<TTYProgramStatus>;
-        sub?: Record<string, TTYProgram>
-    }
+export type TTYProgram = TTYProgramMetaData & TTYProgramInitializer;
+
+export type TTYProgramInitializer = (writer: TTYWriter, device: Device, programs: TTYPrograms) => {
+    cancel(): void;
+    run(args: string): Promise<TTYProgramStatus>;
+}
+
+export type TTYProgramMetaData = {
+    about: TTYProgramAbout;
+    sub?: Record<string, TTYProgram>;
 }
 
 export type TTYWriter = {
@@ -32,15 +41,18 @@ export type TTYWriter = {
     clearLine(): void;
 }
 
-export function registerTTYPrograms(device: Device): Record<string, TTYProgram> {
-    const programs: Record<string, TTYProgram> = {};
-
-    programs["help"] = registerTTYProgramHelp(device, programs);
-    programs["echo"] = ttyProgramEcho;
-    programs["clear"] = ttyProgramClear;
+export function registerTTYPrograms(): TTYPrograms {
+    const programs: TTYPrograms = {
+        help: ttyProgramHelp,
+        echo: ttyProgramEcho,
+        clear: ttyProgramClear,
+    };
 
     programs["ifinfo"] = ttyProgramIfinfo;
 
     return programs;
 };
 
+function test(p: TTYProgram) {
+
+}

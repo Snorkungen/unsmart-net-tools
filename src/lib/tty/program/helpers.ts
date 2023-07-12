@@ -1,5 +1,4 @@
-import { Device } from "../../device/device";
-import { TTYProgram, TTYWriter } from "./program";
+import { TTYProgram, TTYProgramInitializer, TTYProgramMetaData, } from "./program";
 
 export function parseArgs(args: string): string[] {
     let argv: string[] = [];
@@ -53,15 +52,18 @@ export function formatTable(table: string[][], joiner = "\t"): string {
     )).join("\n");
 }
 
-
-export function resolveTTYProgram(root: TTYProgram | undefined, args: string, writer: TTYWriter, device: Device, depth = 0): ReturnType<TTYProgram> | undefined {
+export function resolveTTYProgram(root: TTYProgram | undefined, args: string, depth = 0): TTYProgram | undefined {
     if (typeof root != "function") return undefined;
-    let prog = root(writer, device);
-    if (!prog.sub) return prog;
 
-    let [, key] = parseArgs(args).slice(0);
+    if (!root.sub) return root;
 
-    if (typeof prog.sub[key] != "function") return prog;
+    let [, key] = parseArgs(args).slice(depth);
 
-    return resolveTTYProgram(prog.sub[key], args, writer, device, depth + 1)
+    if (typeof root.sub[key] != "function") return root;
+
+    return resolveTTYProgram(root.sub[key], args, depth + 1)
+}
+
+export function createTTYProgram(init: TTYProgramInitializer, md: TTYProgramMetaData): TTYProgram {
+    return Object.assign(init, md);
 }

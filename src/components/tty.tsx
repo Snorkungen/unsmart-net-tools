@@ -4,7 +4,7 @@ import { Device } from "../lib/device/device";
 import { registerTTYPrograms, parseArgs, resolveTTYProgram, TTYWriter } from "../lib/tty/program/";
 
 export const TTY: Component<{ device: Device }> = (props) => {
-    const programs = registerTTYPrograms(props.device);
+    const programs = registerTTYPrograms();
 
     let cancel: () => void = () => null;
 
@@ -36,7 +36,7 @@ export const TTY: Component<{ device: Device }> = (props) => {
                     }
                 }
 
-       
+
 
                 if (e.ctrlKey && e.key.toLowerCase() == "c") {
                     cancel()
@@ -104,19 +104,20 @@ export const TTY: Component<{ device: Device }> = (props) => {
                         e.currentTarget.scrollTop = e.currentTarget.scrollHeight;
 
                         let [key] = parseArgs(line!),
-                            entry = programs[key];
+                            entry = resolveTTYProgram(programs[key], line!);
 
-                        let prog = resolveTTYProgram(entry, line!, writer, props.device)
-
-
-                        if (!!prog) {
-                            cancel = prog.cancel
-                            prog.run(line!)
-                                .then(_ => writer.write("\n" + ttyPrompt()))
-                                .catch(e => { console.error(e); writer.write("\n" + ttyPrompt()) })
-                        } else {
-                            writer.write(ttyPrompt())
+                        if (!entry) {
+                            writer.write(ttyPrompt());
+                            break;
                         }
+
+                        let prog = entry(writer, props.device, programs);
+
+                        cancel = prog.cancel
+                        prog.run(line!)
+                            .then(_ => writer.write("\n" + ttyPrompt()))
+                            .catch(e => { console.error(e); writer.write("\n" + ttyPrompt()) })
+
                         break;
 
                     default:

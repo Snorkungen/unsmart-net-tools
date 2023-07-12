@@ -1,14 +1,8 @@
-import { TTYProgram, TTYProgramStatus, parseArgs } from "./program";
+import { TTYProgram, TTYProgramStatus, createTTYProgram, parseArgs } from "./program";
 
 
 let cancel = () => { };
-export const ttyProgramClear: TTYProgram = writer => ({
-    about: {
-        description: "clear the tty",
-        content: `
-                clear
-                `
-    },
+export const ttyProgramClear: TTYProgram = createTTYProgram(writer => ({
     cancel,
     run(args) {
         return new Promise(resolve => {
@@ -17,4 +11,11 @@ export const ttyProgramClear: TTYProgram = writer => ({
             resolve(TTYProgramStatus.OK)
         })
     }
+}), {
+    about: {
+        description: "clear the tty",
+        content: `
+                clear
+                `
+    },
 })

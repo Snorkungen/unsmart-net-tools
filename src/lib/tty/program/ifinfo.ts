@@ -1,77 +1,5 @@
 import { BaseAddress } from "../../address/base";
-import { TTYProgram, TTYProgramStatus, formatTable, parseArgs } from "./program";
-
-let cancel = () => { };
-
-export const ttyProgramIfinfo: TTYProgram = (writer, device) => ({
-    about: {
-        description: "displays information about the devices interfaces",
-        content: `
-                ifinfo
-                    displays all interface and condensed information about interfaces
-                    [ifID]: [macAddress] ([ipv4Address]/[ipv4SubnetMask]) ([ipv6Address]/[ipv6SubnetMask])
-                ifinfo [...ifID]
-                    displays information about the specified interfaces
-                `
-    },
-    cancel,
-    run(args) {
-        return new Promise(resolve => {
-            cancel = () => { resolve(TTYProgramStatus.CANCELED) };
-
-            let input = parseArgs(args).slice(1);
-
-
-
-            if (input.length == 0) {
-                writer.write(device.interfaces.sort((a, b) => b.ifID - a.ifID).map((iface) => {
-                    let output = `${iface.ifID}:     ${iface.macAddress} `;
-                    if (iface.ipv4Address) {
-                        output += iface.ipv4Address.toString();
-                        if (iface.ipv4SubnetMask) {
-                            output += "/" + iface.ipv4SubnetMask.length;
-                        }
-                        output += " ";
-                    }
-
-                    if (iface.ipv6Address) {
-                        output += iface.ipv6Address.toString(4);
-                        if (iface.prefixLength) {
-                            output += " " + iface.prefixLength;
-                        }
-                    }
-
-                    return output;
-                }).join("\n"))
-            } else {
-                writer.write(device.interfaces.filter(({ ifID }) => input.includes(ifID + "")).sort((a, b) => b.ifID - a.ifID).map((iface) => {
-                    let output = `${iface.ifID}:     ${iface.macAddress}\n`;
-                    if (iface.ipv4Address) {
-                        output += iface.ipv4Address.toString();
-                        if (iface.ipv4SubnetMask) {
-                            output += " " + iface.ipv4SubnetMask.toString();
-                        }
-                        output += "\n";
-                    }
-
-                    if (iface.ipv6Address) {
-                        output += iface.ipv6Address.toString(4);
-                        if (iface.prefixLength) {
-                            output += " " + iface.prefixLength;
-                        }
-                    }
-
-                    return output;
-                }).join("\n"))
-            }
-
-            resolve(TTYProgramStatus.OK)
-        })
-    },
-    sub: {
-        "brief": brief
-    }
-})
+import { TTYProgram, TTYProgramInitializer, TTYProgramMetaData, TTYProgramStatus, formatTable, parseArgs } from "./program";
 
 function cidrNotate(addr?: BaseAddress, len?: number): string {
     if (!addr) return "";
@@ -86,19 +14,14 @@ function cidrNotate(addr?: BaseAddress, len?: number): string {
 }
 
 
-export const brief: TTYProgram = (writer, device) => {
+export const brief: TTYProgram = Object.assign<TTYProgramInitializer, TTYProgramMetaData>((writer, device) => {
     return {
-        about: {
-            description: "Displays information about an interface.",
-            content: "",
-        },
         cancel() { },
         run(args) {
             return new Promise(resolve => {
                 this.cancel = () => { resolve(TTYProgramStatus.CANCELED) };
 
                 let [, , argv] = parseArgs(args);
-
 
                 let row = ["IF_ID", "MAC", "IPv4", "IPv6", "VLAN"];
                 let rows = device.interfaces.map((iface) => (
@@ -118,4 +41,38 @@ export const brief: TTYProgram = (writer, device) => {
             })
         },
     }
-}
+}, {
+    about: {
+        description: "Displays information about an interface.",
+        content: "",
+    },
+})
+
+
+export const ttyProgramIfinfo: TTYProgram = Object.assign<TTYProgramInitializer, TTYProgramMetaData>(
+    (writer, device, programs) => ({
+        cancel() { },
+        run(args) {
+            return new Promise(resolve => {
+                this.cancel = () => { resolve(TTYProgramStatus.CANCELED) };
+
+                programs.help(writer, device, programs).run(`help ${args}`)
+
+                resolve(TTYProgramStatus.OK)
+            })
+        },
+    }), {
+    sub: {
+        "brief": brief
+    },
+    about: {
+        description: "displays information about the devices interfaces",
+        content: `
+                ifinfo
+                    displays all interface and condensed information about interfaces
+                    [ifID]: [macAddress] ([ipv4Address]/[ipv4SubnetMask]) ([ipv6Address]/[ipv6SubnetMask])
+                ifinfo [...ifID]
+                    displays information about the specified interfaces
+                `
+    },
+})
