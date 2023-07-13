@@ -51,10 +51,9 @@ class TTYLazyWriter {
             }
             return [name];
         }
-
         let argv = parseArgs(args).slice(depth);
 
-        if (argv[0] != name) {
+        if (argv[0] != parseArgs(name).at(-1)) {
             return options;
         }
 
