@@ -26,6 +26,10 @@ function sendPingIPV4(identifier: number, sequence: number, contact: Contact<Con
     icmpHdr.set("csum", calculateChecksum(icmpHdr.getBuffer()));
 
     let ipHdr = IPV4_HEADER.create({
+        version: 4,
+        ihl: 5,
+        tos: 0,
+        ttl: 64,
         daddr: target,
         proto: PROTOCOLS.ICMP,
         payload: icmpHdr.getBuffer()
@@ -80,23 +84,6 @@ export const ttyProgramPing = createTTYProgram((writer, device) => ({
 
             let targetAddress: IPV4Address | IPV6Address;
             let requestSender: (identifier: number, sequence: number, contact: Contact<ContactAddrFamily, ContactProto>, target: BaseAddress) => void;
-
-            let maxSendCount = 10;
-
-            let n = parseInt(sendCount);
-            if (!isNaN(n)) {
-                maxSendCount = n;
-            }
-
-            function sendRequest() {
-                if (sequence < maxSendCount) {
-                    requestSender(identifier, ++sequence, contact!, targetAddress)
-                    timestamps.set(sequence, Date.now())
-                    return;
-                }
-
-                resolve(TTYProgramStatus.OK)
-            }
 
             if (IPV4Address.validate(target)) {
                 contact = device.contactsHandler.createContact(ContactAddrFamily.IPv4, ContactProto.RAW);
@@ -154,13 +141,35 @@ export const ttyProgramPing = createTTYProgram((writer, device) => ({
                         `${ipHdr.get("payload").length} bytes from ${ipHdr.get("saddr")}: seq=${echoHdr.get("seq")} ttl=${ipHdr.get("ttl")} time=${time} ms\n`
                     )
 
-                    // send next request 
-                    sendRequest();
+                    sendRequest()
                 }
             } else if (contact.addrFamily == ContactAddrFamily.IPv6) {
                 contact.recieve = (buf) => {
                     if (cancelled) return;
                 }
+            }
+
+            let maxSendCount = 10;
+
+            let n = parseInt(sendCount);
+            if (!isNaN(n)) {
+                maxSendCount = n;
+            }
+
+            // const interval = window.setInterval(sendRequest, 150);
+
+            function sendRequest() {
+                if (sequence < maxSendCount) {
+                    requestSender(identifier, ++sequence, contact!, targetAddress)
+                    timestamps.set(sequence, Date.now())
+                    return;
+                }
+
+                // clean up 
+                // window.clearInterval(interval);
+                contact?.close()
+
+                resolve(TTYProgramStatus.OK)
             }
 
 

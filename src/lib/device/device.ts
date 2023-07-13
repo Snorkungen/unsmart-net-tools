@@ -92,10 +92,14 @@ export class Device {
         ]))
     }
 
-    createCaptureFile(): File | null {
+    createCaptureFile(name?: string): File | null {
         let buf = frames.get(this.name);
 
         if (!buf) return null;
+
+        if (!name) {
+            name = `${this.name}-${new Date().toISOString()}.cap`
+        }
 
         let file = new File([buf], `${this.name}-${new Date().toISOString()}.cap`, {
             "type": "application/cap",

@@ -1,5 +1,6 @@
 import { Device } from "../../device/device";
 import { ttyProgramClear } from "./clear";
+import { ttyProgramDownload } from "./download";
 import { ttyProgramEcho } from "./echo";
 import { ttyProgramHelp } from "./help";
 import { ttyProgramIfinfo } from "./ifinfo";
@@ -51,5 +52,7 @@ export function registerTTYPrograms(): TTYPrograms {
 
     programs["ifinfo"] = ttyProgramIfinfo;
     programs["ping"] = ttyProgramPing;
+    programs["download"] = ttyProgramDownload;
+    
     return programs;
 };
