@@ -1,5 +1,8 @@
 import { BaseAddress } from "../../address/base";
-import { TTYProgram, TTYProgramInitializer, TTYProgramMetaData, TTYProgramStatus, formatTable, parseArgs } from "./program";
+import { IPV4Address } from "../../address/ipv4";
+import { AddressMask } from "../../address/mask";
+import { createMask } from "../../address/mask";
+import { TTYProgram, TTYProgramInitializer, TTYProgramMetaData, TTYProgramStatus, createTTYProgram, formatTable, parseArgs } from "./program";
 
 function cidrNotate(addr?: BaseAddress, len?: number): string {
     if (!addr) return "";
@@ -12,6 +15,84 @@ function cidrNotate(addr?: BaseAddress, len?: number): string {
 
     return str;
 }
+
+const setIpv4 = createTTYProgram((writer, device) => ({
+    cancel() { },
+    run(args) {
+        return new Promise(resolve => {
+            this.cancel = () => { resolve(TTYProgramStatus.CANCELED) };
+            let [, , , id, addr, mask] = parseArgs(args);
+
+            if (!id) {
+                writer.write(`IF_ID: missing`)
+                return resolve(TTYProgramStatus.ERROR);
+            } else if (!addr) {
+                writer.write(`Address: missing`)
+                return resolve(TTYProgramStatus.ERROR);
+            } else if (!mask) {
+                writer.write(`Mask: missing`)
+                return resolve(TTYProgramStatus.ERROR);
+            }
+
+            let iface = device.interfaces.find(({ ifID }) => ifID + "" == id);
+
+            if (!iface) {
+                writer.write(`IF_ID: (${id}) is invalid`)
+                return resolve(TTYProgramStatus.ERROR);
+            }
+
+            if (!IPV4Address.validate(addr)) {
+                writer.write(`address: (${addr}) is invalid`)
+                return resolve(TTYProgramStatus.ERROR);
+            }
+
+            let amask: AddressMask<typeof IPV4Address> | undefined;
+
+            if (IPV4Address.validate(mask)) {
+                amask = createMask(IPV4Address, mask);
+            } else {
+                let n = parseInt(mask);
+                if (!isNaN(n)) {
+                    amask = createMask(IPV4Address, n);
+                }
+            }
+
+            if (!amask || !amask.isValid() || amask.length == 0) {
+                writer.write(`mask: (${mask}) is invalid`)
+                return resolve(TTYProgramStatus.ERROR);
+            }
+
+            iface.ipv4Address = new IPV4Address(addr);
+            iface.ipv4SubnetMask = amask;
+
+            writer.write(`Address: ${iface.ipv4Address} & Subnet Mask: ${iface.ipv4SubnetMask} set. (${cidrNotate(iface.ipv4Address, iface.ipv4SubnetMask.length)})`)
+            resolve(TTYProgramStatus.OK);
+        })
+    }
+}), {
+    about: {
+        description: "set IPv4 address",
+        content: `
+        <... ... ipv4 [IF_ID] [ipAddress] [subnetMask | subnetlength]>
+        <... ... ipv4 0 192.168.1.100 255.255.255.0>
+        <... ... ipv4 0 192.168.1.100 24>`
+    }
+})
+
+const set = createTTYProgram((writer, device, programs) => ({
+    cancel() { },
+    run(args) {
+        return programs.help(writer, device, programs).run("help " + args)
+    },
+}), {
+    about: {
+        description: "Program context for setting interface info",
+        content: "<... set [program]>"
+    },
+    sub: {
+        "ipv4": setIpv4
+    }
+})
 
 export const brief: TTYProgram = Object.assign<TTYProgramInitializer, TTYProgramMetaData>((writer, device) => {
     return {
@@ -90,7 +171,8 @@ export const ttyProgramIfinfo: TTYProgram = Object.assign<TTYProgramInitializer,
         },
     }), {
     sub: {
-        "brief": brief
+        "brief": brief,
+        "set": set
     },
     about: {
         description: "displays information about the devices interfaces",
