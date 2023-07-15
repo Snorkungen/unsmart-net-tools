@@ -8,12 +8,17 @@ class TTYStateWriter implements TTYWriter {
         this.stateManager = stateManager;
     }
 
-    get elem(): HTMLElement {
+    get elem(): HTMLTextAreaElement {
         return this.stateManager.elem;
     }
 
     write(text: string): void {
-        this.elem.textContent += text
+        let p = this.elem.selectionEnd;
+        this.elem.textContent =
+            this.elem.textContent!.slice(0, p) + text + this.elem.textContent!.slice(p)
+        this.elem.selectionEnd = p + text.length;
+        this.elem.selectionStart = this.elem.selectionEnd;
+
         this.elem.scrollTop = this.elem.scrollHeight;
     }
     clear(): void {
@@ -151,7 +156,7 @@ class TTYStateHistory {
     }
 }
 export class TTYStateManager {
-    elem: HTMLElement;
+    elem: HTMLTextAreaElement;
     device: Device;
     programs: TTYPrograms;
 
@@ -159,7 +164,7 @@ export class TTYStateManager {
     lazyWriter: TTYLazyWriter;
     history: TTYStateHistory = new TTYStateHistory();
 
-    constructor(elem: HTMLElement, device: Device, programs: TTYPrograms) {
+    constructor(elem: HTMLTextAreaElement, device: Device, programs: TTYPrograms) {
         this.elem = elem;
         this.device = device;
         this.programs = programs;
@@ -186,10 +191,14 @@ export class TTYStateManager {
         return this.row.substring(this.prompt.length);
     }
 
-    runningProgram?: ReturnType<TTYProgramInitializer>;
+    get rowStart(): number {
+        return this.textLength - this.row.length;
+    }
+    get argStart(): number {
+        return this.rowStart + this.prompt.length;
+    }
 
-    // TEMPORARY
-    entries: string[] = []; entryIndex = 0;
+    runningProgram?: ReturnType<TTYProgramInitializer>;
 
     onKeyDown(e: KeyboardEvent) {
         e.preventDefault();
@@ -207,11 +216,15 @@ export class TTYStateManager {
         } else {
             this.lazyWriter.dirty = true;
         }
-
         switch (e.key) {
             case "Backspace":
-                if (this.elem.textContent!.split("\n").at(-1) == this.prompt) break;
-                this.elem.textContent = this.elem.textContent!.substring(0, this.elem.textContent!.length - 1)
+                if (this.elem.selectionEnd <= this.argStart) break;
+                let deleteCount = 1, p = this.elem.selectionEnd - deleteCount
+                this.elem.textContent =
+                    this.elem.textContent!.slice(0, p) + this.elem.textContent!.slice(this.elem.selectionEnd)
+
+                this.elem.selectionEnd = p;
+                this.elem.selectionStart = this.elem.selectionEnd;
                 break;
             case "ArrowUp":
                 let getUpRes = this.history.getUp();
@@ -227,10 +240,50 @@ export class TTYStateManager {
                     this.writer.write(getDownRes)
                 }
                 break;
+            case "ArrowLeft":
+                let lk: "selectionStart" | "selectionEnd" = "selectionEnd"
+                if (e.shiftKey) {
+                    lk = "selectionStart"
+                }
 
+                let lamount = 1;
+
+                // if ctrl go to begin of word
+                if (e.ctrlKey) for (let i = (this.elem[lk] - 1); i > this.argStart; i--) {
+                    if ((this.elem[lk] - 1) != i && this.elem.textContent![i] == " ") {
+                        lamount--
+                        break;
+                    }
+
+                    lamount += 1;
+                }
+
+                if (this.elem[lk] <= this.argStart) break;
+                this.elem[lk] -= lamount
+                break;
+            case "ArrowRight":
+                let ramount = 1;
+                // if ctrl go to end of word
+                if (e.ctrlKey) for (let i = this.elem.selectionEnd + 1; i < this.textLength; i++) {
+                    if (this.elem.textContent![i] == " ") {
+                        break;
+                    }
+                    ramount += 1;
+                }
+
+                this.elem.selectionEnd += ramount;
+
+                if (!e.shiftKey) {
+                    this.elem.selectionStart = this.elem.selectionEnd;
+                }
+                break;
             case "Enter":
                 let args = this.args;
                 this.history.add(args);
+
+                // set cursor to end
+                this.elem.selectionEnd = this.textLength;
+                this.elem.selectionStart = this.elem.selectionEnd;
 
                 this.writer.write("\n")
                 let [key] = parseArgs(args),
@@ -246,10 +299,16 @@ export class TTYStateManager {
 
                 this.runningProgram = prog;
 
-                prog.run(args)
-                    .then(_ => this.writer.write("\n" + this.prompt))
-                    .catch(e => { console.error(e); this.writer.write("\n" + this.prompt) })
-
+                (async () => {
+                    try {
+                        await prog.run(args)
+                    } catch (error) {
+                        console.error(e);
+                    } finally {
+                        this.writer.write("\n" + this.prompt)
+                        this.runningProgram = undefined;
+                    }
+                })();
                 break;
 
             default:
