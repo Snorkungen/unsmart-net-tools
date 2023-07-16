@@ -2,7 +2,8 @@
  * # DCHP <https://www.rfc-editor.org/rfc/rfc2131>
  */
 
-import { IPV4Address, IPV4_ADDRESS } from "../../address/ipv4";
+import { Buffer } from "buffer";
+import { IPV4_ADDRESS } from "../../address/ipv4";
 import { MAC_ADDRESS } from "../../address/mac";
 import { BYTE_ARRAY, SLICE, Struct, StructType, UINT16, UINT32, UINT8 } from "../../binary"
 /**
@@ -91,12 +92,18 @@ export const DHCP_HEADER = new Struct({
 });
 
 export const DHCP_MAGIC = 0x63_82_53_63
+export const DHCP_MAGIC_COOKIE = new Uint8Array([0x63, 0x82, 0x53, 0x63])
+export const DCHP_PORT_SERVER = 67,
+    DCHP_PORT_CLIENT = 68;
 
 export const DHCP_OPTION = new Struct({
     tag: UINT8,
     len: UINT8,
     data: SLICE
 })
+
+export const DHCP_END_OPTION = Buffer.from([0xff]),
+    DHCP_PAD_OPTION = Buffer.from([0x00])
 
 export const DCHP_OP = {
     BOOTREQUEST: 1,

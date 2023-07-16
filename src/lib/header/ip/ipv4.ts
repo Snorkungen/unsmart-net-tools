@@ -64,3 +64,11 @@ export function createIPV4Header<V extends Parameters<typeof IPV4_HEADER["create
 
     return hdr;
 }
+
+export const IPV4_PSEUDO_HEADER = defineStruct({
+    saddr: IPV4_ADDRESS,
+    daddr: IPV4_ADDRESS,
+    zeroes: UINT8,
+    proto: <StructType<Protocol>>UINT8,
+    len: UINT16
+})
