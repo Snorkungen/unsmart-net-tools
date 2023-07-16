@@ -83,3 +83,10 @@ export const SLICE = defineStructType<Buffer>({
         return buf
     }
 })
+
+export const BYTE_ARRAY = (length: number) => defineStructType<Buffer>({
+    defaultValue: Buffer.alloc(length),
+    bitLength: length * 8,
+    getter: buf => buf,
+    setter: buf => buf
+})
