@@ -98,10 +98,10 @@ export class Device {
         if (!buf) return null;
 
         if (!name) {
-            name = `${this.name}-${new Date().toISOString()}.cap`
+            name = `${this.name}_${new Date().toISOString()}.cap`
         }
 
-        let file = new File([buf], `${this.name}-${new Date().toISOString()}.cap`, {
+        let file = new File([buf], `${this.name}-${new Date().getTime()}.cap`, {
             "type": "application/cap",
         })
 
