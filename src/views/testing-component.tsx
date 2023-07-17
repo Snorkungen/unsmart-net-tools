@@ -18,6 +18,7 @@ import { bufferFromNumber } from "../lib/binary/buffer-from-number";
 import { UDP_HEADER } from "../lib/header/udp";
 import { ETHERNET_HEADER, ETHER_TYPES } from "../lib/header/ethernet";
 import { MACAddress } from "../lib/address/mac";
+import DeviceServiceDHCPServer from "../lib/device/service/dhcp-server";
 const selectContents = (ev: MouseEvent) => {
     if (!(ev.currentTarget instanceof HTMLElement)) return;
     let range = document.createRange();
@@ -137,7 +138,7 @@ let dhcpBootReq = DHCP_HEADER.create({
 let dhcpUDPHdr = UDP_HEADER.create({
     sport: DCHP_PORT_CLIENT,
     dport: DCHP_PORT_SERVER,
-    length: dhcpBootReq.size,
+    length: UDP_HEADER.getMinSize() + dhcpBootReq.size,
     payload: dhcpBootReq.getBuffer()
 })
 
@@ -159,13 +160,17 @@ dhcpUDPHdr.set("length", dhcpUDPHdr.size)
 dhcpUDPHdr.set("csum",
     calculateChecksum(ipPseudoHdr.getBuffer())
 )
+ipHdr.set("payload", dhcpUDPHdr.getBuffer());
+ipHdr.set("csum", 0).set("csum", calculateChecksum(ipHdr.getBuffer().subarray(0, 20)));
 
-ipHdr.set("payload", dhcpUDPHdr.getBuffer())
 let ethHdr = ETHERNET_HEADER.create({
     dmac: new MACAddress(Buffer.alloc(6, 0xff)),
     ethertype: ETHER_TYPES.IPv4,
     payload: ipHdr.getBuffer()
 })
+
+
+pc1.addService(new DeviceServiceDHCPServer(pc1));
 
 export const TestingComponent: Component = () => {
 
@@ -176,7 +181,6 @@ export const TestingComponent: Component = () => {
             </header>
             <button onClick={() => {
                 let contact = pc2.contactsHandler.createContact(ContactAddrFamily.RAW, ContactProto.RAW);
-                console.log(dhcpUDPHdr.get("length"),UDP_HEADER.size, dhcpBootReq.size)
                 contact.send(ethHdr.getBuffer())
                 contact.close()
 
