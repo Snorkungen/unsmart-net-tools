@@ -9,6 +9,9 @@ import { IPV4_HEADER, IPV4_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
 import { UDP_HEADER } from "../../header/udp";
 import { calculateChecksum } from "../../binary/checksum";
 import { DCHP_PORT_SERVER, DHCP_HEADER } from "../../header/dhcp/dhcp";
+import { parseDHCPOptions } from "../../header/dhcp/parse-options";
+import { DHCP_TAGS } from "../../header/dhcp/tags";
+import { getKeyByValue } from "../../misc";
 
 enum DHCPServerState {
     BINDING,
@@ -50,7 +53,7 @@ export default class DeviceServiceDHCPServer implements DeviceService {
     }
     private recieve(buf: Uint8Array) {
         let ethHdr = ETHERNET_HEADER.from(buf);
-        
+
         if (
             ethHdr.get("dmac").toString() != BROADCAST_MAC_ADDRESS.toString()
             && !this.interfaces.find(({ macAddress }) => macAddress.toString() == ethHdr.get("dmac").toString())
@@ -88,6 +91,13 @@ export default class DeviceServiceDHCPServer implements DeviceService {
 
         console.info("Hello Recieved DHCP Message")
 
+        let opts = parseDHCPOptions(dhcpHdr.get("options"));
+
+        console.log(opts.map((s) => (JSON.stringify({
+            tag: getKeyByValue(DHCP_TAGS, s.get("tag")),
+            len: s.get("len"),
+            data: s.get("data")
+        }, null, 2))).join(",\n"))
     }
 
 }
