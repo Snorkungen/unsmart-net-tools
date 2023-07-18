@@ -6,6 +6,7 @@ import { Buffer } from "buffer";
 import { IPV4_ADDRESS } from "../../address/ipv4";
 import { MAC_ADDRESS } from "../../address/mac";
 import { BYTE_ARRAY, SLICE, Struct, StructType, UINT16, UINT32, UINT8 } from "../../binary"
+import { DHCP_TAGS } from "./tags";
 /**
 ```txt
    0                   1                   2                   3
@@ -97,7 +98,7 @@ export const DCHP_PORT_SERVER = 67,
     DCHP_PORT_CLIENT = 68;
 
 export const DHCP_OPTION = new Struct({
-    tag: UINT8,
+    tag: <StructType<typeof DHCP_TAGS[keyof typeof DHCP_TAGS]>>UINT8,
     len: UINT8,
     data: SLICE
 })

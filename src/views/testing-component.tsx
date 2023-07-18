@@ -18,7 +18,7 @@ import { bufferFromNumber } from "../lib/binary/buffer-from-number";
 import { UDP_HEADER } from "../lib/header/udp";
 import { ETHERNET_HEADER, ETHER_TYPES } from "../lib/header/ethernet";
 import { MACAddress } from "../lib/address/mac";
-import DeviceServiceDHCPServer from "../lib/device/service/dhcp-server";
+import DeviceServiceDHCPServer, { incrementAddress } from "../lib/device/service/dhcp-server";
 const selectContents = (ev: MouseEvent) => {
     if (!(ev.currentTarget instanceof HTMLElement)) return;
     let range = document.createRange();
@@ -169,8 +169,15 @@ let ethHdr = ETHERNET_HEADER.create({
     payload: ipHdr.getBuffer()
 })
 
+let dhcpServer = new DeviceServiceDHCPServer(pc1)
 
-pc1.addService(new DeviceServiceDHCPServer(pc1));
+
+dhcpServer.configure({
+    ipv4AddressRange: [new IPV4Address("192.168.1.100"), new IPV4Address("192.168.1.200")],
+    ipv4SubnetMask: iface_pc1.ipv4SubnetMask
+})
+
+pc1.addService(dhcpServer);
 
 export const TestingComponent: Component = () => {
 

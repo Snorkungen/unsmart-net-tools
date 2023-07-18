@@ -5,9 +5,9 @@ export type DHCPParsedOptions = (typeof DHCP_OPTION)[];
 
 export function parseDHCPOptions(options: ReturnType<typeof DHCP_OPTION["types"]["data"]["getter"]>): DHCPParsedOptions {
     let p = 0;
-    
+
     // first read magic cookie
-    for (p; p < DHCP_MAGIC_COOKIE.length; p++) {
+    for (; p < DHCP_MAGIC_COOKIE.length; p++) {
         if (
             options[p] != DHCP_MAGIC_COOKIE[p]
         ) {
