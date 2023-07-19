@@ -60,6 +60,7 @@ export class ContactsHandler {
         if (saddr.toString() == UNSET_MAC_ADDRESS.toString()) {
             // send on all interfaces
             for (let iface of this.device.interfaces) {
+                this.device.log(eth_hdr, iface, "SEND")
                 iface.send(
                     eth_hdr.create({ smac: iface.macAddress })
                 )
