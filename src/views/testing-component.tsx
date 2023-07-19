@@ -174,7 +174,8 @@ let dhcpServer = new DeviceServiceDHCPServer(pc1)
 
 dhcpServer.configure({
     ipv4AddressRange: [new IPV4Address("192.168.1.100"), new IPV4Address("192.168.1.200")],
-    ipv4SubnetMask: iface_pc1.ipv4SubnetMask
+    ipv4SubnetMask: iface_pc1.ipv4SubnetMask,
+    iface: iface_pc1
 })
 
 pc1.addService(dhcpServer);

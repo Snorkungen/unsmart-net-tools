@@ -5,10 +5,10 @@ import { Contact, ContactAddrFamily, ContactProto } from "../contact/contact";
 import { ETHERNET_HEADER, ETHER_TYPES } from "../../header/ethernet";
 import { Interface } from "../interface";
 import { BROADCAST_MAC_ADDRESS } from "../neighbor-table";
-import { IPV4_HEADER, IPV4_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
+import { IPV4_HEADER, IPV4_PSEUDO_HEADER, PROTOCOLS, createIPV4Header } from "../../header/ip";
 import { UDP_HEADER } from "../../header/udp";
 import { calculateChecksum } from "../../binary/checksum";
-import { DCHP_PORT_SERVER, DHCP_HEADER } from "../../header/dhcp/dhcp";
+import { DCHP_OP, DCHP_PORT_CLIENT, DCHP_PORT_SERVER, DHCP_HEADER, DHCP_MAGIC_COOKIE, DHCP_OPTION } from "../../header/dhcp/dhcp";
 import { DHCPParsedOptions, parseDHCPOptions } from "../../header/dhcp/parse-options";
 import { DHCP_MESSGAGE_TYPES, DHCP_TAGS } from "../../header/dhcp/tags";
 import { getKeyByValue } from "../../misc";
@@ -16,6 +16,8 @@ import { AddressMask } from "../../address/mask";
 import { IPV4Address } from "../../address/ipv4";
 import { UINT32, and, defineStruct, mutateAnd, mutateNot, mutateOr } from "../../binary";
 import { bufferFromNumber } from "../../binary/buffer-from-number";
+import { DHCP_END_OPTION } from "../../header/dhcp/dhcp";
+import { UNSET_MAC_ADDRESS } from "../contact/contacts-handler";
 
 enum DHCPServerState {
     BINDING,
@@ -36,13 +38,15 @@ function serializeClientID(inp: Buffer): DHCPServerSerializedCLID {
 type DHCPServerConfig = {
     ipv4SubnetMask?: AddressMask<typeof IPV4Address>;
     ipv4AddressRange?: [start: IPV4Address, end: IPV4Address];
+    /** This is a hack because i have no clue what i'm doing */
+    iface?: Interface;
 }
 
 export default class DeviceServiceDHCPServer implements DeviceService {
     readonly device: Device;
-    readonly config: DHCPServerConfig = {}
+    readonly config: Partial<DHCPServerConfig> = {}
 
-    /** <https://www.rfc-editor.org/rfc/rfc2131#section-2.1> IE Configuration Parameters Repository */
+    /** <https://www.rfc-editor.org/rfc/rfc213 1#section-2.1> IE Configuration Parameters Repository */
     repo: Map<DHCPServerSerializedCLID, DHCPServerConfiurationParameters> = new Map();
 
     contact: Contact<ContactAddrFamily.RAW, ContactProto.RAW>;
@@ -51,6 +55,8 @@ export default class DeviceServiceDHCPServer implements DeviceService {
         this.device = device;
         this.contact = this.device.contactsHandler.createContact(ContactAddrFamily.RAW, ContactProto.RAW);
         this.contact.recieve = this.recieve.bind(this);
+
+        console.warn(DeviceServiceDHCPServer.name + " will never be a full implementation.")
     }
 
     kill() {
@@ -151,6 +157,8 @@ export default class DeviceServiceDHCPServer implements DeviceService {
     }
 
     private async handleDiscover(dhcpHdr: typeof DHCP_HEADER, opts: ReturnType<typeof createOptionsMap>) {
+        if (!this.config.iface?.ipv4Address) return;
+
         let clientIdentifier: DHCPServerSerializedCLID = serializeClientID(
             opts.get(DHCP_TAGS.CLIENT_IDENTIFIER)
             || dhcpHdr.get("chaddr")
@@ -170,7 +178,98 @@ export default class DeviceServiceDHCPServer implements DeviceService {
             }
         )
 
-        console.warn("Responding to dhcp discover not implemented")
+
+        const RENEWAL_TIME_IN_SECS = 60 * 15; // 15 mins
+        const REBINDING_TIME_IN_SECS = 60 * 25; // 25 mins
+        const IPLEASE_TIME_IN_SECS = 60 * 20; // 20 mins
+
+        let replyOptions: Buffer[] = []
+
+        if (opts.get(DHCP_TAGS.PARAMETER_REQUEST_LIST)) {
+            let paramReqList = DHCP_OPTION.from(opts.get(DHCP_TAGS.PARAMETER_REQUEST_LIST)!);
+            for (let i = 0; i < paramReqList.get("len"); i++) {
+                let tag = paramReqList.get("data")[i];
+
+
+                if (tag == DHCP_TAGS.SUBNET_MASK && this.config.ipv4SubnetMask) {
+                    replyOptions.push(DHCP_OPTION.create({
+                        tag: DHCP_TAGS.SUBNET_MASK,
+                        len: 4,
+                        data: this.config.ipv4SubnetMask.buffer
+                    }).getBuffer())
+                }
+            }
+        }
+
+        let replyDHCPHdr = DHCP_HEADER.create({
+            op: DCHP_OP.BOOTREPLY,
+            htype: 0x01,
+            hlen: 0x06,
+            //...
+            xid: dhcpHdr.get("xid"),
+            //...
+            yiaddr: address,
+            //...
+            chaddr: dhcpHdr.get("chaddr"),
+            //...
+            options: Buffer.concat([
+                DHCP_MAGIC_COOKIE,
+                // Message Type
+                DHCP_OPTION.create({
+                    tag: DHCP_TAGS.DHCP_MESSAGE_TYPE,
+                    len: 0x01,
+                    data: Buffer.from([DHCP_MESSGAGE_TYPES.DHCPOFFER])
+                }).getBuffer(),
+
+                Buffer.concat(replyOptions),
+
+                // arbitrary time assignments
+
+                // T1 Renewal Time
+                DHCP_OPTION.create({ tag: DHCP_TAGS.RENEWAL_TIME_VALUE, len: 4, data: bufferFromNumber(RENEWAL_TIME_IN_SECS, 4) }).getBuffer(),
+                // T2 Rebinding Time
+                DHCP_OPTION.create({ tag: DHCP_TAGS.REBINDING_TIME_VALUE, len: 4, data: bufferFromNumber(REBINDING_TIME_IN_SECS, 4) }).getBuffer(),
+                // IP Address Lease Time
+                DHCP_OPTION.create({ tag: DHCP_TAGS.IP_ADDRESS_LEASE_TIME, len: 4, data: bufferFromNumber(IPLEASE_TIME_IN_SECS, 4) }).getBuffer(),
+
+                // Server Identifier
+                DHCP_OPTION.create({
+                    tag: DHCP_TAGS.SERVER_IDENTIFIER,
+                    len: 4,
+                    data: this.config.iface.ipv4Address.buffer
+                }).getBuffer(),
+                DHCP_END_OPTION
+            ])
+        });
+
+        let replyUdpHdr = UDP_HEADER.create({
+            sport: DCHP_PORT_SERVER,
+            dport: DCHP_PORT_CLIENT,
+            length: UDP_HEADER.getMinSize() + replyDHCPHdr.size,
+            payload: replyDHCPHdr.getBuffer(),
+        })
+
+        let saddr = this.config.iface.ipv4Address, daddr = new IPV4Address("255.255.255.255"), proto = PROTOCOLS.UDP;
+
+        let pseudoHdr = IPV4_PSEUDO_HEADER.create({
+            saddr, daddr, proto,
+            len: replyUdpHdr.get("length")
+        });
+
+        replyUdpHdr.set("csum", calculateChecksum(pseudoHdr.getBuffer()));
+
+        let replyIPHdr = createIPV4Header({
+            saddr, daddr, proto,
+            payload: replyUdpHdr.getBuffer()
+        });
+        let replyEthHdr = ETHERNET_HEADER.create({
+            smac: UNSET_MAC_ADDRESS,
+            dmac: BROADCAST_MAC_ADDRESS,
+            ethertype: ETHER_TYPES.IPv4,
+            payload: replyIPHdr.getBuffer()
+        })
+
+        this.contact.send(replyEthHdr.getBuffer());
     }
 
     configure(params: Partial<DHCPServerConfig>) {
