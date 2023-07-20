@@ -262,4 +262,13 @@ export class Host extends Device {
     statefulClose(sidx: number) {
         delete this.state[sidx];
     }
+
+    handleInterfaceConnection(iface: Interface): void {
+        if (iface.dhcp) {
+            if (iface.dhcp.includes(4)) {
+                // call function that handles configuring VALUES For Interface
+                //...resolveDHCPv4(iface);
+            }
+        }
+    }
 }

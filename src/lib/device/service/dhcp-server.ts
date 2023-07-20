@@ -100,7 +100,6 @@ export default class DeviceServiceDHCPServer implements DeviceService {
 
     private recieve(buf: Uint8Array) {
         let ethHdr = ETHERNET_HEADER.from(buf);
-
         if (
             ethHdr.get("dmac").toString() != BROADCAST_MAC_ADDRESS.toString()
             && !this.interfaces.find(({ macAddress }) => macAddress.toString() == ethHdr.get("dmac").toString())
@@ -116,6 +115,7 @@ export default class DeviceServiceDHCPServer implements DeviceService {
         // ) return;
 
         if (ipHdr.get("proto") != PROTOCOLS.UDP) return;
+        console.log("Hek")
 
         // validate checksum
         if (calculateChecksum(ipHdr.getBuffer().subarray(0, 20)) != 0 && false /* Not check due to csum being optional <https://en.wikipedia.org/wiki/User_Datagram_Protocol> */) {

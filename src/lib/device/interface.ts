@@ -24,6 +24,9 @@ export class Interface {
     ipv6Address?: IPV6Address;
     prefixLength?: number;
 
+    /** This value tells the device that this interface should be configured using DHCP, either using DHCPv4, DHCPv6 or both.  */
+    dhcp?: (4 | 6)[];
+
     constructor(public ifID: number, macAddress: MACAddress, public forwardCallback: (frame: TEthernetFrame, iface: Interface) => void) {
         this.macAddress = macAddress;
     }
@@ -32,6 +35,7 @@ export class Interface {
         return !!this.target;
     }
 
+    onDisconnect?: (iface: Interface) => void;
     disconnect(): boolean {
         if (!this.target) {
             return true;
@@ -39,9 +43,13 @@ export class Interface {
 
         let disconnect = this.target.disconnect.bind(this.target);
         this.target = null;
+
+        this.onDisconnect && this.onDisconnect(this);
+
         return disconnect();
     }
 
+    onConnect?: (iface: Interface) => void;
     connect(target: Interface) {
         if (this == target) {
             throw new Error("cannot connect to self")
@@ -54,6 +62,8 @@ export class Interface {
         this.disconnect();
         this.target = target;
         target.connect(this)
+
+        this.onConnect && this.onConnect(this);
     }
 
     send(frame: TEthernetFrame) {
