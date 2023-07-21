@@ -11,13 +11,12 @@ import { calculateChecksum } from "../../binary/checksum";
 import { DCHP_OP, DCHP_PORT_CLIENT, DCHP_PORT_SERVER, DHCP_HEADER, DHCP_MAGIC_COOKIE, DHCP_OPTION } from "../../header/dhcp/dhcp";
 import { DHCPParsedOptions, parseDHCPOptions } from "../../header/dhcp/parse-options";
 import { DHCP_MESSGAGE_TYPES, DHCP_TAGS } from "../../header/dhcp/tags";
-import { getKeyByValue } from "../../misc";
 import { AddressMask } from "../../address/mask";
 import { IPV4Address } from "../../address/ipv4";
-import { UINT32, and, defineStruct, mutateAnd, mutateNot, mutateOr } from "../../binary";
+import { and, mutateAnd, mutateNot, mutateOr } from "../../binary";
 import { bufferFromNumber } from "../../binary/buffer-from-number";
 import { DHCP_END_OPTION } from "../../header/dhcp/dhcp";
-import { UNSET_MAC_ADDRESS } from "../contact/contacts-handler";
+import { UNSET_IPV4_ADDRESS, UNSET_MAC_ADDRESS } from "../contact/contacts-handler";
 import { createDHCPOptionsMap } from "../../header/dhcp/utils";
 
 enum DHCPServerState {
@@ -29,6 +28,9 @@ enum DHCPServerState {
 type DHCPServerConfiurationParameters = {
     state: DHCPServerState;
     ipv4Address?: IPV4Address;
+    ipv4SubnetMask?: AddressMask<typeof IPV4Address>;
+    leaseTime?: number;
+    serverID?: Uint8Array;
 }
 
 type DHCPServerSerializedCLID = string;
@@ -150,6 +152,8 @@ export default class DeviceServiceDHCPServer implements DeviceService {
         switch (typeBuf.readUint8(0)) {
             case DHCP_MESSGAGE_TYPES.DHCPDISCOVER:
                 return this.handleDiscover(dhcpHdr, opts);
+            case DHCP_MESSGAGE_TYPES.DHCPREQUEST:
+                return this.handleRequest(dhcpHdr, opts);
 
             default:
                 console.warn("Unknown DHCP Message Type")
@@ -158,6 +162,7 @@ export default class DeviceServiceDHCPServer implements DeviceService {
 
     private async handleDiscover(dhcpHdr: typeof DHCP_HEADER, opts: ReturnType<typeof createDHCPOptionsMap>) {
         if (!this.config.iface?.ipv4Address) return;
+        if (!this.config.iface?.ipv4SubnetMask) return;
 
         let clientIdentifier: DHCPServerSerializedCLID = serializeClientID(
             opts.get(DHCP_TAGS.CLIENT_IDENTIFIER)
@@ -170,18 +175,22 @@ export default class DeviceServiceDHCPServer implements DeviceService {
             return;
         }
 
+        const RENEWAL_TIME_IN_SECS = 60 * 15; // 15 mins
+        const REBINDING_TIME_IN_SECS = 60 * 25; // 25 mins
+        const IPLEASE_TIME_IN_SECS = 60 * 20; // 20 mins
+
+        let serverID = this.config.iface.ipv4Address.buffer
+
         this.repo.set(
             clientIdentifier,
             {
                 state: DHCPServerState.BINDING,
-                ipv4Address: address
+                ipv4Address: address,
+                ipv4SubnetMask: this.config.ipv4SubnetMask,
+                serverID: serverID,
+                leaseTime: IPLEASE_TIME_IN_SECS
             }
         )
-
-
-        const RENEWAL_TIME_IN_SECS = 60 * 15; // 15 mins
-        const REBINDING_TIME_IN_SECS = 60 * 25; // 25 mins
-        const IPLEASE_TIME_IN_SECS = 60 * 20; // 20 mins
 
         let replyOptions: Buffer[] = []
 
@@ -234,13 +243,13 @@ export default class DeviceServiceDHCPServer implements DeviceService {
 
 
                 // SubnetMask
-                DHCP_OPTION.create({tag: DHCP_TAGS.SUBNET_MASK, len: 4, data: this.config.ipv4SubnetMask!.buffer}).getBuffer(),
+                DHCP_OPTION.create({ tag: DHCP_TAGS.SUBNET_MASK, len: 4, data: this.config.ipv4SubnetMask!.buffer }).getBuffer(),
 
                 // Server Identifier
                 DHCP_OPTION.create({
                     tag: DHCP_TAGS.SERVER_IDENTIFIER,
-                    len: 4,
-                    data: this.config.iface.ipv4Address.buffer
+                    len: serverID.byteLength,
+                    data: serverID
                 }).getBuffer(),
                 DHCP_END_OPTION
             ])
@@ -274,6 +283,109 @@ export default class DeviceServiceDHCPServer implements DeviceService {
         })
 
         this.contact.send(replyEthHdr.getBuffer());
+    }
+
+    private async handleRequest(dhcpHdr: typeof DHCP_HEADER, opts: ReturnType<typeof createDHCPOptionsMap>) {
+        // this contains a lot of assumptions that are not hte best if thies was a proper thing but i have given up on this project; I AM TOO AMBITIOUS.
+
+        if (!this.config.iface?.ipv4Address) return;
+        if (!this.config.iface?.ipv4SubnetMask) return;
+
+        let clientIdentifier: DHCPServerSerializedCLID = serializeClientID(
+            opts.get(DHCP_TAGS.CLIENT_IDENTIFIER)
+            || dhcpHdr.get("chaddr")
+        );
+
+        let params = this.repo.get(clientIdentifier);
+
+        if (!params) {
+            console.warn("This DHCPServer only support the DHCP (DORA)[Discover, Offer, Requst, Ack] procedure")
+            return;
+        };
+
+        let reqServerID = opts.get(DHCP_TAGS.SERVER_IDENTIFIER);
+        if (!reqServerID || (!params.serverID || !uint8Compare(reqServerID, params.serverID))) {
+            return
+        }
+
+
+        let success = true;
+
+        let subnetMaskBuf = opts.get(DHCP_TAGS.SUBNET_MASK);
+        if (!subnetMaskBuf || uint8Compare(subnetMaskBuf, params.ipv4SubnetMask!.buffer /* #TRUSTMEBRO */)) {
+            success = false;
+        }
+
+        let reqIPBuf = opts.get(DHCP_TAGS.REQUESTED_IP_ADDRESS);
+        if (!reqIPBuf || uint8Compare(reqIPBuf, params.ipv4Address!.buffer /* #TRUSTMEBRO */)) {
+            success = false;
+        }
+
+        let leaseTimeBuf = opts.get(DHCP_TAGS.IP_ADDRESS_LEASE_TIME);
+        if (!leaseTimeBuf || leaseTimeBuf.readUInt32BE() != params.leaseTime) {
+            success = false;
+        }
+
+        if (!success) {
+            let nakDHCPHdr = DHCP_HEADER.create({
+                op: DCHP_OP.BOOTREPLY,
+                htype: dhcpHdr.get("htype"),
+                hlen: dhcpHdr.get("hlen"),
+                xid: dhcpHdr.get("xid"),
+                chaddr: dhcpHdr.get("chaddr"),
+                options: Buffer.concat([
+                    DHCP_MAGIC_COOKIE,
+                    // DHCP Message Type
+                    DHCP_OPTION.create({
+                        tag: DHCP_TAGS.DHCP_MESSAGE_TYPE,
+                        len: 0x01,
+                        data: Buffer.from([DHCP_MESSGAGE_TYPES.DHCPNAK])
+                    }).getBuffer(),
+                    // Server Identifier
+                    DHCP_OPTION.create({
+                        tag: DHCP_TAGS.SERVER_IDENTIFIER,
+                        len: params.serverID.byteLength,
+                        data: Buffer.from(params.serverID)
+                    }).getBuffer(),
+                    DHCP_END_OPTION
+                ])
+            })
+            return sendDHCPv4HdrServer(this.contact, nakDHCPHdr, this.config.iface, BROADCAST_IPV4_ADDRESS, this.config.iface.ipv4Address);
+        }
+
+        let clid = opts.get(DHCP_TAGS.CLIENT_IDENTIFIER);
+        let ackDHCPHdr = DHCP_HEADER.create({
+            op: DCHP_OP.BOOTREPLY,
+            htype: dhcpHdr.get("htype"),
+            hlen: dhcpHdr.get("hlen"),
+            xid: dhcpHdr.get("xid"),
+            chaddr: dhcpHdr.get("chaddr"),
+            options: Buffer.concat([
+                DHCP_MAGIC_COOKIE,
+                // DHCP Message Type
+                DHCP_OPTION.create({
+                    tag: DHCP_TAGS.DHCP_MESSAGE_TYPE,
+                    len: 0x01,
+                    data: Buffer.from([DHCP_MESSGAGE_TYPES.DHCPACK])
+                }).getBuffer(),
+                // Server Identifier
+                DHCP_OPTION.create({
+                    tag: DHCP_TAGS.SERVER_IDENTIFIER,
+                    len: params.serverID.byteLength,
+                    data: Buffer.from(params.serverID)
+                }).getBuffer(),
+
+                (clid ? DHCP_OPTION.create({tag: DHCP_TAGS.CLIENT_IDENTIFIER, len: clid.length,data: clid}).getBuffer() : new Uint8Array(0)),
+
+                subnetMaskBuf!,
+                reqIPBuf!,
+                leaseTimeBuf!,
+
+                DHCP_END_OPTION,
+            ])
+        })
+
+        return sendDHCPv4HdrServer(this.contact, ackDHCPHdr, this.config.iface, BROADCAST_IPV4_ADDRESS, this.config.iface.ipv4Address);
     }
 
     configure(params: Partial<DHCPServerConfig>) {
@@ -315,4 +427,58 @@ export function incrementAddress(address: IPV4Address, subnetMask: AddressMask<t
     mutateOr(buf, leftBitMask)
 
     address.buffer.set(buf, 4 - buf.length)
-}   
+}
+
+function uint8Compare(a: Uint8Array, b: Uint8Array): boolean {
+    if (a.byteLength != b.byteLength) return false;
+
+    for (let i = 0; i < a.byteLength; i++) {
+        if (a[i] != b[i]) return false;
+    }
+
+
+    return true;
+}
+
+const BROADCAST_IPV4_ADDRESS = new IPV4Address("255.255.255.255");
+function sendDHCPv4HdrServer(contact: Contact<ContactAddrFamily.RAW, ContactProto.RAW>, dhcpHdr: typeof DHCP_HEADER, iface: Interface, daddr: IPV4Address = BROADCAST_IPV4_ADDRESS, saddr: IPV4Address = UNSET_IPV4_ADDRESS) {
+    let udpHdr = UDP_HEADER.create({
+        sport: DCHP_PORT_SERVER,
+        dport: DCHP_PORT_CLIENT,
+        length: UDP_HEADER.getMinSize() + dhcpHdr.size,
+        payload: dhcpHdr.getBuffer(),
+    });
+
+    let proto = PROTOCOLS.UDP;
+
+    let pseudoHdr = IPV4_PSEUDO_HEADER.create({
+        saddr, daddr, proto, len: udpHdr.get("length"),
+    });
+
+    udpHdr.set("csum", calculateChecksum(pseudoHdr.getBuffer()));
+
+    let ipHdr = createIPV4Header({
+        saddr,
+        daddr,
+        proto,
+        payload: udpHdr.getBuffer()
+    })
+
+    let dmac = BROADCAST_MAC_ADDRESS;
+
+    if (daddr.toString() != BROADCAST_IPV4_ADDRESS.toString()) {
+        // do arp stuff and get mac address
+        // for now throw error
+        throw new Error("Cannot send to " + daddr.toString() + " ARP logic not implemented");
+        // Here i would also need to ensure that the interface has an IP Address configured
+    }
+
+    let ethHdr = ETHERNET_HEADER.create({
+        smac: iface.macAddress,
+        dmac: dmac,
+        ethertype: ETHER_TYPES.IPv4,
+        payload: ipHdr.getBuffer()
+    });
+
+    contact.send(ethHdr.getBuffer());
+}
