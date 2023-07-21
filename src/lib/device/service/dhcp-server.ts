@@ -312,12 +312,12 @@ export default class DeviceServiceDHCPServer implements DeviceService {
         let success = true;
 
         let subnetMaskBuf = opts.get(DHCP_TAGS.SUBNET_MASK);
-        if (!subnetMaskBuf || uint8Compare(subnetMaskBuf, params.ipv4SubnetMask!.buffer /* #TRUSTMEBRO */)) {
+        if (!subnetMaskBuf || !uint8Compare(subnetMaskBuf, params.ipv4SubnetMask!.buffer /* #TRUSTMEBRO */)) {
             success = false;
         }
 
         let reqIPBuf = opts.get(DHCP_TAGS.REQUESTED_IP_ADDRESS);
-        if (!reqIPBuf || uint8Compare(reqIPBuf, params.ipv4Address!.buffer /* #TRUSTMEBRO */)) {
+        if (!reqIPBuf || !uint8Compare(reqIPBuf, params.ipv4Address!.buffer /* #TRUSTMEBRO */)) {
             success = false;
         }
 
@@ -350,6 +350,8 @@ export default class DeviceServiceDHCPServer implements DeviceService {
                     DHCP_END_OPTION
                 ])
             })
+
+            this.repo.delete(clientIdentifier)
             return sendDHCPv4HdrServer(this.contact, nakDHCPHdr, this.config.iface, BROADCAST_IPV4_ADDRESS, this.config.iface.ipv4Address);
         }
 
@@ -375,16 +377,32 @@ export default class DeviceServiceDHCPServer implements DeviceService {
                     data: Buffer.from(params.serverID)
                 }).getBuffer(),
 
-                (clid ? DHCP_OPTION.create({tag: DHCP_TAGS.CLIENT_IDENTIFIER, len: clid.length,data: clid}).getBuffer() : new Uint8Array(0)),
+                (clid ? DHCP_OPTION.create({ tag: DHCP_TAGS.CLIENT_IDENTIFIER, len: clid.length, data: clid }).getBuffer() : new Uint8Array(0)),
 
-                subnetMaskBuf!,
-                reqIPBuf!,
-                leaseTimeBuf!,
+                // SUBNET MASK
+                DHCP_OPTION.create({
+                    tag: DHCP_TAGS.SUBNET_MASK,
+                    len: 0x04,
+                    data: subnetMaskBuf
+                }).getBuffer(),
+                // REQUESTED IP
+                DHCP_OPTION.create({
+                    tag: DHCP_TAGS.REQUESTED_IP_ADDRESS,
+                    len: 0x04,
+                    data: reqIPBuf
+                }).getBuffer(),
+                // LEASE TIME
+                DHCP_OPTION.create({
+                    tag: DHCP_TAGS.IP_ADDRESS_LEASE_TIME,
+                    len: 0x04,
+                    data: leaseTimeBuf
+                }).getBuffer(),
 
-                DHCP_END_OPTION,
+                DHCP_END_OPTION
             ])
         })
 
+        this.repo.set(clientIdentifier, { ...params, state: DHCPServerState.BOUND })
         return sendDHCPv4HdrServer(this.contact, ackDHCPHdr, this.config.iface, BROADCAST_IPV4_ADDRESS, this.config.iface.ipv4Address);
     }
 
@@ -435,7 +453,6 @@ function uint8Compare(a: Uint8Array, b: Uint8Array): boolean {
     for (let i = 0; i < a.byteLength; i++) {
         if (a[i] != b[i]) return false;
     }
-
 
     return true;
 }
