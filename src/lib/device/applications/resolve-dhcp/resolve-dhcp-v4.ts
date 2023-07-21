@@ -26,7 +26,9 @@ function createOptionBuffer(tag: DHCPTag, data: Buffer): Buffer {
 
 enum DHCPClientState {
     DISCOVER,
-    REQUEST
+    REQUEST,
+
+    BOUND
 }
 
 type DHCPClientParameters = {
@@ -153,6 +155,10 @@ export function resolveDHCPv4(device: Device, iface: Interface) {
                 replyDHCPHdrOptions.push(createOptionBuffer(DHCP_TAGS.SUBNET_MASK, subnetBuf));
             }
 
+            replyDHCPHdrOptions.push(createOptionBuffer(
+                DHCP_TAGS.REQUESTED_IP_ADDRESS,
+                dhcpHdr.get("yiaddr").buffer
+            ))
 
 
             // LAST OPTION 
@@ -170,11 +176,22 @@ export function resolveDHCPv4(device: Device, iface: Interface) {
                 options: Buffer.concat(replyDHCPHdrOptions)
             })
 
-            sendDHCPv4Hdr(contact, replyDHCPHdr, iface)
             params.state = DHCPClientState.REQUEST;
+            sendDHCPv4Hdr(contact, replyDHCPHdr, iface)
+        } else if (params.state == DHCPClientState.REQUEST) {
+            if (messageType == DHCP_MESSGAGE_TYPES.DHCPNAK) {
+                // setTimeout recurse
+                return;
+            } else if (messageType == DHCP_MESSGAGE_TYPES.DHCPACK) {
+                // commit configuration
+                console.info("COMMITTING DHCP")
+                iface.ipv4Address = params.ipv4Address;
+                iface.ipv4SubnetMask = params.ipv4SubnetMask;
 
-            // TESTING
-            tearDownFn()
+                // set timeout to revalidate with lease time
+                params.state = DHCPClientState.BOUND;
+            }
+
         }
     }
 
