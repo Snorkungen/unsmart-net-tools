@@ -34,7 +34,7 @@ export class Device {
             console.info(`"${this.name}" recieved on interface: ${iface.ifID}, from ${frame.get("smac").toString()}`)
         } else if (type == "SEND") {
             // console.info(`"${this.name}" sent from interface: ${iface.ifID}, to ${frame.get("dmac").toString()}`)
-        } else if(type == "DISCARD") {
+        } else if (type == "DISCARD") {
             console.info(`"${this.name}", Discarded frame!`)
         }
 
@@ -48,7 +48,7 @@ export class Device {
 
     listener(frame: typeof ETHERNET_HEADER, iface: Interface) {
         this.log(frame, iface);
-        this.contactsHandler.handle(frame);
+        this.contactsHandler.handle(frame, iface);
     }
 
     sendFrame(frame: typeof ETHERNET_HEADER, iface: Interface) {
@@ -65,7 +65,7 @@ export class Device {
         return iface;
     }
 
-    handleInterfaceConnection (iface: Interface) {
+    handleInterfaceConnection(iface: Interface) {
         iface;
         return; // #DONOTHING
     }

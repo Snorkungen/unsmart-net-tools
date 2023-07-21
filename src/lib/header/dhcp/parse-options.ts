@@ -1,5 +1,5 @@
 import { DHCP_MAGIC_COOKIE, DHCP_OPTION } from "./dhcp";
-import { DHCP_TAGS } from "./tags";
+import { DHCPTag, DHCP_TAGS } from "./tags";
 
 export type DHCPParsedOptions = (typeof DHCP_OPTION)[];
 
@@ -27,7 +27,7 @@ export function parseDHCPOptions(options: ReturnType<typeof DHCP_OPTION["types"]
         }
 
 
-        let tag = options[p],
+        let tag = options[p] as DHCPTag,
             len = options[++p],
             data = options.subarray(++p, p + len)
         p += len;

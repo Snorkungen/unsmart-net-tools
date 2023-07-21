@@ -50,7 +50,7 @@ export class Host extends Device {
     listener(frame: typeof ETHERNET_HEADER, iface: Interface) {
         // inform about request
         this.log(frame, iface);
-        this.contactsHandler.handle(frame); // doing stuff
+        this.contactsHandler.handle(frame, iface); // doing stuff
         if (frame.get("dmac").toString() != iface.macAddress.toString()) {
             if (!frame.get("dmac").isBroadcast()) {
                 // meant for wrong interface
@@ -74,7 +74,7 @@ export class Host extends Device {
             if (ignoreIPPacketHost(ipHdr.get("daddr"), iface)) {
                 return;
             }
-  
+
         }
 
         this.statefulRecv(frame, iface)
@@ -170,12 +170,12 @@ export class Host extends Device {
                 // only support icmp first
                 if (ipHdr.get("nextHeader") == PROTOCOLS.IPV6_ICMP) {
                     let icmpHdr = ICMP_HEADER.from(ipHdr.get("payload"))
-                    
+
                     if (icmpHdr.get("type") == ICMPV6_TYPES.NEIGHBOR_ADVERTISMENT && (s.tpa == ICMP_NDP_HEADER.from(icmpHdr.get("data")).get("targetAddress").toString())) {
                         s.cb(frame, iface);
                         return this.statefulClose(i)
                     }
-                    
+
                     if (icmpHdr.get("type") == ICMPV6_TYPES.ECHO_REPLY && ICMP_ECHO_HEADER.from(icmpHdr.get("data")).get("id") == s.id) {
                         s.cb(frame, iface);
                         return this.statefulClose(i)

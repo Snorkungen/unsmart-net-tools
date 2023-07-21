@@ -7,6 +7,7 @@ import { IPV4_HEADER, IPV6_HEADER } from "../../header/ip";
 import { Device } from "../device";
 import { Contact, ContactAddrFamily, ContactProto } from "./contact";
 import { calculateChecksum } from "../../binary/checksum";
+import { Interface } from "../interface";
 
 export const UNSET_MAC_ADDRESS = new MACAddress(Buffer.alloc(MACAddress.ADDRESS_LENGTH / 8, 0));
 export const UNSET_IPV4_ADDRESS = new IPV4Address(Buffer.alloc(IPV4Address.ADDRESS_LENGTH / 8, 0));
@@ -17,20 +18,20 @@ export class ContactsHandler {
 
     constructor(private device: Device) { }
 
-    handle(frame: typeof ETHERNET_HEADER) {
+    handle(frame: typeof ETHERNET_HEADER, iface: Interface) {
         for (let contact of this.contacts) {
             if (!contact || !contact.recieve) continue;
-            
+
             if (contact.addrFamily == ContactAddrFamily.RAW) {
-                contact.recieve(frame.getBuffer())
+                contact.recieve(frame.getBuffer(), iface)
             } else if (contact.addrFamily == ContactAddrFamily.IPv4) {
                 if (frame.get("ethertype") != ETHER_TYPES.IPv4) continue;
-                
-                contact.recieve(frame.get("payload"))
+
+                contact.recieve(frame.get("payload"), iface)
             } else if (contact.addrFamily == ContactAddrFamily.IPv6) {
                 if (frame.get("ethertype") != ETHER_TYPES.IPv6) continue;
-                
-                contact.recieve(frame.get("payload"))
+
+                contact.recieve(frame.get("payload"), iface)
             }
         }
     }

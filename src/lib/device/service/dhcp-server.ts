@@ -18,6 +18,7 @@ import { UINT32, and, defineStruct, mutateAnd, mutateNot, mutateOr } from "../..
 import { bufferFromNumber } from "../../binary/buffer-from-number";
 import { DHCP_END_OPTION } from "../../header/dhcp/dhcp";
 import { UNSET_MAC_ADDRESS } from "../contact/contacts-handler";
+import { createDHCPOptionsMap } from "../../header/dhcp/utils";
 
 enum DHCPServerState {
     BINDING,
@@ -115,7 +116,6 @@ export default class DeviceServiceDHCPServer implements DeviceService {
         // ) return;
 
         if (ipHdr.get("proto") != PROTOCOLS.UDP) return;
-        console.log("Hek")
 
         // validate checksum
         if (calculateChecksum(ipHdr.getBuffer().subarray(0, 20)) != 0 && false /* Not check due to csum being optional <https://en.wikipedia.org/wiki/User_Datagram_Protocol> */) {
@@ -139,7 +139,7 @@ export default class DeviceServiceDHCPServer implements DeviceService {
 
         console.info("Hello Recieved DHCP Message")
 
-        let opts = createOptionsMap(parseDHCPOptions(dhcpHdr.get("options")));
+        let opts = createDHCPOptionsMap(parseDHCPOptions(dhcpHdr.get("options")));
 
         let typeBuf = opts.get(DHCP_TAGS.DHCP_MESSAGE_TYPE);
         if (!typeBuf) {
@@ -156,7 +156,7 @@ export default class DeviceServiceDHCPServer implements DeviceService {
         }
     }
 
-    private async handleDiscover(dhcpHdr: typeof DHCP_HEADER, opts: ReturnType<typeof createOptionsMap>) {
+    private async handleDiscover(dhcpHdr: typeof DHCP_HEADER, opts: ReturnType<typeof createDHCPOptionsMap>) {
         if (!this.config.iface?.ipv4Address) return;
 
         let clientIdentifier: DHCPServerSerializedCLID = serializeClientID(
@@ -232,6 +232,10 @@ export default class DeviceServiceDHCPServer implements DeviceService {
                 // IP Address Lease Time
                 DHCP_OPTION.create({ tag: DHCP_TAGS.IP_ADDRESS_LEASE_TIME, len: 4, data: bufferFromNumber(IPLEASE_TIME_IN_SECS, 4) }).getBuffer(),
 
+
+                // SubnetMask
+                DHCP_OPTION.create({tag: DHCP_TAGS.SUBNET_MASK, len: 4, data: this.config.ipv4SubnetMask!.buffer}).getBuffer(),
+
                 // Server Identifier
                 DHCP_OPTION.create({
                     tag: DHCP_TAGS.SERVER_IDENTIFIER,
@@ -289,16 +293,6 @@ function validateUDPV4Checksum(ipHdr: typeof IPV4_HEADER, udpHdr: typeof UDP_HEA
     });
 
     return calculateChecksum(pseudoHdr.getBuffer()) == udpHdr.get("csum");
-}
-
-function createOptionsMap(opts: DHCPParsedOptions) {
-    let map = new Map<typeof DHCP_TAGS[keyof typeof DHCP_TAGS], Buffer>;
-
-    for (let opt of opts) {
-        map.set(opt.get("tag"), opt.get("data"));
-    }
-
-    return map;
 }
 
 export function incrementAddress(address: IPV4Address, subnetMask: AddressMask<typeof IPV4Address>) {

@@ -1,3 +1,4 @@
+import { Interface } from "../interface";
 import { ContactsHandler } from "./contacts-handler";
 
 /**
@@ -17,7 +18,7 @@ export class Contact<AF extends ContactAddrFamily, PTO extends ContactProto>{
         this.proto = proto;
     }
 
-    recieve?: (buf: Uint8Array) => void
+    recieve?: (buf: Uint8Array, iface: Interface) => void
 
     send(buf: Uint8Array) {
         this.handler.recieve(this, buf);
