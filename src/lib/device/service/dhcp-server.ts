@@ -168,8 +168,15 @@ export default class DeviceServiceDHCPServer implements DeviceService {
             opts.get(DHCP_TAGS.CLIENT_IDENTIFIER)
             || dhcpHdr.get("chaddr")
         );
-
-        let address = await this.getAddress();
+        
+        let address: IPV4Address | null;
+        
+        let params = this.repo.get(clientIdentifier);
+        if (params?.ipv4Address) {
+            address = params.ipv4Address;
+        } else {
+            address = await this.getAddress();
+        }
 
         if (!address) {
             return;
