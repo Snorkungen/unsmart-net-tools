@@ -67,8 +67,6 @@ export class Interface {
     }
 
     send(frame: TEthernetFrame) {
-
-
         if (frame.get("dmac").toString() == this.macAddress.toString()) {
             // allow for sending packets to itself
             return this.recieve(frame)
@@ -79,20 +77,47 @@ export class Interface {
             return;
         }
 
-        // this thing below currently does nothing & will probably be hoisted and handled by upper level logic
-        if (this.vlan && this.vlan.vids.length > 0) {
-            if (this.vlan.type == "access") {
-                // remove tag
-            } else if (this.vlan.type == "trunk") {
-                // if (frame.vlan && !this.vlan.vids.find(vid => vid.toNumber() == frame.vlan!.vid.toNumber())) {
-                //     // frame not in vlan list
-                //     return null;
-                // }
+        if (!this.vlan) {
+            if (this.onSend) this.onSend()
+            return this.target!.recieve(frame);
+        }
+
+        // Do some fanciful vlan logic
+        if (this.vlan.type == "access") {
+            if (frame.get("ethertype") != ETHER_TYPES.VLAN) {
+                // if untagged pass through
+                if (this.onSend) this.onSend()
+                return this.target!.recieve(frame);
             }
+
+            let vlanHdr = ETHERNET_DOT1Q_HEADER.from(frame.get("payload"));
+
+            // check if VID is allowed for interface
+            if (!this.vlan.vids.includes(vlanHdr.get("vid"))) {
+                return; // Discard frame
+            }
+
+            frame = untagFrame(frame, vlanHdr);
+
+            if (this.onSend) this.onSend()
+            return this.target!.recieve(frame);
+        } else if (this.vlan.type == "trunk") {
+            if (frame.get("ethertype") != ETHER_TYPES.VLAN) {
+                return; // Discard Frame
+            }
+
+            let vlanHdr = ETHERNET_DOT1Q_HEADER.from(frame.get("payload"));
+
+            // check if VID is allowed for interface
+            if (!this.vlan.vids.includes(vlanHdr.get("vid"))) {
+                return; // Discard Frame
+            }
+
+            if (this.onSend) this.onSend()
+            return this.target!.recieve(frame);
         }
 
         if (this.onSend) this.onSend()
-
         return this.target!.recieve(frame);
     }
 
@@ -102,16 +127,46 @@ export class Interface {
             return;
         }
 
-        // inteface doesn't deal with vlans
 
-        // recieve doesn't return anything 
+        vlanHandler: if (this.vlan) {
+            if (this.vlan?.type == "access") {
+                if (frame.get("ethertype") != ETHER_TYPES.VLAN) {
+                    /** Defaults to 1 */
+                    let vid = this.vlan.vids[0] || 1;
+                    frame = tagFrame(frame, vid);
+
+                    break vlanHandler;
+                }
+
+                let vlanHdr = ETHERNET_DOT1Q_HEADER.from(frame.get("payload"));
+                // check if VID is allowed for interface
+                if (!this.vlan.vids.includes(vlanHdr.get("vid"))) {
+                    break vlanHandler; // discard
+                }
+
+                break vlanHandler;
+            } else if (this.vlan.type == "trunk") {
+                if (frame.get("ethertype") != ETHER_TYPES.VLAN) {
+                    break vlanHandler; // discard
+                }
+
+                let vlanHdr = ETHERNET_DOT1Q_HEADER.from(frame.get("payload"));
+                if (!this.vlan.vids.includes(vlanHdr.get("vid"))) {
+                    break vlanHandler; // "Cannot forward; VID not in ifaces access list"
+                }
+
+                break vlanHandler;
+            }
+
+        }
+
+
 
         if (this.onRecv) this.onRecv();
 
         if (this.recvWait) {
             setTimeout(() => this.forwardCallback(frame, this), this.recvWait)
         } else {
-
             return this.forwardCallback(frame, this);
         }
     }
@@ -120,4 +175,29 @@ export class Interface {
     onSend?: () => void;
 
     recvWait?: number;
+}
+
+function untagFrame(frame: typeof ETHERNET_HEADER, vlanHdr: typeof ETHERNET_DOT1Q_HEADER) {
+    return ETHERNET_HEADER.create({
+        dmac: frame.get("dmac"),
+        smac: frame.get("smac"),
+        ethertype: vlanHdr.get("ethertype"),
+        payload: vlanHdr.get("payload")
+    });
+}
+
+function tagFrame(frame: typeof ETHERNET_HEADER, vid: number, pcp: number = 0, dei: number = 0): typeof ETHERNET_HEADER {
+    let vlanHdr = ETHERNET_DOT1Q_HEADER.create({
+        pcp, dei,
+        vid,
+        ethertype: frame.get("ethertype"),
+        payload: frame.get("payload")
+    })
+
+    return ETHERNET_HEADER.create({
+        dmac: frame.get("dmac"),
+        smac: frame.get("smac"),
+        ethertype: ETHER_TYPES.VLAN,
+        payload: vlanHdr.getBuffer()
+    });
 }
