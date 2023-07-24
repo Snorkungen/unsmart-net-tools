@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import { Component, JSX } from "solid-js";
 import { Device } from "../lib/device/device";
 import { Host } from "../lib/device/host";
@@ -6,17 +7,9 @@ import { pingVersion4, pingVersion6 } from "../lib/device/applications/ping";
 import { createMask } from "../lib/address/mask";
 import { IPV4Address } from "../lib/address/ipv4";
 import { IPV6Address } from "../lib/address/ipv6";
-import { calculateChecksum } from "../lib/binary/checksum";
-import { createIPV4Header, IPV4_PSEUDO_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../lib/header/ip";
-import { Buffer } from "buffer";
-import { DCHP_OP, DCHP_PORT_CLIENT, DCHP_PORT_SERVER, DHCP_HEADER, DHCP_MAGIC_COOKIE, DHCP_OPTION } from "../lib/header/dhcp/dhcp";
-import { DHCP_MESSGAGE_TYPES, DHCP_TAGS } from "../lib/header/dhcp/tags";
-import { bufferFromNumber } from "../lib/binary/buffer-from-number";
-import { UDP_HEADER } from "../lib/header/udp";
-import { ETHERNET_HEADER, ETHER_TYPES } from "../lib/header/ethernet";
-import { MACAddress } from "../lib/address/mac";
-import DeviceServiceDHCPServer, { incrementAddress } from "../lib/device/service/dhcp-server";
+import DeviceServiceDHCPServer from "../lib/device/service/dhcp-server";
 import { resolveDHCPv4 } from "../lib/device/applications/resolve-dhcp/resolve-dhcp-v4";
+import { NetworkRouter } from "../lib/device/network-router";
 const selectContents = (ev: MouseEvent) => {
     if (!(ev.currentTarget instanceof HTMLElement)) return;
     let range = document.createRange();
@@ -93,6 +86,40 @@ dhcpServer.configure({
 
 pc1.addService(dhcpServer);
 
+// TESTING STARTING
+let networkRouter = new NetworkRouter();
+networkRouter.name = "R1";
+
+let rIface_sw = networkRouter.createInterface();
+rIface_sw.ipv4Address = new IPV4Address("192.168.1.1");
+rIface_sw.ipv4SubnetMask = createMask(IPV4Address, 24);
+
+let rIface_pc3 = networkRouter.createInterface();
+rIface_pc3.ipv4Address = new IPV4Address("192.168.3.1");
+rIface_pc3.ipv4SubnetMask = createMask(IPV4Address, 24);
+
+
+let swIface_router = networkSwitch.createInterface();
+swIface_router.connect(rIface_sw)
+
+
+
+
+let pc3 = new Host();
+pc3.name = "PC3"
+
+let iface_pc3 = pc3.createInterface();
+iface_pc3.ipv4Address = new IPV4Address("192.168.3.30")
+iface_pc3.ipv4SubnetMask = createMask(IPV4Address, 24);
+
+iface_pc3.connect(rIface_pc3);
+
+
+iface_pc1.ipv4GW = rIface_sw.ipv4Address;
+iface_pc3.ipv4GW = rIface_pc3.ipv4Address;
+
+// TESTING END
+
 export const TestingComponent: Component = () => {
 
     return (
@@ -107,6 +134,8 @@ export const TestingComponent: Component = () => {
                 <DeviceComponent device={pc1} />
                 <DeviceComponent device={networkSwitch} />
                 <DeviceComponent device={pc2} />
+                <DeviceComponent device={networkRouter} />
+                <DeviceComponent device={pc3} />
             </div>
 
             {[pc1, pc2].map((device) => (

@@ -21,6 +21,9 @@ export class Interface {
     macAddress: MACAddress;
     ipv4Address?: IPV4Address;
     ipv4SubnetMask?: AddressMask<typeof IPV4Address>;
+    // Testing a router HAHA I'm done.
+    ipv4GW?: IPV4Address;
+
     ipv6Address?: IPV6Address;
     prefixLength?: number;
 

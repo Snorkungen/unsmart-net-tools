@@ -99,14 +99,22 @@ export class ContactsHandler {
         } else for (let iface of this.device.interfaces) {
             if (!iface.ipv4Address || iface.ipv4Address.toString() != saddr.toString()) continue;
 
-            if (!iface.ipv4SubnetMask?.compare(saddr, daddr)) {
-                // Sanity Check Ensure daddr is the same subnet because routing not Implented
-                throw new Error("Routing not implemented")
-            }
-
             let dmac: MACAddress;
 
-            if (saddr.toString() == daddr.toString()) {
+            if (!iface.ipv4SubnetMask?.compare(saddr, daddr)) {
+                if (!iface.ipv4GW) {
+                    throw new Error("Can't send no gateway")
+                }
+
+                let r = await this.device.neighborTable.getDiscover(iface.ipv4GW);
+                if (typeof r == "number") {
+                    // was error return
+                    throw new Error(r + "")
+                }
+
+                dmac = r.macAddress;
+
+            } else if (saddr.toString() == daddr.toString()) {
                 // destination is self
                 dmac = iface.macAddress;
             } else {

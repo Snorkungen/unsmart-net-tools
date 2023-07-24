@@ -35,6 +35,18 @@ export async function resolveSendingInformationVersion4(host: Host, address: IPV
         }
     }
 
+    // This is Hacky this function is not even in use with other developments
+    // But This is just testing for my EGO
+
+
+    // get first interface with a gateway
+
+    let iface = host.interfaces.find(({ ipv4GW }) => !!ipv4GW);
+    if (iface && iface.ipv4GW) {
+        // get info for gateway
+        return await resolveSendingInformationVersion4(host, iface.ipv4GW)
+    }
+
     throw new Error("Default gateway logic not implemented")
 }
 
