@@ -100,7 +100,7 @@ export default class NeighborTable {
 
             for (let iface of this.device.interfaces) {
                 let f = createNDPRequest(query, iface)
-                if (!f) return;
+                if (!f) continue;
                 
                 this.contact.send(f.getBuffer())
             }
