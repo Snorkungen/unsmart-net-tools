@@ -3,7 +3,7 @@
 	"name": "address",
 	"main": "dist/index.js",
 	"scripts": {
-		"build": "tsc"
+		"build": "rm -r dist && tsc"
 	},
 	"devDependencies": {
 		"typescript": "^5.1.6",
