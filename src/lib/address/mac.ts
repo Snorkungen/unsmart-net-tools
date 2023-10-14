@@ -1,5 +1,5 @@
 import { Buffer } from "buffer";
-import { BaseAddress, defineAddress } from "./base";
+import { BaseAddress } from "./base";
 
 const POSSIBLE_SEPARATOR = ["-", ":", "."] as const;
 const SEPARATOR_REGEX = new RegExp(`[${POSSIBLE_SEPARATOR.join("")}]`, "ig");
@@ -73,4 +73,3 @@ export class MACAddress implements BaseAddress {
     }
 };
 
-export const MAC_ADDRESS = defineAddress(MACAddress);

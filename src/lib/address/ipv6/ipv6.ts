@@ -1,5 +1,5 @@
 import { Buffer } from "buffer";
-import { BaseAddress, defineAddress } from "../base";
+import { BaseAddress } from "../base";
 import { createMask } from "../mask";
 import { ADDRESS_TYPESV6 } from "./reserved";
 
@@ -132,5 +132,3 @@ export class IPV6Address implements BaseAddress {
 const LINK_LOCAL_MASK = createMask(IPV6Address, ADDRESS_TYPESV6.LINK_LOCAL[1]), LINK_LOCAL_NET_ADDRESS = new IPV6Address(ADDRESS_TYPESV6.LINK_LOCAL[0]);
 const MULTICAST_MASK = createMask(IPV6Address, ADDRESS_TYPESV6.MULTICAST[1]), MULTICAST_NET_ADDRESS = new IPV6Address(ADDRESS_TYPESV6.MULTICAST[0]);
 const LOOPBACK_MASK = createMask(IPV6Address, ADDRESS_TYPESV6.LOOPBACK[1]), LOOPBACK_NET_ADDRESS = new IPV6Address(ADDRESS_TYPESV6.LOOPBACK[0]);
-
-export const IPV6_ADDRESS = defineAddress(IPV6Address)

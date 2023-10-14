@@ -1,4 +1,4 @@
-import { IPV6_ADDRESS } from "../../address/ipv6";
+import { IPV6_ADDRESS } from "../../struct-types/address";
 import { defineStruct, UINT8, UINT32, UINT16, SLICE, StructType } from "../../binary/struct";
 import { Protocol } from "./protocols";
 

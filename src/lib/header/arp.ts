@@ -1,6 +1,5 @@
-import { IPV4_ADDRESS } from "../address/ipv4";
-import { MACAddress, MAC_ADDRESS } from "../address/mac";
 import { StructType, UINT16, UINT8, defineStruct } from "../binary/struct";
+import { IPV4_ADDRESS, MAC_ADDRESS } from "../struct-types/address";
 
 /** Source <https://en.wikipedia.org/wiki/Address_Resolution_Protocol> */
 export const ARP_HEADER = defineStruct({

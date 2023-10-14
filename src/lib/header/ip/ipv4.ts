@@ -1,8 +1,9 @@
 import { Buffer } from "buffer";
-import { IPV4Address, IPV4_ADDRESS } from "../../address/ipv4";
+import { IPV4Address } from "../../address/ipv4";
 import { calculateChecksum } from "../../binary/checksum";
 import { SLICE, StructType, UINT16, UINT8, defineStruct } from "../../binary/struct";
 import { Protocol } from "./protocols";
+import { IPV4_ADDRESS } from "../../struct-types/address";
 
 /** Source <https://www.saminiir.com/lets-code-tcp-ip-stack-2-ipv4-icmpv4/> */
 export const IPV4_HEADER = defineStruct({

@@ -3,10 +3,9 @@
  */
 
 import { Buffer } from "buffer";
-import { IPV4_ADDRESS } from "../../address/ipv4";
-import { MAC_ADDRESS } from "../../address/mac";
 import { BYTE_ARRAY, SLICE, Struct, StructType, UINT16, UINT32, UINT8 } from "../../binary"
 import { DHCP_TAGS } from "./tags";
+import { IPV4_ADDRESS, MAC_ADDRESS } from "../../struct-types/address";
 /**
 ```txt
    0                   1                   2                   3

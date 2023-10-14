@@ -1,4 +1,4 @@
-import { MAC_ADDRESS } from "../../address/mac";
+import { MAC_ADDRESS } from "../../struct-types/address";
 import { defineStruct, UINT16, SLICE, StructType } from "../../binary/struct";
 import { EtherType } from "./ethertypes";
 

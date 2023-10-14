@@ -1,5 +1,5 @@
 import { Buffer } from "buffer";
-import { BaseAddress, defineAddress } from "../base";
+import { BaseAddress } from "../base";
 
 const DOT_NOTATED_ADDRESS_REGEX = /^(\b25[0-5]|\b2[0-4][0-9]|\b[01]?[0-9][0-9]?)(\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}$/;
 
@@ -47,5 +47,3 @@ export class IPV4Address implements BaseAddress {
         return `${this.buffer[0]}.${this.buffer[1]}.${this.buffer[2]}.${this.buffer[3]}`;
     }
 }
-
-export const IPV4_ADDRESS = defineAddress(IPV4Address);
