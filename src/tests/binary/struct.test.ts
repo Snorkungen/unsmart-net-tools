@@ -21,10 +21,10 @@ describe("Buffer based struct", () => {
         expect(st.get("flags")).eq(7)
         expect(st.get("fragOffset")).eq(0x0ff)
         expect(st.get("pad")).eq(0)
-        expect(st.get("slice").toString("hex")).eq(Buffer.from("90", "hex").toString("hex"))
+        expect(Buffer.from(st.get("slice")).toString("hex")).eq(Buffer.from("90", "hex").toString("hex"))
         let sliceText = "Hello World";
         st.set("slice", Buffer.from(sliceText, "ascii"))
-        expect(st.get("slice").toString("ascii")).eq(sliceText)
+        expect(Buffer.from(st.get("slice")).toString("ascii")).eq(sliceText)
 
         st.set("version", 6)
         expect(st.get("version")).eq(6)

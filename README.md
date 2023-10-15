@@ -10,4 +10,4 @@
     - [x] Move to have internal Address Methods treat buffer as an `Uint8Array`
   - [ ] `Struct`: remove dependence on `Buffer`
     - [x] lib/struct/value-types.ts internal to not use `Buffer` instance methods
-    - [ ] `StructType` remove dependence of `Buffer`
+    - [x] `StructType` remove dependence of `Buffer`

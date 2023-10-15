@@ -1,6 +1,5 @@
 import { StructValueError } from "./struct";
 import { defineStructType } from "./define";
-import { Buffer } from "buffer";
 import { uint8_fromNumber } from "../uint8-array";
 
 /** Makes buffer to a `number` */
@@ -28,9 +27,7 @@ function defineUINT(bitLength: number) {
                 throw new StructValueError("value does not fit in bits", v)
             }
 
-            return Buffer.from(
-                uint8_fromNumber(v, Math.ceil(this.bitLength / 8))
-            )
+            return uint8_fromNumber(v, Math.ceil(this.bitLength / 8));
         },
         getter(buf, options) {
             return bufToNumber(buf)
@@ -53,9 +50,7 @@ function defineINT(bitLength: number) {
                 signedBitValue = 1;
             }
 
-            let valBuf = Buffer.from(
-                uint8_fromNumber(v, Math.ceil(this.bitLength / 8))
-            );
+            let valBuf = uint8_fromNumber(v, Math.ceil(this.bitLength / 8));
 
             if (v >= 2 ** (this.bitLength - 1)) {
                 throw new StructValueError("value does not fit in bits", v)
@@ -89,8 +84,8 @@ export const INT16 = defineINT(16);
 export const INT32 = defineINT(32);
 export const INT64 = defineINT(64);
 
-export const SLICE = defineStructType<Buffer>({
-    defaultValue: Buffer.alloc(0),
+export const SLICE = defineStructType<Uint8Array>({
+    defaultValue: new Uint8Array(0),
     bitLength: -1,
     getter(buf) {
         return buf
@@ -100,8 +95,8 @@ export const SLICE = defineStructType<Buffer>({
     }
 })
 
-export const BYTE_ARRAY = (length: number) => defineStructType<Buffer>({
-    defaultValue: Buffer.alloc(length),
+export const BYTE_ARRAY = (length: number) => defineStructType<Uint8Array>({
+    defaultValue: new Uint8Array(length),
     bitLength: length * 8,
     getter: buf => buf,
     setter: buf => buf

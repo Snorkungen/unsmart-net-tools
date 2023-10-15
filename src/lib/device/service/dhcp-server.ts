@@ -149,7 +149,7 @@ export default class DeviceServiceDHCPServer implements DeviceService {
             return;
         }
 
-        switch (typeBuf.readUint8(0)) {
+        switch (typeBuf[0]) {
             case DHCP_MESSGAGE_TYPES.DHCPDISCOVER:
                 return this.handleDiscover(dhcpHdr, opts);
             case DHCP_MESSGAGE_TYPES.DHCPREQUEST:
@@ -165,12 +165,12 @@ export default class DeviceServiceDHCPServer implements DeviceService {
         if (!this.config.iface?.ipv4SubnetMask) return;
 
         let clientIdentifier: DHCPServerSerializedCLID = serializeClientID(
-            opts.get(DHCP_TAGS.CLIENT_IDENTIFIER)
-            || dhcpHdr.get("chaddr")
+            Buffer.from(opts.get(DHCP_TAGS.CLIENT_IDENTIFIER)
+                || dhcpHdr.get("chaddr"))
         );
-        
+
         let address: IPV4Address | null;
-        
+
         let params = this.repo.get(clientIdentifier);
         if (params?.ipv4Address) {
             address = params.ipv4Address;
@@ -299,8 +299,8 @@ export default class DeviceServiceDHCPServer implements DeviceService {
         if (!this.config.iface?.ipv4SubnetMask) return;
 
         let clientIdentifier: DHCPServerSerializedCLID = serializeClientID(
-            opts.get(DHCP_TAGS.CLIENT_IDENTIFIER)
-            || dhcpHdr.get("chaddr")
+            Buffer.from(opts.get(DHCP_TAGS.CLIENT_IDENTIFIER)
+                || dhcpHdr.get("chaddr"))
         );
 
         let params = this.repo.get(clientIdentifier);
@@ -329,7 +329,7 @@ export default class DeviceServiceDHCPServer implements DeviceService {
         }
 
         let leaseTimeBuf = opts.get(DHCP_TAGS.IP_ADDRESS_LEASE_TIME);
-        if (!leaseTimeBuf || leaseTimeBuf.readUInt32BE() != params.leaseTime) {
+        if (!leaseTimeBuf || (new DataView(leaseTimeBuf.buffer)).getUint32(0) != params.leaseTime) {
             success = false;
         }
 

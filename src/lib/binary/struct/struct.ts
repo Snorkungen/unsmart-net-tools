@@ -28,9 +28,9 @@ export type StructType<T extends any> = {
     /** bitLength of the value type, determines how many bits the value  contain */
     bitLength: number | -1;
     /** function to be called when a struct is retrieving a value */
-    getter: (buf: Buffer, options: StructOptions) => T;
+    getter: (buf: Uint8Array, options: StructOptions) => T;
     /** function to be called when a struct is setting a value */
-    setter: (value: T, options?: StructOptions) => Buffer;
+    setter: (value: T, options?: StructOptions) => Uint8Array;
 }
 
 export class Struct<Types extends Record<string, StructType<any>>>{
@@ -196,7 +196,10 @@ export class Struct<Types extends Record<string, StructType<any>>>{
         if (value instanceof Buffer) {
             buf = value;
         } else {
-            buf = this.types[key].setter(value, this.options);
+            buf = Buffer.from(
+                this.types[key].setter(value, this.options)
+            );
+
         }
 
         if (bitLength > 0 && (buf.length > Math.ceil(bitLength / 8) || parseInt(buf.toString("hex"), 16) >= 2 ** bitLength)) {

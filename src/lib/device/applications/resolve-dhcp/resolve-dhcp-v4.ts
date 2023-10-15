@@ -139,25 +139,26 @@ export function resolveDHCPv4(device: Device, iface: Interface) {
                 createOptionBuffer(DHCP_TAGS.DHCP_MESSAGE_TYPE, bufferFromNumber(DHCP_MESSGAGE_TYPES.DHCPREQUEST, 1)), // DHCP MESSAGE TYPE
                 createOptionBuffer(DHCP_TAGS.CLIENT_IDENTIFIER, Buffer.concat([bufferFromNumber(0x01, 1), iface.macAddress.buffer])), // DHCP CLIENT IDENTIFIER
                 parameterRequestList,
-                createOptionBuffer(DHCP_TAGS.SERVER_IDENTIFIER, opts.get(DHCP_TAGS.SERVER_IDENTIFIER)!)
+                createOptionBuffer(DHCP_TAGS.SERVER_IDENTIFIER, Buffer.from(opts.get(DHCP_TAGS.SERVER_IDENTIFIER)!))
             ];
 
             // I haven't bothered to read the full spec so i'm just guessing as to what i am supposed to do
 
-            let leaseTimeBuf = opts.get(DHCP_TAGS.IP_ADDRESS_LEASE_TIME);
-            if (leaseTimeBuf) {
-                params.leaseTime = leaseTimeBuf.readUint32BE();
+            let leaseTimeBufOpt = opts.get(DHCP_TAGS.IP_ADDRESS_LEASE_TIME);
+            if (leaseTimeBufOpt) {
+                let leaseTimeBuf = Buffer.from(leaseTimeBufOpt)
+                params.leaseTime = (leaseTimeBuf).readUint32BE();
                 replyDHCPHdrOptions.push(createOptionBuffer(DHCP_TAGS.IP_ADDRESS_LEASE_TIME, leaseTimeBuf))
             }
 
             let subnetBuf = opts.get(DHCP_TAGS.SUBNET_MASK);
             if (subnetBuf) {
-                replyDHCPHdrOptions.push(createOptionBuffer(DHCP_TAGS.SUBNET_MASK, subnetBuf));
+                replyDHCPHdrOptions.push(createOptionBuffer(DHCP_TAGS.SUBNET_MASK, Buffer.from(subnetBuf)));
             }
 
             replyDHCPHdrOptions.push(createOptionBuffer(
                 DHCP_TAGS.REQUESTED_IP_ADDRESS,
-                dhcpHdr.get("yiaddr").buffer
+                Buffer.from(dhcpHdr.get("yiaddr").buffer)
             ))
 
 
