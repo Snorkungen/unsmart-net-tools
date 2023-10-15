@@ -1,18 +1,16 @@
-import { Buffer } from "buffer";
-
 export class BaseAddress {
     static ADDRESS_LENGTH = 0;
-    static parse(input: string): Buffer {
+    static parse(input: string): Uint8Array {
         throw new Error("Not Implemented!")
     }
 
-    buffer: Buffer;
+    buffer: Uint8Array;
 
-    constructor(input: Buffer) {
+    constructor(input: Uint8Array) {
         throw new Error("Not Implemented!")
     }
 
     toString(): string {
         throw new Error("Not Implemented!")
     }
-} 
+}

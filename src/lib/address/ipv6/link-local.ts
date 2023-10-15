@@ -1,13 +1,13 @@
-import { Buffer } from "buffer";
 import { mutateAnd, mutateNot, mutateOr } from "../../binary/buffer-bitwise";
 import { bufferFromNumber } from "../../binary/buffer-from-number";
 import { createMaskBuffer } from "../mask";
 import { IPV6Address } from "./ipv6";
 import { ADDRESS_TYPESV6 } from "./reserved";
+import { uint8_concat } from "../../binary/uint8-array";
 
 
-function createInterfaceBuf(): Buffer {
-    let buf = Buffer.concat([
+function createInterfaceBuf(): Uint8Array {
+    let buf = uint8_concat([
         bufferFromNumber(0x0, 2),
         bufferFromNumber(0x0420, 2), // stupid immature joke because why not
         bufferFromNumber(Math.ceil(Math.random() * (2 ** 32) - 2), 4),

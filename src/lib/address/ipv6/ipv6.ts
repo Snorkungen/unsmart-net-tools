@@ -1,4 +1,3 @@
-import { Buffer } from "buffer";
 import { BaseAddress } from "../base";
 import { createMask } from "../mask";
 import { ADDRESS_TYPESV6 } from "./reserved";
@@ -6,9 +5,9 @@ import { ADDRESS_TYPESV6 } from "./reserved";
 
 export class IPV6Address implements BaseAddress {
     static ADDRESS_LENGTH: number = 128;
-    static parse(input: string): Buffer {
+    static parse(input: string): Uint8Array {
         input = input.toLowerCase().trim();
-        let buffer = Buffer.alloc(this.ADDRESS_LENGTH / 8),
+        let buffer = new Uint8Array(this.ADDRESS_LENGTH / 8),
             split = input.split(":");
 
         for (let i = 0; i < 8; i++) {
@@ -40,15 +39,15 @@ export class IPV6Address implements BaseAddress {
         return false;
     }
 
-    buffer: Buffer;
+    buffer: Uint8Array;
 
     constructor(input: string | Uint8Array | IPV6Address) {
         if (typeof input == "string") {
             this.buffer = IPV6Address.parse(input)
         } else if (input instanceof Uint8Array && input.length == IPV6Address.ADDRESS_LENGTH / 8) {
-            this.buffer = Buffer.from(input)
+            this.buffer = new Uint8Array(input)
         } else if (input instanceof IPV6Address) {
-            this.buffer = Buffer.from(input.buffer);
+            this.buffer = new Uint8Array(input.buffer);
         } else {
             throw new Error("failed to initialize: " + IPV6Address.name)
         }
@@ -67,7 +66,9 @@ export class IPV6Address implements BaseAddress {
 
             // if simplify is zero or positive remvove leading zeroes
             if (simplify < 0) {
-                a[i] = slice.toString("hex")
+                // I might create a function that does this 
+                // Buffer.toString `a[i] = slice.toString("hex")`   
+                a[i] = ""; slice.forEach(n => a[i] += n.toString(16).padStart(2, "0"))
             } else if (slice[0] == 0) {
                 a[i] = slice[1].toString(16)
             } else {

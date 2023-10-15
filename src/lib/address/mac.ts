@@ -1,4 +1,3 @@
-import { Buffer } from "buffer";
 import { BaseAddress } from "./base";
 
 const POSSIBLE_SEPARATOR = ["-", ":", "."] as const;
@@ -6,8 +5,8 @@ const SEPARATOR_REGEX = new RegExp(`[${POSSIBLE_SEPARATOR.join("")}]`, "ig");
 
 export class MACAddress implements BaseAddress {
     static ADDRESS_LENGTH = 48;
-    static parse(input: string): Buffer {
-        let buffer = Buffer.alloc(MACAddress.ADDRESS_LENGTH / 8);
+    static parse(input: string): Uint8Array {
+        let buffer = new Uint8Array(MACAddress.ADDRESS_LENGTH / 8);
         // remove separators 
         input = input.replaceAll(SEPARATOR_REGEX, "").trim();
 
@@ -23,27 +22,27 @@ export class MACAddress implements BaseAddress {
         return buffer;
     }
 
-    buffer: Buffer;
+    buffer: Uint8Array;
     constructor(input: string);
-    constructor(input: Buffer);
+    constructor(input: Uint8Array);
     constructor(input: MACAddress);
     constructor(input: unknown) {
         if (typeof input == "string") {
             this.buffer = MACAddress.parse(input);
         } else if (input instanceof MACAddress) {
-            this.buffer = Buffer.from(input.buffer)
+            this.buffer = new Uint8Array(input.buffer);
         } else if (input instanceof Uint8Array && (input.length * 8) == MACAddress.ADDRESS_LENGTH) {
-            this.buffer = Buffer.from(input);
+            this.buffer = new Uint8Array(input);
         } else {
             throw new Error("failed to initialize: " + MACAddress.name)
         }
     }
 
     toString(separator: typeof POSSIBLE_SEPARATOR[number] = "-") {
-        let octets = new Array<string>(this.buffer.length);
+        let octets = new Array<string>(this.buffer.byteLength);
 
-        for (let i = 0; i < this.buffer.length; i++) {
-            octets[i] = this.buffer[i].toString(16).padStart(2, "0")
+        for (let i = 0; i < this.buffer.byteLength; i++) {
+            octets[i] = this.buffer[i].toString(16).padStart(2, "0");
         }
 
         return octets.join(separator);
@@ -64,8 +63,8 @@ export class MACAddress implements BaseAddress {
         return !this.isMulticast();
     }
     isBroadcast(): boolean {
-        for (let i = 0; i < this.buffer.length; i++) {
-            if ((this.buffer[i] & 0xff) != 0xff) {
+        for (let i = 0; i < this.buffer.byteLength; i++) {
+            if ((this.buffer[0] & 0xff) != 0xff) {
                 return false;
             }
         }

@@ -1,13 +1,13 @@
-import { Buffer } from "buffer";
 import { and } from "../binary/buffer-bitwise";
+import { uint8_equals } from "../binary/uint8-array";
 import { BaseAddress } from "./base";
 
 /*
     I'm bored and i enjoy confusing future self with unnecessary Typescripting
 */
 
-export function createMaskBuffer<Address extends typeof BaseAddress>(addressLength: Address["ADDRESS_LENGTH"], maskLength: number): Buffer {
-    let buffer = Buffer.alloc(addressLength / 8);
+export function createMaskBuffer<Address extends typeof BaseAddress>(addressLength: Address["ADDRESS_LENGTH"], maskLength: number): Uint8Array {
+    let buffer = new Uint8Array(Math.max(addressLength / 8));
 
     if (maskLength < 0 || maskLength > addressLength) {
         // maybe throw error
@@ -40,7 +40,7 @@ export function createMaskBuffer<Address extends typeof BaseAddress>(addressLeng
 export function calculateMaskBufferLength<Address extends BaseAddress>(buffer: Address["buffer"]): number {
     let length = 0;
 
-    for (let i = 0; i < buffer.length; i++) {
+    for (let i = 0; i < buffer.byteLength; i++) {
         if (buffer[i] == 0xff) {
             length += 8;
         } else if (buffer[i] == 0) {
@@ -62,14 +62,14 @@ export function calculateMaskBufferLength<Address extends BaseAddress>(buffer: A
 
 export class AddressMask<Address extends typeof BaseAddress>  {
     private address: Address;
-    buffer: Buffer;
+    buffer: Uint8Array;
 
     constructor(address: Address, input: number | ReturnType<typeof createMaskBuffer<Address>> | InstanceType<Address> | string) {
         this.address = address;
 
         if (typeof input == "number") {
             this.buffer = createMaskBuffer(address.ADDRESS_LENGTH, input);
-        } else if (input instanceof Buffer) {
+        } else if (input instanceof Uint8Array) {
             this.buffer = input;
         } else if (input instanceof this.address) {
             this.buffer = input.buffer;
@@ -86,7 +86,7 @@ export class AddressMask<Address extends typeof BaseAddress>  {
      */
     isValid(): boolean {
         // check if buffer length makes sense.
-        if (this.buffer.length != (this.address.ADDRESS_LENGTH / 8)) {
+        if (this.buffer.byteLength != (this.address.ADDRESS_LENGTH / 8)) {
             return false;
         }
 
@@ -100,8 +100,10 @@ export class AddressMask<Address extends typeof BaseAddress>  {
     }
 
     compare<A extends InstanceType<Address>>(address1: A, address2: A): boolean {
-        return and(this.buffer, address1.buffer).toString("hex") ==
-            and(this.buffer, address2.buffer).toString("hex")
+        return uint8_equals(
+            and(this.buffer, address1.buffer),
+            and(this.buffer, address2.buffer)
+        );
     }
 
     /**

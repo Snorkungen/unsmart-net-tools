@@ -211,7 +211,7 @@ export default class DeviceServiceDHCPServer implements DeviceService {
                     replyOptions.push(DHCP_OPTION.create({
                         tag: DHCP_TAGS.SUBNET_MASK,
                         len: 4,
-                        data: this.config.ipv4SubnetMask.buffer
+                        data: Buffer.from(this.config.ipv4SubnetMask.buffer)
                     }).getBuffer())
                 }
             }
@@ -250,13 +250,13 @@ export default class DeviceServiceDHCPServer implements DeviceService {
 
 
                 // SubnetMask
-                DHCP_OPTION.create({ tag: DHCP_TAGS.SUBNET_MASK, len: 4, data: this.config.ipv4SubnetMask!.buffer }).getBuffer(),
+                DHCP_OPTION.create({ tag: DHCP_TAGS.SUBNET_MASK, len: 4, data: Buffer.from(this.config.ipv4SubnetMask!.buffer) }).getBuffer(),
 
                 // Server Identifier
                 DHCP_OPTION.create({
                     tag: DHCP_TAGS.SERVER_IDENTIFIER,
                     len: serverID.byteLength,
-                    data: serverID
+                    data: Buffer.from(serverID)
                 }).getBuffer(),
                 DHCP_END_OPTION
             ])
@@ -442,7 +442,7 @@ export function incrementAddress(address: IPV4Address, subnetMask: AddressMask<t
         bitMask[0] = (2 ** firstByteBitOffset) - 1 << 8 - firstByteBitOffset;
     }
 
-    let prevBuf = address.buffer.subarray(4 - size);
+    let prevBuf = Buffer.from(address.buffer.subarray(4 - size))
     let n = parseInt(prevBuf.toString("hex"), 16) + 1;
     let buf = bufferFromNumber(n, prevBuf.length)
 

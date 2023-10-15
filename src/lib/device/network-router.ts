@@ -44,7 +44,8 @@ export class NetworkRouter extends Device {
         }
 
         // ignore if from weird source or if destination is weird
-        if (ipHdr.get("saddr").buffer.readInt32BE() == 0) {
+        // if (ipHdr.get("saddr").buffer.readInt32BE() == 0) {
+        if (new DataView(ipHdr.get("saddr").buffer.buffer).getUint32(0, false) == 0) {
             return; // source is "0.0.0.0"
         } else if (daddr.toString() == "255.255.255.255") {
             return; // destination is broadcast
@@ -66,7 +67,8 @@ export class NetworkRouter extends Device {
 
         // check that target is not subnet specific broadcast
         let b = and(daddr.buffer, iface.ipv4SubnetMask!.buffer)
-        if (not(b).readUInt32BE() == 0) {
+        // if (not(b).readUInt32BE() == 0) {
+        if (new DataView(not(b).buffer).getUint32(0, false) == 0) {
             return; // address is ignored
         }
 

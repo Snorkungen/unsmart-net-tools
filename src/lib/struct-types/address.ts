@@ -11,7 +11,7 @@ export const defineAddress = <AT extends typeof BaseAddress>(Address: AT) => {
             return <InstanceType<AT>>(new Address(buffer))
         },
         setter(value) {
-            return value.buffer;
+            return Buffer.from(value.buffer);
         },
     }
 }
