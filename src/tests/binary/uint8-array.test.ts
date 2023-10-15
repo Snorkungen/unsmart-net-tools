@@ -1,6 +1,6 @@
 import { Buffer } from "buffer";
 import { describe, expect, test } from "vitest";
-import { uint8_concat, uint8_equals, uint8_set } from "../../lib/binary/uint8-array";
+import { uint8_concat, uint8_equals, uint8_fromNumber, uint8_set } from "../../lib/binary/uint8-array";
 
 describe("Uint8Array Helper functions", () => {
     test("uint8_equals", () => {
@@ -44,6 +44,24 @@ describe("Uint8Array Helper functions", () => {
 
         expect(uint8_equals(
             buffer,
+            expected
+        )).true;
+    })
+
+    test("uint8_fromNumber", () => {
+        let expected = new Uint8Array([0xff, 0xff])
+        let actual = uint8_fromNumber(0xffff, 2);
+
+        expect(uint8_equals(
+            actual,
+            expected
+        )).true;
+
+        expected = new Uint8Array([0, 0, 1]);
+        actual = uint8_fromNumber(1, 3);
+
+        expect(uint8_equals(
+            actual,
             expected
         )).true;
     })
