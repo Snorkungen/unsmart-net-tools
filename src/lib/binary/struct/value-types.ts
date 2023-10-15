@@ -1,6 +1,18 @@
 import { StructValueError } from "./struct";
 import { defineStructType } from "./define";
 import { Buffer } from "buffer";
+import { uint8_fromNumber } from "../uint8-array";
+
+/** Makes buffer to a `number` */
+function bufToNumber(buf: Uint8Array) {
+    let n = 0, i = buf.byteLength;
+    while (i > 0) {
+        // n += buf[--i] << (i * 8) // little endian
+        n += buf[--i] << ((buf.byteLength - 1 - i) * 8) // big endian
+    }
+
+    return n;
+}
 
 function defineUINT(bitLength: number) {
     return defineStructType<number>({
@@ -16,10 +28,12 @@ function defineUINT(bitLength: number) {
                 throw new StructValueError("value does not fit in bits", v)
             }
 
-            return Buffer.from(v.toString(16).padStart(Math.ceil(this.bitLength / 8) * 2, "0"), "hex");
+            return Buffer.from(
+                uint8_fromNumber(v, Math.ceil(this.bitLength / 8))
+            )
         },
         getter(buf, options) {
-            return parseInt(buf.toString("hex"), 16)
+            return bufToNumber(buf)
         }
     })
 };
@@ -39,7 +53,9 @@ function defineINT(bitLength: number) {
                 signedBitValue = 1;
             }
 
-            let valBuf = Buffer.from(v.toString(16).padStart(Math.ceil(this.bitLength / 8) * 2, "0"), "hex");
+            let valBuf = Buffer.from(
+                uint8_fromNumber(v, Math.ceil(this.bitLength / 8))
+            );
 
             if (v >= 2 ** (this.bitLength - 1)) {
                 throw new StructValueError("value does not fit in bits", v)
@@ -58,7 +74,7 @@ function defineINT(bitLength: number) {
                 mod = -1;
             }
 
-            return parseInt(buf.toString("hex"), 16) * mod;
+            return bufToNumber(buf) * mod;
         }
     })
 };

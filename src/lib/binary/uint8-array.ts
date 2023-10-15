@@ -48,3 +48,30 @@ export function uint8_concat(list: readonly Uint8Array[]): Uint8Array {
 
     return buffer;
 }
+
+/** Source <https://stackoverflow.com/a/65227338> */
+export function uint8_fromNumber(n: number, len: number = 1): Uint8Array {
+    let buf = new Uint8Array(len);
+    if (!n) return buf
+
+    const a = []
+    a.unshift(n & 255)
+    while (n >= 256) {
+        n = n >>> 8
+        a.unshift(n & 255)
+    }
+
+    let aBuf = new Uint8Array(a);
+
+    let diff = buf.length - aBuf.length;
+
+    if (diff < 0) {
+        if (typeof len == "number") {
+            console.warn(n + ": does not fit in specified size")
+            return buf;
+        } else return aBuf;
+    }
+
+    buf.set(aBuf, diff)
+    return buf;
+}
