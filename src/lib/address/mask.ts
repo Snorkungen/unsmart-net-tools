@@ -7,7 +7,7 @@ import { BaseAddress } from "./base";
 */
 
 export function createMaskBuffer<Address extends typeof BaseAddress>(addressLength: Address["ADDRESS_LENGTH"], maskLength: number): Uint8Array {
-    let buffer = new Uint8Array(Math.max(addressLength / 8));
+    let buffer = new Uint8Array(Math.ceil(addressLength / 8));
 
     if (maskLength < 0 || maskLength > addressLength) {
         // maybe throw error
