@@ -1,7 +1,6 @@
 // SOURCE <https://github.com/encendre/bitwise-buffer/blob/master/src/leftShift.js>
-import { Buffer } from "buffer";
 
-export function mutateLeftShift(a: Buffer, n: number, fillWith = 0) {
+export function mutateLeftShift(a: Uint8Array, n: number, fillWith = 0) {
     const padding = fillWith ? 0xff : 0x00
     const mod = n & 7 // n % 8
     const div = n >> 3 // Math.floor(n / 8)
@@ -24,12 +23,12 @@ export function mutateLeftShift(a: Buffer, n: number, fillWith = 0) {
     return a
 }
 
-export function leftShift(a: Buffer, n: number, fillWith = 0) {
+export function leftShift(a: Uint8Array, n: number, fillWith = 0) {
     const padding = fillWith ? 0xff : 0x00
     const mod = n & 7 // n % 8
     const div = n >> 3 // Math.floor(n / 8)
 
-    const dest = Buffer.allocUnsafe(a.length)
+    const dest = new Uint8Array(a.byteLength)
 
     let i = 0
 

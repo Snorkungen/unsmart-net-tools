@@ -1,7 +1,6 @@
 // SOURCE <https://github.com/encendre/bitwise-buffer/blob/master/src/nor.js>
-import { Buffer } from "buffer";
 
-export function mutateNor(a: Buffer, b: Buffer) {
+export function mutateNor(a: Uint8Array, b: Uint8Array) {
     let i = Math.max(a.length, b.length)
 
     while (i--) {
@@ -11,10 +10,10 @@ export function mutateNor(a: Buffer, b: Buffer) {
     return a
 }
 
-export function nor(a: Buffer, b: Buffer) {
+export function nor(a: Uint8Array, b: Uint8Array) {
     let i = Math.max(a.length, b.length)
 
-    const dest = Buffer.allocUnsafe(i)
+    const dest = new Uint8Array(i);
 
     while (i--) {
         dest[i] = ~(a[i] | b[i])

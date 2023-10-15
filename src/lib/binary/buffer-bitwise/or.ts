@@ -1,7 +1,7 @@
 // SOURCE <https://github.com/encendre/bitwise-buffer/blob/master/src/or.js>
 import { Buffer } from "buffer";
 
-export function mutateOr(a: Buffer, b: Buffer) {
+export function mutateOr(a: Uint8Array, b: Uint8Array) {
     let i = Math.max(a.length, b.length)
 
     while (i--) {
@@ -11,10 +11,10 @@ export function mutateOr(a: Buffer, b: Buffer) {
     return a
 }
 
-export function or(a: Buffer, b: Buffer) {
+export function or(a: Uint8Array, b: Uint8Array) {
     let i = Math.max(a.length, b.length)
 
-    const dest = Buffer.allocUnsafe(i)
+    const dest = new Uint8Array(i);
 
     while (i--) {
         dest[i] = a[i] | b[i]

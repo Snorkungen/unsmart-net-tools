@@ -1,7 +1,6 @@
 // SOURCE <https://github.com/encendre/bitwise-buffer/blob/master/src/not.js>
-import { Buffer } from "buffer";
 
-export function mutateNot(dest: Buffer) {
+export function mutateNot(dest: Uint8Array) {
     let i = dest.length
 
     while (i--) {
@@ -11,9 +10,9 @@ export function mutateNot(dest: Buffer) {
     return dest
 }
 
-export function not(buff: Buffer) {
+export function not(buff: Uint8Array) {
     let i = buff.length
-    const dest = Buffer.allocUnsafe(i)
+    const dest = new Uint8Array(i);
 
     while (i--) {
         dest[i] = ~buff[i]
