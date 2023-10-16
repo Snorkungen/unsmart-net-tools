@@ -1,5 +1,5 @@
 import { mutateAnd, mutateLeftShift, mutateNot, mutateOr, mutateRightShift } from "../buffer-bitwise";
-import { Buffer } from "buffer";
+import { _bufToNumber } from "./shared";
 
 export class StructValueError extends Error {
     constructor(message: string, public value: unknown) {
@@ -37,7 +37,7 @@ export class Struct<Types extends Record<string, StructType<any>>>{
     order: Array<keyof Types>
 
     private options: StructOptions;
-    private buffer: Buffer;
+    private buffer: Uint8Array;
     private types: Types;
     private offsetCache: Partial<Record<keyof Types, number>>;
 
@@ -52,7 +52,7 @@ export class Struct<Types extends Record<string, StructType<any>>>{
             throw validateError;
         }
 
-        this.buffer = Buffer.alloc(this.getMinSize());
+        this.buffer = new Uint8Array(this.getMinSize());
 
         if (this.options.setDefaultValues) {
             this.setDefaultValues();
@@ -141,8 +141,8 @@ export class Struct<Types extends Record<string, StructType<any>>>{
         size: number,
         firstByteBitOffset: number,
         lastByteBitOffset: number
-    ): Buffer {
-        let mask = Buffer.alloc(size);
+    ): Uint8Array {
+        let mask = new Uint8Array(size);
 
         // calculate first byte bit offset
         if (firstByteBitOffset > 0) {
@@ -158,7 +158,7 @@ export class Struct<Types extends Record<string, StructType<any>>>{
 
     get<Key extends keyof Types>(key: Key): ReturnType<Types[Key]["getter"]> {
         let bitOffset = this.getTypeBitOffset(key), bitLength = this.types[key].bitLength;
-        let buf: Buffer;
+        let buf: Uint8Array;
 
         let startIndex = Math.floor(bitOffset / 8);
         let endIndex = Math.ceil((bitOffset + bitLength) / 8);
@@ -168,7 +168,7 @@ export class Struct<Types extends Record<string, StructType<any>>>{
         } else {
             buf = this.buffer.subarray(startIndex, endIndex);
         }
-        buf = Buffer.from(buf)
+        buf = new Uint8Array(buf)
 
         if (!this.options.bigEndian) {
             // reverse the byte order
@@ -189,25 +189,28 @@ export class Struct<Types extends Record<string, StructType<any>>>{
         return this.types[key].getter(buf, this.options);
     }
 
-    set<Key extends keyof Types>(key: Key, value: ReturnType<Types[Key]["getter"]> | Buffer) {
+    set<Key extends keyof Types>(key: Key, value: ReturnType<Types[Key]["getter"]> | Uint8Array) {
         let bitOffset = this.getTypeBitOffset(key), bitLength = this.types[key].bitLength;
-        let buf: Buffer;
+        let buf: Uint8Array;
 
-        if (value instanceof Buffer) {
+        if (value instanceof Uint8Array) {
             buf = value;
         } else {
-            buf = Buffer.from(
+            buf = new Uint8Array(
                 this.types[key].setter(value, this.options)
             );
 
         }
 
-        if (bitLength > 0 && (buf.length > Math.ceil(bitLength / 8) || parseInt(buf.toString("hex"), 16) >= 2 ** bitLength)) {
+        // This check might fail this should be the users responsibility
+        // because the checking of `_bufToNumber` might be dependent on the endianess
+        if (bitLength > 0 && (buf.length > Math.ceil(bitLength / 8)
+            || _bufToNumber(buf) >= 2 ** bitLength)) {
             console.log(key, bitLength)
             throw new StructValueError("value does not fit in bits", value)
         }
 
-        if (!this.options.bigEndian && !(value instanceof Buffer)) {
+        if (!this.options.bigEndian && !(value instanceof Uint8Array)) {
             // reverse the byte order
             buf = buf.reverse()
         }
@@ -227,8 +230,15 @@ export class Struct<Types extends Record<string, StructType<any>>>{
         }
 
         if (bitLength < 0) {
-            let newBuf = Buffer.alloc(this.getMinSize() + buf.length);
-            this.buffer.copy(newBuf);
+            let newBuf = new Uint8Array(this.getMinSize() + buf.length);
+
+            // this.buffer.copy(newBuf);
+            // replacement without utility functions
+
+            let i = 0; while (i < this.buffer.byteLength && i < newBuf.byteLength) {
+                newBuf[i] = this.buffer[i]; i++
+            }
+
             this.buffer = newBuf;
         }
 
@@ -239,7 +249,7 @@ export class Struct<Types extends Record<string, StructType<any>>>{
 
     create<TypeValues extends { [x in keyof Types]: ReturnType<Types[x]["getter"]> }>(values: Partial<TypeValues>, options: Partial<StructOptions> = {}) {
         let struct = new Struct(this.types, { ...this.options, ...options });
-        struct.buffer = Buffer.from(this.buffer)
+        struct.buffer = new Uint8Array(this.buffer)
 
         if (values instanceof Uint8Array) {
             throw new Error("cannot create using Uint8Array. Please use Struct.from")
@@ -261,7 +271,7 @@ export class Struct<Types extends Record<string, StructType<any>>>{
             // here should maybe throw error if the bytes do not fill struct
             // throw new Error("too few bytes to satisfy struct. " + `${buf.length} < ${this.getMinSize()}`)
         }
-        struct.buffer = Buffer.from(buf);
+        struct.buffer = new Uint8Array(buf);
 
         return struct;
     }

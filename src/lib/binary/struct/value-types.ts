@@ -1,17 +1,9 @@
 import { StructValueError } from "./struct";
 import { defineStructType } from "./define";
 import { uint8_fromNumber } from "../uint8-array";
+import { _bufToNumber } from "./shared";
 
-/** Makes buffer to a `number` */
-function bufToNumber(buf: Uint8Array) {
-    let n = 0, i = buf.byteLength;
-    while (i > 0) {
-        // n += buf[--i] << (i * 8) // little endian
-        n += buf[--i] << ((buf.byteLength - 1 - i) * 8) // big endian
-    }
 
-    return n;
-}
 
 function defineUINT(bitLength: number) {
     return defineStructType<number>({
@@ -30,7 +22,7 @@ function defineUINT(bitLength: number) {
             return uint8_fromNumber(v, Math.ceil(this.bitLength / 8));
         },
         getter(buf, options) {
-            return bufToNumber(buf)
+            return _bufToNumber(buf)
         }
     })
 };
@@ -69,7 +61,7 @@ function defineINT(bitLength: number) {
                 mod = -1;
             }
 
-            return bufToNumber(buf) * mod;
+            return _bufToNumber(buf) * mod;
         }
     })
 };
