@@ -3,7 +3,6 @@ import { IPV4Address } from "../address/ipv4";
 import { IPV6Address } from "../address/ipv6";
 import { MACAddress } from "../address/mac";
 import { StructType } from "../binary/struct"
-import { Buffer } from "buffer";
 
 export const defineAddress = <AT extends typeof BaseAddress>(Address: AT) => {
     return <StructType<InstanceType<AT>>>{
@@ -12,7 +11,7 @@ export const defineAddress = <AT extends typeof BaseAddress>(Address: AT) => {
             return <InstanceType<AT>>(new Address(buffer))
         },
         setter(value) {
-            return Buffer.from(value.buffer);
+            return value.buffer;
         },
     }
 }
