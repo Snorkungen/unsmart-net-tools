@@ -15,7 +15,7 @@ function createMacAddress() {
     return new MACAddress(Buffer.concat([startBuf, buf]))
 }
 
-let frames = new Map<string, Buffer>();
+let frames = new Map<string, Uint8Array>();
 
 export class Device {
     name = Math.floor(Math.random() * 10_000).toString() + "A";

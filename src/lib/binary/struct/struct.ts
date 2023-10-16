@@ -266,7 +266,7 @@ export class Struct<Types extends Record<string, StructType<any>>>{
         return struct;
     }
 
-    getBuffer(): Buffer {
+    getBuffer(): Uint8Array {
         return this.buffer;
     }
 }

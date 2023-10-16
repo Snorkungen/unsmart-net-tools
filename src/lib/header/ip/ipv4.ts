@@ -34,7 +34,7 @@ export const IPV4_HEADER = defineStruct({
 IPV4_HEADER.set("version", 4);
 
 export function createIPV4Header<V extends Parameters<typeof IPV4_HEADER["create"]>[0] & {
-    payload: Buffer;
+    payload: Uint8Array;
     proto: Protocol;
     saddr: IPV4Address,
     daddr: IPV4Address

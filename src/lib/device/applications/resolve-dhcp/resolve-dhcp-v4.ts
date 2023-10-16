@@ -16,7 +16,7 @@ import { parseDHCPOptions } from "../../../header/dhcp/parse-options";
 import { createDHCPOptionsMap } from "../../../header/dhcp/utils";
 import { AddressMask, createMask } from "../../../address/mask";
 
-function createOptionBuffer(tag: DHCPTag, data: Buffer): Buffer {
+function createOptionBuffer(tag: DHCPTag, data: Uint8Array): Uint8Array {
     return DHCP_OPTION.create({
         tag: tag,
         len: data.length,

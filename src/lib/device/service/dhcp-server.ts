@@ -199,7 +199,7 @@ export default class DeviceServiceDHCPServer implements DeviceService {
             }
         )
 
-        let replyOptions: Buffer[] = []
+        let replyOptions: Uint8Array[] = []
 
         if (opts.get(DHCP_TAGS.PARAMETER_REQUEST_LIST)) {
             let paramReqList = DHCP_OPTION.from(opts.get(DHCP_TAGS.PARAMETER_REQUEST_LIST)!);
