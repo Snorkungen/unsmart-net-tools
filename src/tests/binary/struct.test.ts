@@ -1,6 +1,6 @@
 import { Buffer } from "buffer";
 import { describe, expect, test } from "vitest";
-import { INT16, INT64, INT8, SLICE, Struct, UINT16, UINT64, UINT8, defineStruct } from "../../lib/binary/struct/";
+import { INT16, INT32, INT8, SLICE, UINT16, UINT32, UINT8, defineStruct } from "../../lib/binary/struct/";
 
 describe("Buffer based struct", () => {
 
@@ -43,13 +43,13 @@ describe("Buffer based struct", () => {
     test("define Struct #1", () => {
         expect(() => defineStruct({
             slice: SLICE,
-            uint: UINT64
+            uint: UINT32
         })).toThrow()
     })
 
     test("define Struct #2", () => {
         expect(() => defineStruct({
-            uint: UINT64,
+            uint: UINT32,
             slice: SLICE(21)
         })).toThrow();
 
@@ -73,8 +73,8 @@ describe("Buffer based struct", () => {
 
     test("create Struct #1", () => {
         let createdStruct = defineStruct({
-            uint: UINT64,
-            int: INT64,
+            uint: UINT32,
+            int: INT32,
         }).create({
             uint: 100,
             int: -100
@@ -91,7 +91,7 @@ describe("Buffer based struct", () => {
         createdStruct.set("int", -10)
         expect(createdStruct.get("int")).toEqual(-10);
 
-        expect(createdStruct.getMinSize()).toEqual(128 / 8);
+        expect(createdStruct.getMinSize()).toEqual((32 * 2) / 8);
     });
 
     test("create Struct #2", () => {

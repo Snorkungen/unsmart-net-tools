@@ -77,12 +77,12 @@ function defineINT(bitLength: number) {
 export const UINT8 = defineUINT(8);
 export const UINT16 = defineUINT(16);
 export const UINT32 = defineUINT(32);
-export const UINT64 = defineUINT(64);
+// export const UINT64 = `StructType<BigInt>` !TODO implement BigInt
 
 export const INT8 = defineINT(8);
 export const INT16 = defineINT(16);
 export const INT32 = defineINT(32);
-export const INT64 = defineINT(64);
+// export const INT64 = `StructType<BigInt>` !TODO implement BigInt
 
 export const SLICE = defineStructType<Uint8Array>({
     defaultValue: new Uint8Array(0),
