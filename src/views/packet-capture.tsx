@@ -1,7 +1,6 @@
 import { Buffer } from "buffer";
 import { For, createSignal } from "solid-js";
 import { Struct, UINT32, } from "../lib/binary/struct";
-import { calculateChecksum } from "../lib/binary/checksum";
 import { BaseAddress } from "../lib/address/base";
 import { PCAP_GLOBAL_HEADER, PCAP_PACKET_HEADER } from "../lib/header/pcap";
 import { ETHERNET_HEADER, ETHER_TYPES } from "../lib/header/ethernet";
@@ -66,7 +65,7 @@ export default function PacketCaptureViewer() {
 
 
             if (ipHeader.get("proto") == PROTOCOLS.ICMP) {
-                let unwrapIPv4 = (ipHdrBuffer: Buffer) => {
+                let unwrapIPv4 = (ipHdrBuffer: Uint8Array) => {
                     let contentIPHdr = IPV4_HEADER.from(ipHdrBuffer);
                     if (contentIPHdr.get("proto") == PROTOCOLS.UDP) {
                         let udpHdr = UDP_HEADER.from(contentIPHdr.get("payload"))

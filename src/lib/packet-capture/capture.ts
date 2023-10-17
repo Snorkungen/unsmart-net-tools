@@ -1,4 +1,3 @@
-import { Buffer } from "buffer";
 import { PCAP_GLOBAL_HEADER, PCAP_MAGIC_NUMBER, PCAP_MAGIC_NUMBER_LITTLE } from "../header/pcap";
 import { PacketCaptureHFormat, PacketCaptureNFormat, PacketCaptureRecordReader, PacketCaptureRecordReaderOptions } from "./reader";
 import { PacketCaptureRecord } from "./record";
@@ -15,7 +14,7 @@ export class PacketCapture {
     private offset: number = 0;
 
     constructor(buf: Uint8Array) {
-        let buffer = Buffer.from(buf);
+        let buffer = new Uint8Array(buf);
         this.identifyHFormat(buffer);
 
         if (this.options.Hformat == PacketCaptureHFormat.unknown) {
@@ -34,8 +33,8 @@ export class PacketCapture {
     }
 
 
-    private identifyHFormat(buffer: Buffer) {
-        let magicNumber = buffer.readUint32BE(0);
+    private identifyHFormat(buffer: Uint8Array) {
+        let magicNumber = new DataView(buffer.buffer).getUint32(0);
 
         switch (magicNumber) {
             case PCAP_MAGIC_NUMBER:
@@ -69,7 +68,7 @@ export class PacketCapture {
         }
     }
 
-    private readRecords(buffer: Buffer, begin: number) {
+    private readRecords(buffer: Uint8Array, begin: number) {
         let offset = begin;
         let recordReader = new PacketCaptureRecordReader(this.options);
         while (offset < buffer.length) {

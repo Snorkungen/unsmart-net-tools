@@ -2,8 +2,8 @@
 
 ## Tasks
 
-- [ ] Logically separate the code & remove usage of `Buffer`
-  - [x] Seperate Address class from struct-type
+- [ ] Remove `Buffer` from client build
+  - [ ] Remove `buffer` polyfill
   - [x] remove dependence on `Buffer` from lib/address
     - [x] AddressBase `buffer` value from `Buffer` instance to something else
     > I'm not certain but i think that `buffer` value should be an instance of `Uint8Array`
@@ -15,4 +15,7 @@
     - [x] `Struct`: remove dependence on `Buffer`
   - [x] Remove uses of `Buffer` from lib/binary/*
   - [x] Remove uses of `Buffer` from lib/header/*
-  - [ ] Remove uses of `Buffer` from lib/packet-capture/*
+  - [x] Remove uses of `Buffer` from lib/packet-capture/*
+  - [ ] Remove `Buffer` from lib/device/*
+- [ ] Logically separate the code
+  - [x] Seperate Address class from struct-type
