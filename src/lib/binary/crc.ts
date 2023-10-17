@@ -1,5 +1,3 @@
-import { Buffer } from "buffer";
-
 /*  
     This file does not need to exist for the current project
     SOURCES:
@@ -54,13 +52,16 @@ let CRC_TABLE = new Uint32Array([
     0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d
 ]);
 
-export function crc32(buf: Buffer) {
+export function crc32(buf: Uint8Array) {
     let crc = 0 ^ -1;
     for (let i = 0; i < buf.length; i++) {
         crc = CRC_TABLE[(crc ^ buf[i]) & 0xff] ^ (crc >>> 8);
     }
 
-    let b = Buffer.alloc(4);
-    b.writeInt32BE((crc ^ -1));
+    let b = new Uint8Array(4);
+    // b.writeInt32BE((crc ^ -1));
+    new DataView(
+        b.buffer
+    ).setInt32(0, (crc ^ -1), false)
     return b;
 }

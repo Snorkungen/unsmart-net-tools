@@ -2,7 +2,7 @@ import { Component, createSignal, For, JSX } from "solid-js";
 import { calculateSubnetIPV4, classifyIPV4Address, IPV4_CLASSESS, IPV4Address, IPV4AddressClass, reservedAddresses } from "../lib/address/ipv4";
 import { AddressMask, createMask } from "../lib/address/mask";
 import { mutateAnd, mutateOr, not, or } from "../lib/binary/buffer-bitwise";
-import { bufferFromNumber } from "../lib/binary/buffer-from-number";
+import { uint8_fromNumber } from "../lib/binary/uint8-array";
 
 const privateUseAddresses = reservedAddresses.filter(([, , scope]) => scope == "PRIVATE_USE");
 const defaultSubnetParams: Parameters<typeof calculateSubnetIPV4> = [new IPV4Address("192.168.76.2"), createMask(IPV4Address, 26)]
@@ -144,7 +144,7 @@ export const CalculatorSubnetIPV4: Component = () => {
     const randomizeAddress = () => {
         setState(prev => {
             let buf = mutateAnd(
-                bufferFromNumber(Math.ceil(Math.random() * (2 ** (IPV4Address.ADDRESS_LENGTH - prev.mask.length) - 2)), 4).reverse(),
+                uint8_fromNumber(Math.ceil(Math.random() * (2 ** (IPV4Address.ADDRESS_LENGTH - prev.mask.length) - 2)), 4).reverse(),
                 not(prev.mask.buffer)
             )
 

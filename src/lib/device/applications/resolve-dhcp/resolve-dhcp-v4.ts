@@ -3,7 +3,6 @@ import { Device } from "../../device";
 import { Interface } from "../../interface";
 import { DHCP_HEADER, DCHP_OP, DHCP_MAGIC_COOKIE, DHCP_END_OPTION, DHCP_OPTION, DCHP_PORT_CLIENT, DCHP_PORT_SERVER } from "../../../header/dhcp/dhcp";
 import { DHCPTag, DHCP_MESSGAGE_TYPES, DHCP_TAGS } from "../../../header/dhcp/tags";
-import { bufferFromNumber } from "../../../binary/buffer-from-number";
 import { UDP_HEADER } from "../../../header/udp";
 import { IPV4Address } from "../../../address/ipv4";
 import { IPV4_HEADER, IPV4_PSEUDO_HEADER, PROTOCOLS, createIPV4Header } from "../../../header/ip";
@@ -15,6 +14,7 @@ import { Contact, ContactAddrFamily, ContactProto } from "../../contact/contact"
 import { parseDHCPOptions } from "../../../header/dhcp/parse-options";
 import { createDHCPOptionsMap } from "../../../header/dhcp/utils";
 import { AddressMask, createMask } from "../../../address/mask";
+import { uint8_concat, uint8_fromNumber } from "../../../binary/uint8-array";
 
 function createOptionBuffer(tag: DHCPTag, data: Uint8Array): Uint8Array {
     return DHCP_OPTION.create({
@@ -56,12 +56,12 @@ export function resolveDHCPv4(device: Device, iface: Interface) {
         xid: transactionID,
         chaddr: Buffer.concat([
             iface.macAddress.buffer,
-            Buffer.alloc(10) // padding
+            new Uint8Array(10) // padding
         ]), // total 16 bytes
         options: Buffer.concat([
             DHCP_MAGIC_COOKIE,
-            createOptionBuffer(DHCP_TAGS.DHCP_MESSAGE_TYPE, bufferFromNumber(DHCP_MESSGAGE_TYPES.DHCPDISCOVER, 1)), // DHCP MESSAGE TYPE
-            createOptionBuffer(DHCP_TAGS.CLIENT_IDENTIFIER, Buffer.concat([bufferFromNumber(0x01, 1), iface.macAddress.buffer])), // DHCP CLIENT IDENTIFIER
+            createOptionBuffer(DHCP_TAGS.DHCP_MESSAGE_TYPE, uint8_fromNumber(DHCP_MESSGAGE_TYPES.DHCPDISCOVER, 1)), // DHCP MESSAGE TYPE
+            createOptionBuffer(DHCP_TAGS.CLIENT_IDENTIFIER, uint8_concat([uint8_fromNumber(0x01, 1), iface.macAddress.buffer])), // DHCP CLIENT IDENTIFIER
             parameterRequestList,
             DHCP_END_OPTION
         ])
@@ -136,10 +136,10 @@ export function resolveDHCPv4(device: Device, iface: Interface) {
             // handle offer
             let replyDHCPHdrOptions: Uint8Array[] = [
                 DHCP_MAGIC_COOKIE,
-                createOptionBuffer(DHCP_TAGS.DHCP_MESSAGE_TYPE, bufferFromNumber(DHCP_MESSGAGE_TYPES.DHCPREQUEST, 1)), // DHCP MESSAGE TYPE
-                createOptionBuffer(DHCP_TAGS.CLIENT_IDENTIFIER, Buffer.concat([bufferFromNumber(0x01, 1), iface.macAddress.buffer])), // DHCP CLIENT IDENTIFIER
+                createOptionBuffer(DHCP_TAGS.DHCP_MESSAGE_TYPE, uint8_fromNumber(DHCP_MESSGAGE_TYPES.DHCPREQUEST, 1)), // DHCP MESSAGE TYPE
+                createOptionBuffer(DHCP_TAGS.CLIENT_IDENTIFIER, uint8_concat([uint8_fromNumber(0x01, 1), iface.macAddress.buffer])), // DHCP CLIENT IDENTIFIER
                 parameterRequestList,
-                createOptionBuffer(DHCP_TAGS.SERVER_IDENTIFIER, Buffer.from(opts.get(DHCP_TAGS.SERVER_IDENTIFIER)!))
+                createOptionBuffer(DHCP_TAGS.SERVER_IDENTIFIER, opts.get(DHCP_TAGS.SERVER_IDENTIFIER)!)
             ];
 
             // I haven't bothered to read the full spec so i'm just guessing as to what i am supposed to do

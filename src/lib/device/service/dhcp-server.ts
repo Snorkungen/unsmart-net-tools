@@ -14,10 +14,10 @@ import { DHCP_MESSGAGE_TYPES, DHCP_TAGS } from "../../header/dhcp/tags";
 import { AddressMask } from "../../address/mask";
 import { IPV4Address } from "../../address/ipv4";
 import { and, mutateAnd, mutateNot, mutateOr } from "../../binary";
-import { bufferFromNumber } from "../../binary/buffer-from-number";
 import { DHCP_END_OPTION } from "../../header/dhcp/dhcp";
 import { UNSET_IPV4_ADDRESS, UNSET_MAC_ADDRESS } from "../contact/contacts-handler";
 import { createDHCPOptionsMap } from "../../header/dhcp/utils";
+import { uint8_fromNumber } from "../../binary/uint8-array";
 
 enum DHCPServerState {
     BINDING,
@@ -242,11 +242,11 @@ export default class DeviceServiceDHCPServer implements DeviceService {
                 // arbitrary time assignments
 
                 // T1 Renewal Time
-                DHCP_OPTION.create({ tag: DHCP_TAGS.RENEWAL_TIME_VALUE, len: 4, data: bufferFromNumber(RENEWAL_TIME_IN_SECS, 4) }).getBuffer(),
+                DHCP_OPTION.create({ tag: DHCP_TAGS.RENEWAL_TIME_VALUE, len: 4, data: uint8_fromNumber(RENEWAL_TIME_IN_SECS, 4) }).getBuffer(),
                 // T2 Rebinding Time
-                DHCP_OPTION.create({ tag: DHCP_TAGS.REBINDING_TIME_VALUE, len: 4, data: bufferFromNumber(REBINDING_TIME_IN_SECS, 4) }).getBuffer(),
+                DHCP_OPTION.create({ tag: DHCP_TAGS.REBINDING_TIME_VALUE, len: 4, data: uint8_fromNumber(REBINDING_TIME_IN_SECS, 4) }).getBuffer(),
                 // IP Address Lease Time
-                DHCP_OPTION.create({ tag: DHCP_TAGS.IP_ADDRESS_LEASE_TIME, len: 4, data: bufferFromNumber(IPLEASE_TIME_IN_SECS, 4) }).getBuffer(),
+                DHCP_OPTION.create({ tag: DHCP_TAGS.IP_ADDRESS_LEASE_TIME, len: 4, data: uint8_fromNumber(IPLEASE_TIME_IN_SECS, 4) }).getBuffer(),
 
 
                 // SubnetMask
@@ -444,7 +444,7 @@ export function incrementAddress(address: IPV4Address, subnetMask: AddressMask<t
 
     let prevBuf = Buffer.from(address.buffer.subarray(4 - size))
     let n = parseInt(prevBuf.toString("hex"), 16) + 1;
-    let buf = bufferFromNumber(n, prevBuf.length)
+    let buf = uint8_fromNumber(n, prevBuf.length)
 
     let leftBitMask = and(bitMask, prevBuf);
     mutateNot(bitMask);
