@@ -14,4 +14,5 @@
     - [x] All references of `Struct.getBuffer()` should treat value as `Uint8Array`.
     - [x] `Struct`: remove dependence on `Buffer`
   - [x] Remove uses of buffer from lib/binary/*
-  - [ ] Remove uses of buffer from lib/header/*
+  - [x] Remove uses of buffer from lib/header/*
+  - [ ] Remove uses of buffer from lib/packet-capture/*

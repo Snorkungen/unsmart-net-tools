@@ -2,7 +2,6 @@
  * # DCHP <https://www.rfc-editor.org/rfc/rfc2131>
  */
 
-import { Buffer } from "buffer";
 import { BYTE_ARRAY, SLICE, Struct, StructType, UINT16, UINT32, UINT8 } from "../../binary"
 import { DHCP_TAGS } from "./tags";
 import { IPV4_ADDRESS, MAC_ADDRESS } from "../../struct-types/address";
@@ -102,8 +101,8 @@ export const DHCP_OPTION = new Struct({
     data: SLICE
 })
 
-export const DHCP_END_OPTION = Buffer.from([0xff]),
-    DHCP_PAD_OPTION = Buffer.from([0x00])
+export const DHCP_END_OPTION = new Uint8Array([0xff]),
+    DHCP_PAD_OPTION = new Uint8Array([0x00])
 
 export const DCHP_OP = {
     BOOTREQUEST: 1,
