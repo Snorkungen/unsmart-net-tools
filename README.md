@@ -16,6 +16,6 @@
   - [x] Remove uses of `Buffer` from lib/binary/*
   - [x] Remove uses of `Buffer` from lib/header/*
   - [x] Remove uses of `Buffer` from lib/packet-capture/*
-  - [ ] Remove `Buffer` from lib/device/*
+  - [x] Remove references to `Buffer` from lib/device/*
 - [ ] Logically separate the code
   - [x] Seperate Address class from struct-type

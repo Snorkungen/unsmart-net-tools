@@ -1,4 +1,3 @@
-import { Buffer } from "buffer";
 import { IPV4Address } from "../../address/ipv4";
 import { IPV6Address } from "../../address/ipv6";
 import { calculateChecksum } from "../../binary/checksum";
@@ -7,6 +6,7 @@ import { ICMPV6_TYPES, ICMP_ECHO_HEADER, ICMP_HEADER, ICMPV4_TYPES } from "../..
 import { IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS, createIPV4Header } from "../../header/ip";
 import { Host } from "../host";
 import { resolveSendingInformationVersion4, resolveSendingInformationVersion6 } from "../host/resolve-sending-information";
+import { uint8_concat } from "../../binary/uint8-array";
 
 
 /*
@@ -74,7 +74,7 @@ export async function pingVersion6(host: Host, destination: IPV6Address, identif
         nextHeader: PROTOCOLS.IPV6_ICMP,
     })
 
-    icmpHdr.set("csum", calculateChecksum(Buffer.concat([pseudoHdr.getBuffer(), icmpHdr.getBuffer()])));
+    icmpHdr.set("csum", calculateChecksum(uint8_concat([pseudoHdr.getBuffer(), icmpHdr.getBuffer()])));
 
     let ipHdr = IPV6_HEADER.create({
         saddr: entry.iface.ipv6Address!,

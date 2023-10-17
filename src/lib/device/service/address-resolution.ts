@@ -1,4 +1,3 @@
-import { Buffer } from "buffer";
 import { calculateChecksum } from "../../binary/checksum";
 import { ARP_HEADER, ARP_OPCODES } from "../../header/arp";
 import { ETHERNET_HEADER, ETHER_TYPES } from "../../header/ethernet";
@@ -7,6 +6,7 @@ import { IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
 import { Contact, ContactAddrFamily, ContactProto } from "../contact/contact";
 import { Device } from "../device";
 import DeviceService from "./service";
+import { uint8_concat } from "../../binary/uint8-array";
 
 export class DeviceServiceAddressResolution implements DeviceService {
     device: Device;
@@ -106,7 +106,7 @@ export class DeviceServiceAddressResolution implements DeviceService {
                 nextHeader: PROTOCOLS.IPV6_ICMP,
             })
 
-            replyIcmpHdr.set("csum", calculateChecksum(Buffer.concat([
+            replyIcmpHdr.set("csum", calculateChecksum(uint8_concat([
                 pseudoHdr.getBuffer(),
                 replyIcmpHdr.getBuffer()
             ])));

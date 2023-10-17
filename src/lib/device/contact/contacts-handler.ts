@@ -1,4 +1,3 @@
-import { Buffer } from "buffer";
 import { IPV4Address } from "../../address/ipv4";
 import { IPV6Address } from "../../address/ipv6";
 import { MACAddress } from "../../address/mac";
@@ -9,9 +8,9 @@ import { Contact, ContactAddrFamily, ContactProto } from "./contact";
 import { calculateChecksum } from "../../binary/checksum";
 import { Interface } from "../interface";
 
-export const UNSET_MAC_ADDRESS = new MACAddress(Buffer.alloc(MACAddress.ADDRESS_LENGTH / 8, 0));
-export const UNSET_IPV4_ADDRESS = new IPV4Address(Buffer.alloc(IPV4Address.ADDRESS_LENGTH / 8, 0));
-export const UNSET_IPV6_ADDRESS = new IPV6Address(Buffer.alloc(IPV6Address.ADDRESS_LENGTH / 8, 0));
+export const UNSET_MAC_ADDRESS = new MACAddress(new Uint8Array(MACAddress.ADDRESS_LENGTH / 8));
+export const UNSET_IPV4_ADDRESS = new IPV4Address(new Uint8Array(IPV4Address.ADDRESS_LENGTH / 8));
+export const UNSET_IPV6_ADDRESS = new IPV6Address(new Uint8Array(IPV6Address.ADDRESS_LENGTH / 8));
 
 export class ContactsHandler {
     contacts: Array<Contact<ContactAddrFamily, ContactProto>> = []

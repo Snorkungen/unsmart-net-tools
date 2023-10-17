@@ -1,4 +1,3 @@
-import { Buffer } from "buffer";
 import { BaseAddress } from "../address/base";
 import { IPV4Address } from "../address/ipv4";
 import { ALL_LINK_LOCAL_NODES_ADDRESSV6, IPV6Address } from "../address/ipv6";
@@ -12,6 +11,7 @@ import { Interface } from "./interface";
 import { Contact, ContactAddrFamily, ContactProto } from "./contact/contact";
 import { Device } from "./device";
 import { DeviceServiceAddressResolution } from "./service/address-resolution";
+import { uint8_concat, uint8_fill } from "../binary/uint8-array";
 
 export type NeighborEntry<AddressT extends BaseAddress = BaseAddress> = {
     neighbor: AddressT;
@@ -43,7 +43,7 @@ export default class NeighborTable {
 
         // IDK if abstracting t'ings is worthwhile
         this.device.addService(
-            new DeviceServiceAddressResolution(this.device,this.contact)
+            new DeviceServiceAddressResolution(this.device, this.contact)
         )
     }
     private getVersion4(query: IPV4Address): NeighborEntry<IPV4Address> | null {
@@ -101,7 +101,7 @@ export default class NeighborTable {
             for (let iface of this.device.interfaces) {
                 let f = createNDPRequest(query, iface)
                 if (!f) continue;
-                
+
                 this.contact.send(f.getBuffer())
             }
 
@@ -142,7 +142,9 @@ export default class NeighborTable {
     }
 }
 
-export const BROADCAST_MAC_ADDRESS = new MACAddress(Buffer.alloc(MACAddress.ADDRESS_LENGTH / 8, 0xff))
+export const BROADCAST_MAC_ADDRESS = new MACAddress(uint8_fill(
+    new Uint8Array(MACAddress.ADDRESS_LENGTH / 8), 0xff
+));
 
 function createARPRequest(query: IPV4Address, iface: Interface): typeof ETHERNET_HEADER | null {
     if (!iface.isConnected || !iface.ipv4Address) {
@@ -185,7 +187,7 @@ function createNDPRequest(query: IPV6Address, iface: Interface): typeof ETHERNET
         nextHeader: PROTOCOLS.IPV6_ICMP,
     })
 
-    icmpHdr.set("csum", calculateChecksum(Buffer.concat([
+    icmpHdr.set("csum", calculateChecksum(uint8_concat([
         pseudoHdr.getBuffer(),
         icmpHdr.getBuffer()
     ])));

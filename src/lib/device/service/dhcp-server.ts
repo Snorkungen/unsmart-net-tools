@@ -1,4 +1,3 @@
-import { Buffer } from "buffer";
 import { Device } from "../device";
 import DeviceService from "./service";
 import { Contact, ContactAddrFamily, ContactProto } from "../contact/contact";
@@ -17,7 +16,7 @@ import { and, mutateAnd, mutateNot, mutateOr } from "../../binary";
 import { DHCP_END_OPTION } from "../../header/dhcp/dhcp";
 import { UNSET_IPV4_ADDRESS, UNSET_MAC_ADDRESS } from "../contact/contacts-handler";
 import { createDHCPOptionsMap } from "../../header/dhcp/utils";
-import { uint8_fromNumber } from "../../binary/uint8-array";
+import { uint8_concat, uint8_equals, uint8_fromNumber } from "../../binary/uint8-array";
 
 enum DHCPServerState {
     BINDING,
@@ -34,8 +33,10 @@ type DHCPServerConfiurationParameters = {
 }
 
 type DHCPServerSerializedCLID = string;
-function serializeClientID(inp: Buffer): DHCPServerSerializedCLID {
-    return inp.toString("base64");
+function serializeClientID(buffer: Uint8Array): string {
+    return buffer.reduce((res, v) => (
+        res + v.toString(16)
+    ), "")
 }
 
 type DHCPServerConfig = {
@@ -165,9 +166,9 @@ export default class DeviceServiceDHCPServer implements DeviceService {
         if (!this.config.iface?.ipv4SubnetMask) return;
 
         let clientIdentifier: DHCPServerSerializedCLID = serializeClientID(
-            Buffer.from(opts.get(DHCP_TAGS.CLIENT_IDENTIFIER)
-                || dhcpHdr.get("chaddr"))
-        );
+            opts.get(DHCP_TAGS.CLIENT_IDENTIFIER)
+            || dhcpHdr.get("chaddr")
+        )
 
         let address: IPV4Address | null;
 
@@ -211,7 +212,7 @@ export default class DeviceServiceDHCPServer implements DeviceService {
                     replyOptions.push(DHCP_OPTION.create({
                         tag: DHCP_TAGS.SUBNET_MASK,
                         len: 4,
-                        data: Buffer.from(this.config.ipv4SubnetMask.buffer)
+                        data: new Uint8Array(this.config.ipv4SubnetMask.buffer)
                     }).getBuffer())
                 }
             }
@@ -228,16 +229,16 @@ export default class DeviceServiceDHCPServer implements DeviceService {
             //...
             chaddr: dhcpHdr.get("chaddr"),
             //...
-            options: Buffer.concat([
+            options: uint8_concat([
                 DHCP_MAGIC_COOKIE,
                 // Message Type
                 DHCP_OPTION.create({
                     tag: DHCP_TAGS.DHCP_MESSAGE_TYPE,
                     len: 0x01,
-                    data: Buffer.from([DHCP_MESSGAGE_TYPES.DHCPOFFER])
+                    data: new Uint8Array([DHCP_MESSGAGE_TYPES.DHCPOFFER])
                 }).getBuffer(),
 
-                Buffer.concat(replyOptions),
+                uint8_concat(replyOptions),
 
                 // arbitrary time assignments
 
@@ -250,13 +251,13 @@ export default class DeviceServiceDHCPServer implements DeviceService {
 
 
                 // SubnetMask
-                DHCP_OPTION.create({ tag: DHCP_TAGS.SUBNET_MASK, len: 4, data: Buffer.from(this.config.ipv4SubnetMask!.buffer) }).getBuffer(),
+                DHCP_OPTION.create({ tag: DHCP_TAGS.SUBNET_MASK, len: 4, data: new Uint8Array(this.config.ipv4SubnetMask!.buffer) }).getBuffer(),
 
                 // Server Identifier
                 DHCP_OPTION.create({
                     tag: DHCP_TAGS.SERVER_IDENTIFIER,
                     len: serverID.byteLength,
-                    data: Buffer.from(serverID)
+                    data: new Uint8Array(serverID)
                 }).getBuffer(),
                 DHCP_END_OPTION
             ])
@@ -299,10 +300,9 @@ export default class DeviceServiceDHCPServer implements DeviceService {
         if (!this.config.iface?.ipv4SubnetMask) return;
 
         let clientIdentifier: DHCPServerSerializedCLID = serializeClientID(
-            Buffer.from(opts.get(DHCP_TAGS.CLIENT_IDENTIFIER)
-                || dhcpHdr.get("chaddr"))
-        );
-
+            opts.get(DHCP_TAGS.CLIENT_IDENTIFIER)
+            || dhcpHdr.get("chaddr")
+        )
         let params = this.repo.get(clientIdentifier);
 
         if (!params) {
@@ -311,7 +311,7 @@ export default class DeviceServiceDHCPServer implements DeviceService {
         };
 
         let reqServerID = opts.get(DHCP_TAGS.SERVER_IDENTIFIER);
-        if (!reqServerID || (!params.serverID || !uint8Compare(reqServerID, params.serverID))) {
+        if (!reqServerID || (!params.serverID || !uint8_equals(reqServerID, params.serverID))) {
             return
         }
 
@@ -319,12 +319,12 @@ export default class DeviceServiceDHCPServer implements DeviceService {
         let success = true;
 
         let subnetMaskBuf = opts.get(DHCP_TAGS.SUBNET_MASK);
-        if (!subnetMaskBuf || !uint8Compare(subnetMaskBuf, params.ipv4SubnetMask!.buffer /* #TRUSTMEBRO */)) {
+        if (!subnetMaskBuf || !uint8_equals(subnetMaskBuf, params.ipv4SubnetMask!.buffer /* #TRUSTMEBRO */)) {
             success = false;
         }
 
         let reqIPBuf = opts.get(DHCP_TAGS.REQUESTED_IP_ADDRESS);
-        if (!reqIPBuf || !uint8Compare(reqIPBuf, params.ipv4Address!.buffer /* #TRUSTMEBRO */)) {
+        if (!reqIPBuf || !uint8_equals(reqIPBuf, params.ipv4Address!.buffer /* #TRUSTMEBRO */)) {
             success = false;
         }
 
@@ -340,19 +340,19 @@ export default class DeviceServiceDHCPServer implements DeviceService {
                 hlen: dhcpHdr.get("hlen"),
                 xid: dhcpHdr.get("xid"),
                 chaddr: dhcpHdr.get("chaddr"),
-                options: Buffer.concat([
+                options: uint8_concat([
                     DHCP_MAGIC_COOKIE,
                     // DHCP Message Type
                     DHCP_OPTION.create({
                         tag: DHCP_TAGS.DHCP_MESSAGE_TYPE,
                         len: 0x01,
-                        data: Buffer.from([DHCP_MESSGAGE_TYPES.DHCPNAK])
+                        data: new Uint8Array([DHCP_MESSGAGE_TYPES.DHCPNAK])
                     }).getBuffer(),
                     // Server Identifier
                     DHCP_OPTION.create({
                         tag: DHCP_TAGS.SERVER_IDENTIFIER,
                         len: params.serverID.byteLength,
-                        data: Buffer.from(params.serverID)
+                        data: new Uint8Array(params.serverID)
                     }).getBuffer(),
                     DHCP_END_OPTION
                 ])
@@ -369,19 +369,19 @@ export default class DeviceServiceDHCPServer implements DeviceService {
             hlen: dhcpHdr.get("hlen"),
             xid: dhcpHdr.get("xid"),
             chaddr: dhcpHdr.get("chaddr"),
-            options: Buffer.concat([
+            options: uint8_concat([
                 DHCP_MAGIC_COOKIE,
                 // DHCP Message Type
                 DHCP_OPTION.create({
                     tag: DHCP_TAGS.DHCP_MESSAGE_TYPE,
                     len: 0x01,
-                    data: Buffer.from([DHCP_MESSGAGE_TYPES.DHCPACK])
+                    data: new Uint8Array([DHCP_MESSGAGE_TYPES.DHCPACK])
                 }).getBuffer(),
                 // Server Identifier
                 DHCP_OPTION.create({
                     tag: DHCP_TAGS.SERVER_IDENTIFIER,
                     len: params.serverID.byteLength,
-                    data: Buffer.from(params.serverID)
+                    data: new Uint8Array(params.serverID)
                 }).getBuffer(),
 
                 (clid ? DHCP_OPTION.create({ tag: DHCP_TAGS.CLIENT_IDENTIFIER, len: clid.length, data: clid }).getBuffer() : new Uint8Array(0)),
@@ -435,16 +435,20 @@ function validateUDPV4Checksum(ipHdr: typeof IPV4_HEADER, udpHdr: typeof UDP_HEA
 export function incrementAddress(address: IPV4Address, subnetMask: AddressMask<typeof IPV4Address>) {
     let diff = IPV4Address.ADDRESS_LENGTH - subnetMask.length;
     let size = Math.ceil(diff / 8)
-    let bitMask = Buffer.alloc(size);
+    let bitMask = new Uint8Array(size);
 
     let firstByteBitOffset = diff % 8;
     if (firstByteBitOffset > 0) {
         bitMask[0] = (2 ** firstByteBitOffset) - 1 << 8 - firstByteBitOffset;
     }
 
-    let prevBuf = Buffer.from(address.buffer.subarray(4 - size))
-    let n = parseInt(prevBuf.toString("hex"), 16) + 1;
-    let buf = uint8_fromNumber(n, prevBuf.length)
+    let prevBuf = new Uint8Array(address.buffer.subarray(4 - size))
+    
+    // Next two lines takes dynamic sized buffer len <= 4 and sums into a number    
+    let n = 0, i = prevBuf.byteLength, j = i - 1;
+    while (i > 0) n += prevBuf[--i] << ((j - i) * 8) // big endian
+    
+    let buf = uint8_fromNumber(n + 1, prevBuf.length)
 
     let leftBitMask = and(bitMask, prevBuf);
     mutateNot(bitMask);
@@ -452,16 +456,6 @@ export function incrementAddress(address: IPV4Address, subnetMask: AddressMask<t
     mutateOr(buf, leftBitMask)
 
     address.buffer.set(buf, 4 - buf.length)
-}
-
-function uint8Compare(a: Uint8Array, b: Uint8Array): boolean {
-    if (a.byteLength != b.byteLength) return false;
-
-    for (let i = 0; i < a.byteLength; i++) {
-        if (a[i] != b[i]) return false;
-    }
-
-    return true;
 }
 
 const BROADCAST_IPV4_ADDRESS = new IPV4Address("255.255.255.255");

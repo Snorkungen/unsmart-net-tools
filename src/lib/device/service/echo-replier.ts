@@ -1,10 +1,10 @@
-import { Buffer } from "buffer";
 import { ICMPV4_TYPES, ICMPV6_TYPES, ICMP_HEADER } from "../../header/icmp";
 import { IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS, createIPV4Header } from "../../header/ip";
 import { ContactAddrFamily, ContactProto } from "../contact/contact";
 import { Device } from "../device";
 import DeviceService from "./service";
 import { calculateChecksum } from "../../binary/checksum";
+import { uint8_concat } from "../../binary/uint8-array";
 
 export class DeviceServiceEchoReplier implements DeviceService {
     device: Device;
@@ -21,7 +21,7 @@ export class DeviceServiceEchoReplier implements DeviceService {
 
             let replyIcmpHdr = ICMP_HEADER.create({
                 type: ICMPV4_TYPES.ECHO_REPLY,
-                data: Buffer.concat([icmpHdr.get("data"), ipHdr.getBuffer().subarray(0, 28)])
+                data: uint8_concat([icmpHdr.get("data"), ipHdr.getBuffer().subarray(0, 28)])
             });
 
             // I have no clue if this is the right way to calculate the checksum
@@ -46,7 +46,7 @@ export class DeviceServiceEchoReplier implements DeviceService {
 
             let replyIcmpHdr = ICMP_HEADER.create({
                 type: ICMPV6_TYPES.ECHO_REPLY,
-                data: Buffer.concat([icmpHdr.get("data"), ipHdr.getBuffer()])
+                data: uint8_concat([icmpHdr.get("data"), ipHdr.getBuffer()])
             })
 
             // The actual spec <https://www.rfc-editor.org/rfc/rfc4443#section-2.3>
@@ -57,7 +57,7 @@ export class DeviceServiceEchoReplier implements DeviceService {
                 nextHeader: PROTOCOLS.IPV6_ICMP,
             })
 
-            replyIcmpHdr.set("csum", calculateChecksum(Buffer.concat([
+            replyIcmpHdr.set("csum", calculateChecksum(uint8_concat([
                 pseudoHdr.getBuffer(),
                 replyIcmpHdr.getBuffer()
             ])));

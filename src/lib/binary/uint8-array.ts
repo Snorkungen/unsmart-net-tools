@@ -75,3 +75,12 @@ export function uint8_fromNumber(n: number, len: number = 1): Uint8Array {
     buf.set(aBuf, diff)
     return buf;
 }
+
+export function uint8_fill(target: Uint8Array, value: number): Uint8Array {
+    value = value & 0xff;
+
+    let i = target.byteLength;
+    while (i-- > 0) { target[i] = value }
+
+    return target;
+}

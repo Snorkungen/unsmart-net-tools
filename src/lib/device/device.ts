@@ -1,18 +1,17 @@
 import { MACAddress } from "../address/mac";
-import { UINT16 } from "../binary/struct";
 import { ETHERNET_HEADER } from "../header/ethernet";
 import { PCAP_GLOBAL_HEADER, PCAP_MAGIC_NUMBER, PCAP_RECORD_HEADER } from "../header/pcap";
 import { ContactsHandler } from "./contact/contacts-handler";
 import { Interface } from "./interface";
-import { Buffer } from "buffer";
 import DeviceService from "./service/service";
 import NeighborTable from "./neighbor-table";
+import { uint8_concat, uint8_fromNumber } from "../binary/uint8-array";
 
 let macAddressCount = 0;
-let startBuf = Buffer.from([0xfa, 0xff, 0x0f, 0])
-function createMacAddress() {
-    let buf = UINT16.setter(macAddressCount++)
-    return new MACAddress(Buffer.concat([startBuf, buf]))
+let startBuf = new Uint8Array([0xfa, 0xff, 0x0f, 0])
+function createMacAddress() : MACAddress {
+    let buf = uint8_fromNumber(macAddressCount++, 2)
+    return new MACAddress(uint8_concat([startBuf, buf]))
 }
 
 let frames = new Map<string, Uint8Array>();
@@ -93,7 +92,7 @@ export class Device {
             }).getBuffer()
         }
 
-        frames.set(this.name, Buffer.concat([
+        frames.set(this.name, uint8_concat([
             b,
             pcapRecordHdr.getBuffer(),
             frame.getBuffer()

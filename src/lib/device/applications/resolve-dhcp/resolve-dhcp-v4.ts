@@ -1,4 +1,3 @@
-import { Buffer } from "buffer";
 import { Device } from "../../device";
 import { Interface } from "../../interface";
 import { DHCP_HEADER, DCHP_OP, DHCP_MAGIC_COOKIE, DHCP_END_OPTION, DHCP_OPTION, DCHP_PORT_CLIENT, DCHP_PORT_SERVER } from "../../../header/dhcp/dhcp";
@@ -44,7 +43,7 @@ type DHCPClientParameters = {
 export function resolveDHCPv4(device: Device, iface: Interface) {
     // send first DHCP_DISCOVER
     let transactionID = Math.floor(Math.random() * (2 ** 14)),
-        parameterRequestList = createOptionBuffer(DHCP_TAGS.PARAMETER_REQUEST_LIST, Buffer.from([ // DHCP PARAMETER REQUEST LIST
+        parameterRequestList = createOptionBuffer(DHCP_TAGS.PARAMETER_REQUEST_LIST, new Uint8Array([ // DHCP PARAMETER REQUEST LIST
             DHCP_TAGS.SUBNET_MASK,
             // DHCP_TAGS.ROUTER,
             // DHCP_TAGS.DOMAIN_NAME_SERVER
@@ -54,11 +53,11 @@ export function resolveDHCPv4(device: Device, iface: Interface) {
         htype: 1,
         hlen: 6,
         xid: transactionID,
-        chaddr: Buffer.concat([
+        chaddr: uint8_concat([
             iface.macAddress.buffer,
             new Uint8Array(10) // padding
         ]), // total 16 bytes
-        options: Buffer.concat([
+        options: uint8_concat([
             DHCP_MAGIC_COOKIE,
             createOptionBuffer(DHCP_TAGS.DHCP_MESSAGE_TYPE, uint8_fromNumber(DHCP_MESSGAGE_TYPES.DHCPDISCOVER, 1)), // DHCP MESSAGE TYPE
             createOptionBuffer(DHCP_TAGS.CLIENT_IDENTIFIER, uint8_concat([uint8_fromNumber(0x01, 1), iface.macAddress.buffer])), // DHCP CLIENT IDENTIFIER
@@ -146,19 +145,19 @@ export function resolveDHCPv4(device: Device, iface: Interface) {
 
             let leaseTimeBufOpt = opts.get(DHCP_TAGS.IP_ADDRESS_LEASE_TIME);
             if (leaseTimeBufOpt) {
-                let leaseTimeBuf = Buffer.from(leaseTimeBufOpt)
-                params.leaseTime = (leaseTimeBuf).readUint32BE();
+                let leaseTimeBuf = new Uint8Array(leaseTimeBufOpt)
+                params.leaseTime = new DataView(leaseTimeBuf.buffer).getUint32(0);
                 replyDHCPHdrOptions.push(createOptionBuffer(DHCP_TAGS.IP_ADDRESS_LEASE_TIME, leaseTimeBuf))
             }
 
             let subnetBuf = opts.get(DHCP_TAGS.SUBNET_MASK);
             if (subnetBuf) {
-                replyDHCPHdrOptions.push(createOptionBuffer(DHCP_TAGS.SUBNET_MASK, Buffer.from(subnetBuf)));
+                replyDHCPHdrOptions.push(createOptionBuffer(DHCP_TAGS.SUBNET_MASK, new Uint8Array(subnetBuf)));
             }
 
             replyDHCPHdrOptions.push(createOptionBuffer(
                 DHCP_TAGS.REQUESTED_IP_ADDRESS,
-                Buffer.from(dhcpHdr.get("yiaddr").buffer)
+                new Uint8Array(dhcpHdr.get("yiaddr").buffer)
             ))
 
 
@@ -170,11 +169,11 @@ export function resolveDHCPv4(device: Device, iface: Interface) {
                 htype: 1,
                 hlen: 6,
                 xid: transactionID,
-                chaddr: Buffer.concat([
+                chaddr: uint8_concat([
                     iface.macAddress.buffer,
-                    Buffer.alloc(10) // padding
+                    new Uint8Array(10) // padding
                 ]), // total 16 bytes
-                options: Buffer.concat(replyDHCPHdrOptions)
+                options: uint8_concat(replyDHCPHdrOptions)
             })
 
             params.state = DHCPClientState.REQUEST;

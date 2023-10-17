@@ -1,4 +1,3 @@
-import { Buffer } from "buffer";
 import { Interface } from "../interface";
 import { Device } from "../device";
 
@@ -8,7 +7,6 @@ import { IPV6Address, ALL_LINK_LOCAL_NODES_ADDRESSV6 } from "../../address/ipv6"
 import { ETHERNET_HEADER, ETHER_TYPES, EtherType } from "../../header/ethernet";
 import { IPV4_HEADER, IPV6_HEADER, PROTOCOLS, createIPV4Header, type Protocol, IPV6_PSEUDO_HEADER } from "../../header/ip";
 import { ICMP_ECHO_HEADER, ICMP_HEADER, ICMP_NDP_HEADER, ICMPV4_TYPES, ICMPV6_TYPES } from "../../header/icmp";
-import { calculateChecksum } from "../../binary/checksum";
 import { ARP_HEADER, ARP_OPCODES } from "../../header/arp";
 import { Struct } from "../../binary/struct";
 import { DeviceServiceEchoReplier } from "../service/echo-replier";

@@ -1,6 +1,6 @@
 import { Buffer } from "buffer";
 import { describe, expect, test } from "vitest";
-import { uint8_concat, uint8_equals, uint8_fromNumber, uint8_set } from "../../lib/binary/uint8-array";
+import { uint8_concat, uint8_equals, uint8_fill, uint8_fromNumber, uint8_set } from "../../lib/binary/uint8-array";
 
 describe("Uint8Array Helper functions", () => {
     test("uint8_equals", () => {
@@ -13,7 +13,9 @@ describe("Uint8Array Helper functions", () => {
         expect(uint8_equals(a, b)).false;
 
         b = Buffer.concat([a, new Uint8Array(2)])
+        expect(uint8_equals(a, b)).false;
 
+        b = Buffer.alloc(0)
         expect(uint8_equals(a, b)).false;
     })
 
@@ -59,6 +61,19 @@ describe("Uint8Array Helper functions", () => {
 
         expected = new Uint8Array([0, 0, 1]);
         actual = uint8_fromNumber(1, 3);
+
+        expect(uint8_equals(
+            actual,
+            expected
+        )).true;
+    })
+
+    test("uint8_fill", () => {
+        let expected = new Uint8Array([0xff, 0xff, 0xff]),
+            actual = uint8_fill(
+                new Uint8Array(3),
+                0xff
+            )
 
         expect(uint8_equals(
             actual,
