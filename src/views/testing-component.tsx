@@ -1,4 +1,3 @@
-import { Buffer } from "buffer";
 import { Component, JSX } from "solid-js";
 import { Device } from "../lib/device/device";
 import { Host } from "../lib/device/host";

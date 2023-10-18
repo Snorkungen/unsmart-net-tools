@@ -1,4 +1,3 @@
-import { Buffer } from "buffer";
 import { For, createSignal } from "solid-js";
 import { Struct, UINT32, } from "../lib/binary/struct";
 import { BaseAddress } from "../lib/address/base";
@@ -9,6 +8,7 @@ import { ICMP_HEADER, ICMP_UNUSED_HEADER, ICMPV4_CODES, ICMPV4_TYPES } from "../
 import { UDP_HEADER } from "../lib/header/udp";
 import { PacketCapture } from "../lib/packet-capture/capture";
 import { PacketCaptureRecordStatus } from "../lib/packet-capture/record";
+import { uint8_fromBase64 } from "../lib/binary/uint8array/base64";
 
 function stringifyStruct(struct: Struct<any>) {
     let obj: any = {}
@@ -26,7 +26,7 @@ function stringifyConstName(name: string): string {
 
 
 export default function PacketCaptureViewer() {
-    let buffer = Buffer.from(base64EncodedPCAPFile, "base64");
+    let buffer = uint8_fromBase64(base64EncodedPCAPFile);
 
     let [state, setState] = createSignal<PacketCapture>(new PacketCapture(buffer))
 
@@ -108,7 +108,7 @@ export default function PacketCaptureViewer() {
                 let reader = new FileReader()
                 reader.readAsArrayBuffer(file)
                 reader.onloadend = () => {
-                    let buf = Buffer.from(reader.result as ArrayBuffer)
+                    let buf = new Uint8Array(reader.result as ArrayBuffer)
                     setState(new PacketCapture(buf))
                     // console.log(arr)
                 }
