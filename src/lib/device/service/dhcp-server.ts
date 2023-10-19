@@ -16,7 +16,7 @@ import { and, mutateAnd, mutateNot, mutateOr } from "../../binary";
 import { DHCP_END_OPTION } from "../../header/dhcp/dhcp";
 import { UNSET_IPV4_ADDRESS, UNSET_MAC_ADDRESS } from "../contact/contacts-handler";
 import { createDHCPOptionsMap } from "../../header/dhcp/utils";
-import { uint8_concat, uint8_equals, uint8_fromNumber } from "../../binary/uint8-array";
+import { uint8_concat, uint8_equals, uint8_fromNumber, uint8_readUint32BE } from "../../binary/uint8-array";
 
 enum DHCPServerState {
     BINDING,
@@ -329,7 +329,7 @@ export default class DeviceServiceDHCPServer implements DeviceService {
         }
 
         let leaseTimeBuf = opts.get(DHCP_TAGS.IP_ADDRESS_LEASE_TIME);
-        if (!leaseTimeBuf || (new DataView(leaseTimeBuf.buffer)).getUint32(0) != params.leaseTime) {
+        if (!leaseTimeBuf || uint8_readUint32BE(leaseTimeBuf) != params.leaseTime) {
             success = false;
         }
 
@@ -443,11 +443,11 @@ export function incrementAddress(address: IPV4Address, subnetMask: AddressMask<t
     }
 
     let prevBuf = new Uint8Array(address.buffer.subarray(4 - size))
-    
+
     // Next two lines takes dynamic sized buffer len <= 4 and sums into a number    
     let n = 0, i = prevBuf.byteLength, j = i - 1;
     while (i > 0) n += prevBuf[--i] << ((j - i) * 8) // big endian
-    
+
     let buf = uint8_fromNumber(n + 1, prevBuf.length)
 
     let leftBitMask = and(bitMask, prevBuf);

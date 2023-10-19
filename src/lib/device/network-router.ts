@@ -1,4 +1,5 @@
 import { and, not } from "../binary";
+import { uint8_readUint32BE } from "../binary/uint8-array";
 import { ETHERNET_HEADER, ETHER_TYPES } from "../header/ethernet";
 import { IPV4_HEADER } from "../header/ip";
 import { Device } from "./device";
@@ -45,7 +46,7 @@ export class NetworkRouter extends Device {
 
         // ignore if from weird source or if destination is weird
         // if (ipHdr.get("saddr").buffer.readInt32BE() == 0) {
-        if (new DataView(ipHdr.get("saddr").buffer.buffer).getUint32(0, false) == 0) {
+        if (uint8_readUint32BE(ipHdr.get("saddr").buffer) == 0) {
             return; // source is "0.0.0.0"
         } else if (daddr.toString() == "255.255.255.255") {
             return; // destination is broadcast
@@ -68,7 +69,7 @@ export class NetworkRouter extends Device {
         // check that target is not subnet specific broadcast
         let b = and(daddr.buffer, iface.ipv4SubnetMask!.buffer)
         // if (not(b).readUInt32BE() == 0) {
-        if (new DataView(not(b).buffer).getUint32(0, false) == 0) {
+        if (uint8_readUint32BE(not(b)) == 0) {
             return; // address is ignored
         }
 

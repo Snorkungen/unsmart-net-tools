@@ -1,3 +1,4 @@
+import { uint8_readUint32LE } from "../binary/uint8-array";
 import { PCAP_GLOBAL_HEADER, PCAP_MAGIC_NUMBER, PCAP_MAGIC_NUMBER_LITTLE } from "../header/pcap";
 import { PacketCaptureHFormat, PacketCaptureNFormat, PacketCaptureRecordReader, PacketCaptureRecordReaderOptions } from "./reader";
 import { PacketCaptureRecord } from "./record";
@@ -34,7 +35,7 @@ export class PacketCapture {
 
 
     private identifyHFormat(buffer: Uint8Array) {
-        let magicNumber = new DataView(buffer.buffer).getUint32(0);
+        let magicNumber = uint8_readUint32LE(buffer);
 
         switch (magicNumber) {
             case PCAP_MAGIC_NUMBER:

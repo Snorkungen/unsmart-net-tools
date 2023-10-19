@@ -13,7 +13,7 @@ import { Contact, ContactAddrFamily, ContactProto } from "../../contact/contact"
 import { parseDHCPOptions } from "../../../header/dhcp/parse-options";
 import { createDHCPOptionsMap } from "../../../header/dhcp/utils";
 import { AddressMask, createMask } from "../../../address/mask";
-import { uint8_concat, uint8_fromNumber } from "../../../binary/uint8-array";
+import { uint8_concat, uint8_fromNumber, uint8_readUint32BE } from "../../../binary/uint8-array";
 
 function createOptionBuffer(tag: DHCPTag, data: Uint8Array): Uint8Array {
     return DHCP_OPTION.create({
@@ -143,10 +143,9 @@ export function resolveDHCPv4(device: Device, iface: Interface) {
 
             // I haven't bothered to read the full spec so i'm just guessing as to what i am supposed to do
 
-            let leaseTimeBufOpt = opts.get(DHCP_TAGS.IP_ADDRESS_LEASE_TIME);
-            if (leaseTimeBufOpt) {
-                let leaseTimeBuf = new Uint8Array(leaseTimeBufOpt)
-                params.leaseTime = new DataView(leaseTimeBuf.buffer).getUint32(0);
+            let leaseTimeBuf = opts.get(DHCP_TAGS.IP_ADDRESS_LEASE_TIME);
+            if (leaseTimeBuf) {
+                params.leaseTime = uint8_readUint32BE(leaseTimeBuf);
                 replyDHCPHdrOptions.push(createOptionBuffer(DHCP_TAGS.IP_ADDRESS_LEASE_TIME, leaseTimeBuf))
             }
 

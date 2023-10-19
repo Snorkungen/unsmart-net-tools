@@ -84,3 +84,27 @@ export function uint8_fill(target: Uint8Array, value: number): Uint8Array {
 
     return target;
 }
+
+export function uint8_readUint32BE(source: Uint8Array, offset = 0) {
+    return (source[offset] << 24)
+        || (source[offset + 1] << 16)
+        || (source[offset + 2] << 8)
+        || (source[offset + 3])
+}
+
+export function uint8_readUint16BE(source: Uint8Array, offset = 0) {
+    return (source[offset] << 8)
+        || (source[offset + 1])
+}
+
+export function uint8_readUint32LE(source: Uint8Array, offset = 0) {
+    return (source[offset])
+        || (source[offset + 1] << 8)
+        || (source[offset + 2] << 16)
+        || (source[offset + 3] << 24)
+}
+
+export function uint8_readUint16LE(source: Uint8Array, offset = 0) {
+    return (source[offset + 1] << 8)
+        || (source[offset])
+}       
