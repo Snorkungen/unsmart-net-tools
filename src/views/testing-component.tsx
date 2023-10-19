@@ -117,6 +117,10 @@ iface_pc3.connect(rIface_pc3);
 iface_pc1.ipv4GW = rIface_sw.ipv4Address;
 iface_pc3.ipv4GW = rIface_pc3.ipv4Address;
 
+dhcpServer.configure({
+    ipv4GWAddress: [rIface_sw.ipv4Address]
+})
+
 // TESTING END
 
 export const TestingComponent: Component = () => {

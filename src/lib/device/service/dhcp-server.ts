@@ -28,6 +28,7 @@ type DHCPServerConfiurationParameters = {
     state: DHCPServerState;
     ipv4Address?: IPV4Address;
     ipv4SubnetMask?: AddressMask<typeof IPV4Address>;
+    ipv4GWAddress?: IPV4Address[];
     leaseTime?: number;
     serverID?: Uint8Array;
 }
@@ -42,6 +43,9 @@ function serializeClientID(buffer: Uint8Array): string {
 type DHCPServerConfig = {
     ipv4SubnetMask?: AddressMask<typeof IPV4Address>;
     ipv4AddressRange?: [start: IPV4Address, end: IPV4Address];
+
+    ipv4GWAddress?: IPV4Address[]
+
     /** This is a hack because i have no clue what i'm doing */
     iface?: Interface;
 }
@@ -195,6 +199,7 @@ export default class DeviceServiceDHCPServer implements DeviceService {
                 state: DHCPServerState.BINDING,
                 ipv4Address: address,
                 ipv4SubnetMask: this.config.ipv4SubnetMask,
+                ipv4GWAddress: this.config.ipv4GWAddress,
                 serverID: serverID,
                 leaseTime: IPLEASE_TIME_IN_SECS
             }
@@ -203,16 +208,22 @@ export default class DeviceServiceDHCPServer implements DeviceService {
         let replyOptions: Uint8Array[] = []
 
         if (opts.get(DHCP_TAGS.PARAMETER_REQUEST_LIST)) {
-            let paramReqList = DHCP_OPTION.from(opts.get(DHCP_TAGS.PARAMETER_REQUEST_LIST)!);
-            for (let i = 0; i < paramReqList.get("len"); i++) {
-                let tag = paramReqList.get("data")[i];
+            let paramReqList = opts.get(DHCP_TAGS.PARAMETER_REQUEST_LIST)!;
 
+            for (let i = 0; i < paramReqList.byteLength; i++) {
+                let tag = paramReqList[i];
 
                 if (tag == DHCP_TAGS.SUBNET_MASK && this.config.ipv4SubnetMask) {
                     replyOptions.push(DHCP_OPTION.create({
                         tag: DHCP_TAGS.SUBNET_MASK,
                         len: 4,
                         data: new Uint8Array(this.config.ipv4SubnetMask.buffer)
+                    }).getBuffer())
+                } else if (tag == DHCP_TAGS.ROUTER && this.config.ipv4GWAddress?.length) {
+                    replyOptions.push(DHCP_OPTION.create({
+                        tag: DHCP_TAGS.ROUTER,
+                        len: this.config.ipv4GWAddress.length * 4,
+                        data: uint8_concat(this.config.ipv4GWAddress.map(({ buffer }) => buffer))
                     }).getBuffer())
                 }
             }
@@ -331,6 +342,28 @@ export default class DeviceServiceDHCPServer implements DeviceService {
         let leaseTimeBuf = opts.get(DHCP_TAGS.IP_ADDRESS_LEASE_TIME);
         if (!leaseTimeBuf || uint8_readUint32BE(leaseTimeBuf) != params.leaseTime) {
             success = false;
+        }
+
+        let routerBuf = opts.get(DHCP_TAGS.ROUTER);
+        if (routerBuf) {
+            // check that if a `routerBuf` check that routers are correct
+
+            if (!params.ipv4GWAddress) {
+                success = false;
+            }
+
+            while (routerBuf.byteLength && success) {
+                // check that address exists in params
+
+                // if not found a match `success = false`
+                if (!params.ipv4GWAddress!.find(({ buffer }) =>
+                    uint8_equals(buffer, routerBuf!.subarray(0, 4)))) {
+                    success = false;
+                    break;
+                };
+
+                routerBuf = routerBuf.subarray(4);
+            }
         }
 
         if (!success) {

@@ -35,6 +35,7 @@ type DHCPClientParameters = {
 
     // theese are the only params that i care about for now
     ipv4Address?: IPV4Address;
+    ipv4GWAddress?: IPV4Address[];
     ipv4SubnetMask?: AddressMask<typeof IPV4Address>;
     leaseTime?: number;
     serverID?: Uint8Array;
@@ -45,7 +46,7 @@ export function resolveDHCPv4(device: Device, iface: Interface) {
     let transactionID = Math.floor(Math.random() * (2 ** 14)),
         parameterRequestList = createOptionBuffer(DHCP_TAGS.PARAMETER_REQUEST_LIST, new Uint8Array([ // DHCP PARAMETER REQUEST LIST
             DHCP_TAGS.SUBNET_MASK,
-            // DHCP_TAGS.ROUTER,
+            DHCP_TAGS.ROUTER,
             // DHCP_TAGS.DOMAIN_NAME_SERVER
         ]))
     let dhcpDiscoverHdr = DHCP_HEADER.create({
@@ -154,6 +155,15 @@ export function resolveDHCPv4(device: Device, iface: Interface) {
                 replyDHCPHdrOptions.push(createOptionBuffer(DHCP_TAGS.SUBNET_MASK, new Uint8Array(subnetBuf)));
             }
 
+            let routerBuf = opts.get(DHCP_TAGS.ROUTER);
+            if (routerBuf) {
+                params.ipv4GWAddress = [];
+                for (let i = 0; i < routerBuf.byteLength; i += 4) {
+                    params.ipv4GWAddress.push(new IPV4Address(routerBuf.subarray(i, i + 4)))
+                }
+                replyDHCPHdrOptions.push(createOptionBuffer(DHCP_TAGS.ROUTER, new Uint8Array(routerBuf)));
+            }
+
             replyDHCPHdrOptions.push(createOptionBuffer(
                 DHCP_TAGS.REQUESTED_IP_ADDRESS,
                 new Uint8Array(dhcpHdr.get("yiaddr").buffer)
@@ -183,10 +193,11 @@ export function resolveDHCPv4(device: Device, iface: Interface) {
                 return;
             } else if (messageType == DHCP_MESSGAGE_TYPES.DHCPACK) {
                 // commit configuration
-                console.info("COMMITTING DHCP")
+                console.info("COMMITTING DHCP", params)
+
                 iface.ipv4Address = params.ipv4Address;
                 iface.ipv4SubnetMask = params.ipv4SubnetMask;
-
+                iface.ipv4GW = params.ipv4GWAddress?.at(0);
                 // set timeout to revalidate with lease time
                 params.state = DHCPClientState.BOUND;
             }
