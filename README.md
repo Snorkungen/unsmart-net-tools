@@ -2,6 +2,11 @@
 
 ## Tasks
 
+- Develop on device logic
+  - [ ] Device -> contact
+    - Design the api
+    - [ ] UDP protocol support
+    - [ ] TCP protocol support
 - [x] Remove `Buffer` from client build
   - [x] Remove `buffer` polyfill
   - [x] remove dependence on `Buffer` from lib/address
