@@ -6,6 +6,8 @@
   - [ ] Device -> contact
     - Design the api
     - [ ] UDP protocol support
+      - [x] Send packet
+      - [ ] Recieve packet
     - [ ] TCP protocol support
 - [x] Remove `Buffer` from client build
   - [x] Remove `buffer` polyfill

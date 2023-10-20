@@ -2,11 +2,13 @@ import { IPV4Address } from "../../address/ipv4";
 import { IPV6Address } from "../../address/ipv6";
 import { MACAddress } from "../../address/mac";
 import { ETHERNET_HEADER, ETHER_TYPES } from "../../header/ethernet";
-import { IPV4_HEADER, IPV6_HEADER } from "../../header/ip";
+import { IPV4_HEADER, IPV4_PSEUDO_HEADER, IPV6_HEADER, PROTOCOLS, createIPV4Header } from "../../header/ip";
 import { Device } from "../device";
-import { Contact, ContactAddrFamily, ContactProto } from "./contact";
+import { Contact, ContactAddrFamily, ContactAddress, ContactProto } from "./contact";
 import { calculateChecksum } from "../../binary/checksum";
 import { Interface } from "../interface";
+import { uint8_equals } from "../../binary/uint8-array";
+import { createUDPHeader } from "../../header/udp";
 
 export const UNSET_MAC_ADDRESS = new MACAddress(new Uint8Array(MACAddress.ADDRESS_LENGTH / 8));
 export const UNSET_IPV4_ADDRESS = new IPV4Address(new Uint8Array(IPV4Address.ADDRESS_LENGTH / 8));
@@ -14,6 +16,9 @@ export const UNSET_IPV6_ADDRESS = new IPV6Address(new Uint8Array(IPV6Address.ADD
 
 export class ContactsHandler {
     contacts: Array<Contact<ContactAddrFamily, ContactProto>> = []
+
+    // lazy solution
+    portN = 2000
 
     constructor(private device: Device) { }
 
@@ -41,14 +46,14 @@ export class ContactsHandler {
 
      This function is magic
      */
-    recieve(contact: Contact<ContactAddrFamily, ContactProto>, buf: Uint8Array) {
+    recieve(contact: Contact<ContactAddrFamily, ContactProto>, buf: Uint8Array, caddr?: ContactAddress) {
         switch (contact.addrFamily) {
             case ContactAddrFamily.RAW:
                 return this.recieveRAW(contact, buf);
             case ContactAddrFamily.IPv4:
-                return this.recieveIPv4(contact, buf);
+                return this.recieveIPv4(contact, buf, caddr);
             case ContactAddrFamily.IPv6:
-                return this.recieveIPv6(contact, buf);
+                return this.recieveIPv6(contact, buf, caddr);
         }
     }
 
@@ -73,12 +78,30 @@ export class ContactsHandler {
             }
         }
     }
-    private async recieveIPv4(contact: Contact<ContactAddrFamily, ContactProto>, buf: Uint8Array) {
-        let ip_hdr = IPV4_HEADER.from(buf),
-            saddr = ip_hdr.get("saddr"),
-            daddr = ip_hdr.get("daddr");
+    private async recieveIPv4(contact: Contact<ContactAddrFamily, ContactProto>, buf: Uint8Array, caddr?: ContactAddress) {
+        let saddr: IPV4Address, daddr: IPV4Address;
 
-        if (saddr.toString() == UNSET_IPV4_ADDRESS.toString()) {
+        // something something something check if caddr
+        // if saddr unset find a suitable iface
+
+        if (caddr) {
+            if (caddr.addrFamily != ContactAddrFamily.IPv4) {
+                throw "ContactAddressFamily mismatch"
+            } else if (caddr.proto != contact.proto) {
+                throw "ContactProto mismatch"
+            }
+
+
+            daddr = caddr.address;
+            saddr = UNSET_IPV4_ADDRESS;
+        } else {
+            let ip_hdr = IPV4_HEADER.from(buf);
+
+            daddr = ip_hdr.get("daddr");
+            saddr = ip_hdr.get("saddr");
+        }
+
+        if (uint8_equals(saddr.buffer, UNSET_IPV4_ADDRESS.buffer)) {
             // have some special sauce to determine a suitable interface
 
             let iface = this.device.interfaces.find(({ ipv4Address, ipv4SubnetMask }) => ipv4Address && ipv4SubnetMask?.compare(ipv4Address, daddr));
@@ -89,13 +112,41 @@ export class ContactsHandler {
                 return; // no interface to choose from
             }
 
-            ip_hdr.set("saddr", iface.ipv4Address!);
+            saddr = iface.ipv4Address!
+        }
+
+        // something something something construct ipHdr
+        let ipHdr: typeof IPV4_HEADER | undefined;
+
+        if (caddr) {
+            if (caddr.proto == ContactProto.UDP) {
+                ipHdr = createIPV4Header({
+                    saddr,
+                    daddr,
+                    proto: PROTOCOLS.UDP,
+                    payload: createUDPHeader({
+                        sport: contact.address!.port,
+                        dport: caddr.port,
+                        payload: buf
+                    }, IPV4_PSEUDO_HEADER.create({
+                        saddr,
+                        daddr
+                    })).getBuffer()
+                })
+            } else {
+                throw "Whatever that's happening, is unsupported"
+            }
+        } else {
+            ipHdr = IPV4_HEADER.from(buf);
+
+            ipHdr.set("saddr", saddr);
 
             // recalculate checksum
-            ip_hdr.set("csum", 0);
-            ip_hdr.set("csum", calculateChecksum(ip_hdr.getBuffer().subarray(0, 20)));
-            this.recieveIPv4(contact, ip_hdr.getBuffer())
-        } else for (let iface of this.device.interfaces) {
+            ipHdr.set("csum", 0);
+            ipHdr.set("csum", calculateChecksum(ipHdr.getBuffer().subarray(0, 20)));
+        }
+
+        for (let iface of this.device.interfaces) {
             if (!iface.ipv4Address || iface.ipv4Address.toString() != saddr.toString()) continue;
 
             let dmac: MACAddress;
@@ -129,7 +180,7 @@ export class ContactsHandler {
                 smac: iface.macAddress,
                 dmac: dmac,
                 ethertype: ETHER_TYPES.IPv4,
-                payload: ip_hdr.getBuffer()
+                payload: ipHdr.getBuffer()
             });
 
             this.device.log(eth_hdr, iface, "SEND")
@@ -137,12 +188,26 @@ export class ContactsHandler {
 
         }
     }
-    private async recieveIPv6(contact: Contact<ContactAddrFamily, ContactProto>, buf: Uint8Array) {
-        let ip_hdr = IPV6_HEADER.from(buf),
-            saddr = ip_hdr.get("saddr"),
-            daddr = ip_hdr.get("daddr");
+    private async recieveIPv6(contact: Contact<ContactAddrFamily, ContactProto>, buf: Uint8Array, caddr?: ContactAddress) {
+        let saddr: IPV6Address, daddr: IPV6Address;
 
-        if (saddr.toString() == UNSET_IPV6_ADDRESS.toString()) {
+        if (caddr) {
+            if (caddr.addrFamily != ContactAddrFamily.IPv6) {
+                throw "ContactAddressFamily mismatch"
+            } else if (caddr.proto != contact.proto) {
+                throw "ContactProto mismatch"
+            }
+
+            daddr = caddr.address;
+            saddr = UNSET_IPV6_ADDRESS;
+        } else {
+            let ip_hdr = IPV6_HEADER.from(buf);
+
+            saddr = ip_hdr.get("saddr");
+            daddr = ip_hdr.get("daddr");
+        }
+
+        if (uint8_equals(saddr.buffer, UNSET_IPV6_ADDRESS.buffer)) {
             // have some special sauce to determine a suitable interface
 
             let iface = this.device.interfaces.find(({ ipv6Address }) => ipv6Address && !ipv6Address.isLinkLocal());
@@ -154,7 +219,26 @@ export class ContactsHandler {
             }
 
             throw new Error("UNSET IPv6 not implemented")
-        } else for (let iface of this.device.interfaces) {
+        }
+
+        // something something something construct ipHdr
+        let ipHdr: typeof IPV6_HEADER | undefined;
+
+        if (caddr) {
+            if (caddr.proto == ContactProto.UDP) {
+
+            }
+
+            throw "IPV6 is not supported for proto's other than RAW"
+
+        } else {
+            ipHdr = IPV6_HEADER.from(buf);
+
+            // set saddr 
+            // and recalculate checksum
+        }
+
+        for (let iface of this.device.interfaces) {
             if (!iface.ipv6Address || iface.ipv6Address.toString() != saddr.toString()) continue;
 
             // IMPORTANT I'm unsure how i want to do routing
@@ -176,7 +260,7 @@ export class ContactsHandler {
                 smac: iface.macAddress,
                 dmac: dmac,
                 ethertype: ETHER_TYPES.IPv6,
-                payload: ip_hdr.getBuffer()
+                payload: ipHdr.getBuffer()
             });
 
             this.device.log(eth_hdr, iface, "SEND")
@@ -194,5 +278,64 @@ export class ContactsHandler {
         let contact = new Contact<AF, PTO>(this, addrFamily, proto);
         this.contacts.push(contact);
         return contact;
+    }
+
+
+    /**
+     * 
+     * @param contact 
+     * @param caddr 
+     * @returns `ContactAddress` on success and false on failures
+     */
+    bindContact(contact: Contact<ContactAddrFamily, ContactProto>, caddr?: ContactAddress): boolean {
+        // sanity check on `caddr`
+        if (contact.addrFamily == ContactAddrFamily.RAW || contact.proto == ContactProto.RAW) {
+            console.warn("incorrect contact type")
+            return false;
+        }
+
+        // contact check that `ContactAddress` is not in use
+        if (caddr) {
+            if (contact.addrFamily != caddr.addrFamily) {
+                console.warn("incorrect contact type: address family mismatch")
+                return false;
+            }
+
+            for (let h_contact of this.contacts) {
+                if (!h_contact || h_contact === contact) continue;
+
+                if (
+                    caddr.addrFamily == h_contact.address!.addrFamily
+                    && caddr.proto == h_contact.address!.proto
+                    && caddr.port == h_contact.address!.port
+                    && uint8_equals(caddr.address.buffer, h_contact.address!.address.buffer)
+                ) {
+                    console.warn("ContactAddress already in use")
+                    return false;
+                }
+            }
+
+            contact.address = caddr;
+            return true
+        }
+
+        if (this.portN >= 2 ** 16) {
+            console.warn("all possible port numbers in use 😭")
+            return false
+        }
+
+        caddr = {
+            port: this.portN++,
+            proto: contact.proto,
+            //@ts-ignore
+            addrFamily: contact.addrFamily,
+            //@ts-ignore
+            address: contact.addrFamily == ContactAddrFamily.IPv4 ?
+                UNSET_IPV4_ADDRESS : UNSET_IPV6_ADDRESS
+        }
+
+
+        contact.address = caddr
+        return true;
     }
 }
