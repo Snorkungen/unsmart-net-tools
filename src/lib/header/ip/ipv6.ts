@@ -23,5 +23,5 @@ export const IPV6_PSEUDO_HEADER = defineStruct({
     daddr: IPV6_ADDRESS,
     len: UINT32,
     zeroes: UINT32(24),
-    nextHeader: <StructType<Protocol>>UINT32(8)
+    proto: <StructType<Protocol>>UINT32(8)
 })

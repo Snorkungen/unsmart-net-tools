@@ -184,7 +184,7 @@ function createNDPRequest(query: IPV6Address, iface: Interface): typeof ETHERNET
         saddr: iface.ipv6Address!,
         daddr: new IPV6Address(ALL_LINK_LOCAL_NODES_ADDRESSV6),
         len: icmpHdr.size,
-        nextHeader: PROTOCOLS.IPV6_ICMP,
+        proto: PROTOCOLS.IPV6_ICMP,
     })
 
     icmpHdr.set("csum", calculateChecksum(uint8_concat([

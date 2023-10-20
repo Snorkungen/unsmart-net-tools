@@ -5,6 +5,11 @@
  */
 
 import { SLICE, UINT16, UINT32, UINT8, defineStruct } from "../binary";
+import { calculateChecksum } from "../binary/checksum";
+import { uint8_concat } from "../binary/uint8-array";
+import { PROTOCOLS } from "./ip";
+import { IPV6_PSEUDO_HEADER } from "./ip";
+import { IPV4_PSEUDO_HEADER } from "./ip";
 
 /**
  * Source: [RFC 9293](https://datatracker.ietf.org/doc/html/rfc9293)
@@ -97,3 +102,53 @@ export const TCP_FLAGS = {
     /** No more data from sender. */
     FIN: 0x01
 } as const;
+
+export function createTCPHeader({ sport, dport, seqnum, acknum, flags = [], window, urgpnt, options, data }: {
+    sport: number;
+    dport: number;
+    seqnum?: number;
+    acknum?: number;
+    flags?: (typeof TCP_FLAGS[keyof typeof TCP_FLAGS])[];
+    window?: number;
+    urgpnt?: number;
+    options?: Uint8Array;
+    data: Uint8Array;
+}, pseudoHdr?: typeof IPV4_PSEUDO_HEADER | typeof IPV6_PSEUDO_HEADER): typeof TCP_HEADER {
+    let payload: Uint8Array;
+    let doffset: number = TCP_HEADER.getMinSize() / 4;
+
+    if (options) {
+        // pad options 
+        let bytePadCount = options.byteLength % 4;
+
+        if (bytePadCount > 0) {
+            let tmp = (new Uint8Array(options.byteLength + bytePadCount));
+            tmp.set(options);
+            options = tmp;
+        }
+
+        payload = uint8_concat([options, data]);
+
+        doffset += options.byteLength / 4;
+    } else {
+        payload = data;
+    }
+
+    let tcpHdr = TCP_HEADER.create({
+        sport, dport,
+        seqnum, acknum,
+        doffset,
+        flags: flags.reduce<number>((res, f) => res | f, 0),
+        window, urgpnt,
+        payload
+    });
+
+    if (pseudoHdr) {
+        pseudoHdr.set("proto", PROTOCOLS.TCP);
+        pseudoHdr.set("len", tcpHdr.size);
+
+        tcpHdr.set("csum", calculateChecksum(pseudoHdr.getBuffer()));
+    }
+
+    return tcpHdr;
+}

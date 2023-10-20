@@ -103,7 +103,7 @@ export class DeviceServiceAddressResolution implements DeviceService {
                 saddr: iface.ipv6Address!,
                 daddr: ipHdr.get("saddr"),
                 len: replyIcmpHdr.size,
-                nextHeader: PROTOCOLS.IPV6_ICMP,
+                proto: PROTOCOLS.IPV6_ICMP,
             })
 
             replyIcmpHdr.set("csum", calculateChecksum(uint8_concat([

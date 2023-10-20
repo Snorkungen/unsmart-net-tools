@@ -71,7 +71,7 @@ export async function pingVersion6(host: Host, destination: IPV6Address, identif
         saddr: entry.iface.ipv6Address!,
         daddr: destination,
         len: icmpHdr.size,
-        nextHeader: PROTOCOLS.IPV6_ICMP,
+        proto: PROTOCOLS.IPV6_ICMP,
     })
 
     icmpHdr.set("csum", calculateChecksum(uint8_concat([pseudoHdr.getBuffer(), icmpHdr.getBuffer()])));

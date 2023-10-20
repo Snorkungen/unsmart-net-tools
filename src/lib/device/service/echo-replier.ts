@@ -54,7 +54,7 @@ export class DeviceServiceEchoReplier implements DeviceService {
                 saddr: ipHdr.get("daddr"),
                 daddr: ipHdr.get("saddr"),
                 len: replyIcmpHdr.size,
-                nextHeader: PROTOCOLS.IPV6_ICMP,
+                proto: PROTOCOLS.IPV6_ICMP,
             })
 
             replyIcmpHdr.set("csum", calculateChecksum(uint8_concat([

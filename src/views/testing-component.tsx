@@ -9,6 +9,9 @@ import { IPV6Address } from "../lib/address/ipv6";
 import DeviceServiceDHCPServer from "../lib/device/service/dhcp-server";
 import { resolveDHCPv4 } from "../lib/device/applications/resolve-dhcp/resolve-dhcp-v4";
 import { NetworkRouter } from "../lib/device/network-router";
+import { IPV4_PSEUDO_HEADER, PROTOCOLS, createIPV4Header } from "../lib/header/ip";
+import { TCP_FLAGS, createTCPHeader } from "../lib/header/tcp";
+import { ContactAddrFamily, ContactProto } from "../lib/device/contact/contact";
 const selectContents = (ev: MouseEvent) => {
     if (!(ev.currentTarget instanceof HTMLElement)) return;
     let range = document.createRange();
@@ -101,9 +104,6 @@ rIface_pc3.ipv4SubnetMask = createMask(IPV4Address, 24);
 let swIface_router = networkSwitch.createInterface();
 swIface_router.connect(rIface_sw)
 
-
-
-
 let pc3 = new Host();
 pc3.name = "PC3"
 
@@ -121,6 +121,35 @@ dhcpServer.configure({
     ipv4GWAddress: [rIface_sw.ipv4Address]
 })
 
+// Create & Send first TCP Packet
+
+let saddr = iface_pc1.ipv4Address!, daddr = iface_pc3.ipv4Address;
+
+let data = new Uint8Array(0)
+
+let pseudoHdr = IPV4_PSEUDO_HEADER.create({
+    saddr, daddr
+}), tcpHdr = createTCPHeader({
+    sport: 5000,
+    dport: 80,
+    seqnum: 0,
+    acknum: 0,
+    flags: [
+        TCP_FLAGS.SYN
+    ],
+
+    data,
+}, pseudoHdr);
+
+let ipv4Hdr = createIPV4Header({
+    saddr, daddr,
+    proto: PROTOCOLS.TCP,
+    payload: tcpHdr.getBuffer()
+});
+
+let contact = pc1.contactsHandler.createContact(ContactAddrFamily.IPv4, ContactProto.RAW);
+
+
 // TESTING END
 
 export const TestingComponent: Component = () => {
@@ -131,8 +160,11 @@ export const TestingComponent: Component = () => {
                 <h2>This is a component where trying things are acceptable.</h2>
             </header>
             <button onClick={() => {
+                contact.send(ipv4Hdr.getBuffer())
+            }}>Send first syn tcp packet </button>
+            <button onClick={() => {
                 resolveDHCPv4(pc2, iface_pc2);
-            }}>Press me</button>
+            }}>Init {pc2.name} using DHCPv4</button>
             <div>
                 <DeviceComponent device={pc1} />
                 <DeviceComponent device={networkSwitch} />
