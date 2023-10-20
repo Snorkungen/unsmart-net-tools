@@ -1,4 +1,8 @@
-
+/**
+ * REFERENCE: feross - buffer - <https://github.com/feross/buffer/blob/master/index.js>
+ * 
+ * 
+ */
 
 /**
  * This function checks if the arrays are equal
@@ -86,25 +90,27 @@ export function uint8_fill(target: Uint8Array, value: number): Uint8Array {
 }
 
 export function uint8_readUint32BE(source: Uint8Array, offset = 0) {
-    return (source[offset] << 24)
-        |(source[offset + 1] << 16)
-        | (source[offset + 2] << 8)
-        | (source[offset + 3])
+    offset = offset >>> 0; // make positive
+    return (source[offset] * 0x1000000) +
+        ((source[offset + 1] << 16) | (source[offset + 2] << 8) | source[offset + 3])
 }
 
 export function uint8_readUint16BE(source: Uint8Array, offset = 0) {
+    offset = offset >>> 0; // make positive
     return (source[offset] << 8)
-        | (source[offset + 1])
+        + (source[offset + 1])
 }
 
 export function uint8_readUint32LE(source: Uint8Array, offset = 0) {
-    return (source[offset])
-        | (source[offset + 1] << 8)
-        | (source[offset + 2] << 16)
-        | (source[offset + 3] << 24)
+    offset = offset >>> 0; // make positive
+    return ((source[offset]) |
+        (source[offset + 1] << 8) |
+        (source[offset + 2] << 16)) +
+        (source[offset + 3] * 0x1000000)
 }
 
 export function uint8_readUint16LE(source: Uint8Array, offset = 0) {
+    offset = offset >>> 0; // make positive
     return (source[offset + 1] << 8)
         | (source[offset])
 }       

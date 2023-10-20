@@ -1,4 +1,4 @@
-import { uint8_readUint32LE } from "../binary/uint8-array";
+import { uint8_readUint32BE } from "../binary/uint8-array";
 import { PCAP_GLOBAL_HEADER, PCAP_MAGIC_NUMBER, PCAP_MAGIC_NUMBER_LITTLE } from "../header/pcap";
 import { PacketCaptureHFormat, PacketCaptureNFormat, PacketCaptureRecordReader, PacketCaptureRecordReaderOptions } from "./reader";
 import { PacketCaptureRecord } from "./record";
@@ -24,7 +24,6 @@ export class PacketCapture {
         }
 
         this.identifyNFormat(buffer);
-
         if (this.options.Nformat == PacketCaptureNFormat.unknown) {
             // return early; unknown network type
             return;
@@ -35,7 +34,7 @@ export class PacketCapture {
 
 
     private identifyHFormat(buffer: Uint8Array) {
-        let magicNumber = uint8_readUint32LE(buffer);
+        let magicNumber = uint8_readUint32BE(buffer);
 
         switch (magicNumber) {
             case PCAP_MAGIC_NUMBER:
@@ -55,7 +54,7 @@ export class PacketCapture {
         }
     }
 
-    private readLibpcapHeader (buffer: Uint8Array) {
+    private readLibpcapHeader(buffer: Uint8Array) {
         let hdr = PCAP_GLOBAL_HEADER.from(buffer.subarray(0, this.offset += PCAP_GLOBAL_HEADER.size), this.options);
 
         if (hdr.get("versionMajor") != 2 || hdr.get("versionMinor") != 4) {
