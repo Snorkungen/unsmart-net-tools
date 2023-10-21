@@ -12,6 +12,8 @@ import { NetworkRouter } from "../lib/device/network-router";
 import { IPV4_PSEUDO_HEADER, PROTOCOLS, createIPV4Header } from "../lib/header/ip";
 import { TCP_FLAGS, createTCPHeader } from "../lib/header/tcp";
 import { ContactAddrFamily, ContactProto } from "../lib/device/contact/contact";
+import { UNSET_IPV4_ADDRESS } from "../lib/device/contact/contacts-handler";
+import { uint8_concat, uint8_fromNumber } from "../lib/binary/uint8-array";
 const selectContents = (ev: MouseEvent) => {
     if (!(ev.currentTarget instanceof HTMLElement)) return;
     let range = document.createRange();
@@ -121,10 +123,30 @@ dhcpServer.configure({
     ipv4GWAddress: [rIface_sw.ipv4Address]
 })
 
-// Create & Send first TCP Packet
 
 let data = new Uint8Array([1, 3, 3, 7])
 let contact = pc1.contactsHandler.createContact(ContactAddrFamily.IPv4, ContactProto.UDP);
+
+// UDP server pc3
+// respond whith address and port
+
+const SERVER_PORT = 1337;
+
+let serverContact = pc3.contactsHandler.createContact(ContactAddrFamily.IPv4, ContactProto.UDP);
+
+if (!serverContact.bind({
+    address: UNSET_IPV4_ADDRESS,
+    port: SERVER_PORT,
+})) {
+    throw "failed to bind"
+}
+
+serverContact.recieveFrom = (caddr, _) => {
+    serverContact.sendTo(caddr, uint8_concat([
+        caddr.address.buffer,
+        uint8_fromNumber(caddr.port, 2)
+    ]))
+}
 
 // TESTING END
 

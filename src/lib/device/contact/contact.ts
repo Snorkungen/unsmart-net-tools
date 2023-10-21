@@ -43,8 +43,30 @@ export class Contact<AF extends ContactAddrFamily, PTO extends ContactProto>{
      * 
      * @returns boolean - `true` for success and `false` for failure
     */
-    bind(caddr: ContactAddress): boolean {
-        return this.handler.bindContact(this, caddr);
+    bind(caddr: Partial<ContactAddress>
+        & Pick<ContactAddress, "address">
+        & Pick<ContactAddress, "port">
+    ): boolean {
+
+        // this type checking and filling might be hoisted contacts handler
+
+        if (this.addrFamily == ContactAddrFamily.RAW) {
+            console.warn("contact address family can't be raw")
+            return false;
+        } else if (this.proto == ContactProto.RAW) {
+            console.warn("contact proto can't be raw")
+            return false;
+        }
+
+        if (!caddr.addrFamily) {
+            caddr.addrFamily = this.addrFamily;
+        } 
+
+        if (!caddr.proto) {
+            caddr.proto = this.proto;
+        }
+
+        return this.handler.bindContact(this, caddr as ContactAddress);
     }
 
     /**  */

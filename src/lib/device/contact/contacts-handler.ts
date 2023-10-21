@@ -302,13 +302,14 @@ export class ContactsHandler {
             }
 
             for (let h_contact of this.contacts) {
-                if (!h_contact || h_contact === contact) continue;
+
+                if (!h_contact || h_contact === contact || !h_contact.address) continue;
 
                 if (
-                    caddr.addrFamily == h_contact.address!.addrFamily
-                    && caddr.proto == h_contact.address!.proto
-                    && caddr.port == h_contact.address!.port
-                    && uint8_equals(caddr.address.buffer, h_contact.address!.address.buffer)
+                    caddr.addrFamily == h_contact.address.addrFamily
+                    && caddr.proto == h_contact.address.proto
+                    && caddr.port == h_contact.address.port
+                    && uint8_equals(caddr.address.buffer, h_contact.address.address.buffer)
                 ) {
                     console.warn("ContactAddress already in use")
                     return false;
