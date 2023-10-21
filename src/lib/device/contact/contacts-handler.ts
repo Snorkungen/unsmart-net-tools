@@ -8,7 +8,7 @@ import { Contact, ContactAddrFamily, ContactAddress, ContactProto } from "./cont
 import { calculateChecksum } from "../../binary/checksum";
 import { Interface } from "../interface";
 import { uint8_equals } from "../../binary/uint8-array";
-import { createUDPHeader } from "../../header/udp";
+import { UDP_HEADER, createUDPHeader } from "../../header/udp";
 
 export const UNSET_MAC_ADDRESS = new MACAddress(new Uint8Array(MACAddress.ADDRESS_LENGTH / 8));
 export const UNSET_IPV4_ADDRESS = new IPV4Address(new Uint8Array(IPV4Address.ADDRESS_LENGTH / 8));
@@ -23,8 +23,9 @@ export class ContactsHandler {
     constructor(private device: Device) { }
 
     handle(frame: typeof ETHERNET_HEADER, iface: Interface) {
+        // handleRAW:
         for (let contact of this.contacts) {
-            if (!contact || !contact.recieve) continue;
+            if (!contact || !contact.recieve || contact.proto != ContactProto.RAW) continue;
 
             if (contact.addrFamily == ContactAddrFamily.RAW) {
                 contact.recieve(frame.getBuffer(), iface)
@@ -38,6 +39,114 @@ export class ContactsHandler {
                 contact.recieve(frame.get("payload"), iface)
             }
         }
+
+        // in future maybe have a better more targeted "Data Structure"
+
+        // read frame and parse
+
+        if (frame.get("ethertype") == ETHER_TYPES.IPv4) {
+            this.handleIPV4(IPV4_HEADER.from(frame.get("payload")), iface);
+        } else if (frame.get("ethertype") == ETHER_TYPES.IPv6) {
+            this.handleIPV6(IPV6_HEADER.from(frame.get("payload")), iface);
+        }
+
+    }
+
+    private handleIPV4(ipHdr: typeof IPV4_HEADER, iface: Interface) {
+        // check protocol
+
+        // this is cool and all but i need some type of error handling IE "ICMP ERRORS"
+
+        if (ipHdr.get("proto") == PROTOCOLS.UDP) {
+            let udpHdr = UDP_HEADER.from(ipHdr.getBuffer().subarray(
+                ipHdr.get("ihl") * 4
+            ));
+
+            // validate checksum
+
+            // loop through and do stuff
+
+            for (let contact of this.contacts) {
+                if (!contact ||
+                    !contact.address ||
+                    contact.address.addrFamily != ContactAddrFamily.IPv4 ||
+                    contact.address.proto != ContactProto.UDP ||
+                    !contact.recieveFrom) {
+                    continue;
+                }
+
+                // check dport
+                if (contact.address.port != udpHdr.get("dport")) {
+                    continue;
+                }
+
+                if (
+                    !uint8_equals(UNSET_IPV4_ADDRESS.buffer, contact.address.address.buffer) &&
+                    !uint8_equals(ipHdr.get("daddr").buffer, contact.address.address.buffer)
+                ) {
+                    continue
+                }
+
+                contact.recieveFrom({
+                    address: ipHdr.get("saddr"),
+                    addrFamily: ContactAddrFamily.IPv4,
+                    port: udpHdr.get("sport"),
+                    proto: ContactProto.UDP,
+                }, udpHdr.get("payload"));
+
+
+                return; // only 1 contact should be recieving protocol packets
+            }
+        }
+
+    }
+
+    private handleIPV6(ipHdr: typeof IPV6_HEADER, iface: Interface) {
+        // This is not tested due to sending part still incomplete 
+        // Due to my lack of understaing of ipv6 routing
+
+        // this is cool and all but i need some type of error handling IE "ICMP ERRORS"
+
+        if (ipHdr.get("nextHeader") == PROTOCOLS.UDP) {
+            let udpHdr = UDP_HEADER.from(ipHdr.get("payload"));
+
+            // validate checksum
+
+            // loop through and do stuff
+
+            for (let contact of this.contacts) {
+                if (!contact ||
+                    !contact.address ||
+                    contact.address.addrFamily != ContactAddrFamily.IPv6 ||
+                    contact.address.proto != ContactProto.UDP ||
+                    !contact.recieveFrom) {
+                    continue;
+                }
+
+                // check dport
+                if (contact.address.port != udpHdr.get("dport")) {
+                    continue;
+                }
+
+                if (
+                    !uint8_equals(UNSET_IPV6_ADDRESS.buffer, contact.address.address.buffer) &&
+                    !uint8_equals(ipHdr.get("daddr").buffer, contact.address.address.buffer)
+                ) {
+                    continue
+                }
+
+                contact.recieveFrom({
+                    address: ipHdr.get("saddr"),
+                    addrFamily: ContactAddrFamily.IPv6,
+                    port: udpHdr.get("sport"),
+                    proto: ContactProto.UDP,
+                }, udpHdr.get("payload"));
+
+
+                return; // only 1 contact should be recieving protocol packets
+            }
+        }
+
     }
 
     /** 
@@ -109,7 +218,8 @@ export class ContactsHandler {
                 iface = this.device.interfaces.find(i => i.ipv4Address);
             }
             if (!iface) {
-                return; // no interface to choose from
+                throw new Error ("no available interface to send from")
+                return false; // no interface to choose from
             }
 
             saddr = iface.ipv4Address!
@@ -215,7 +325,7 @@ export class ContactsHandler {
                 iface = this.device.interfaces.find(i => i.ipv6Address);
             }
             if (!iface) {
-                return; // no interface to choose from
+                return false; // no interface to choose from
             }
 
             throw new Error("UNSET IPv6 not implemented")

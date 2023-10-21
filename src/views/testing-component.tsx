@@ -9,11 +9,9 @@ import { IPV6Address } from "../lib/address/ipv6";
 import DeviceServiceDHCPServer from "../lib/device/service/dhcp-server";
 import { resolveDHCPv4 } from "../lib/device/applications/resolve-dhcp/resolve-dhcp-v4";
 import { NetworkRouter } from "../lib/device/network-router";
-import { IPV4_PSEUDO_HEADER, PROTOCOLS, createIPV4Header } from "../lib/header/ip";
-import { TCP_FLAGS, createTCPHeader } from "../lib/header/tcp";
 import { ContactAddrFamily, ContactProto } from "../lib/device/contact/contact";
 import { UNSET_IPV4_ADDRESS } from "../lib/device/contact/contacts-handler";
-import { uint8_concat, uint8_fromNumber } from "../lib/binary/uint8-array";
+import { uint8_concat, uint8_fromNumber, uint8_readUint16BE } from "../lib/binary/uint8-array";
 const selectContents = (ev: MouseEvent) => {
     if (!(ev.currentTarget instanceof HTMLElement)) return;
     let range = document.createRange();
@@ -127,10 +125,43 @@ dhcpServer.configure({
 let data = new Uint8Array([1, 3, 3, 7])
 let contact = pc1.contactsHandler.createContact(ContactAddrFamily.IPv4, ContactProto.UDP);
 
+contact.recieveFrom = (_, data) => {
+    console.log(
+        new IPV4Address(data.subarray(0, 4)).toString(),
+        uint8_readUint16BE(data, 4)
+    )
+}
+
+function screamToEchoUDPServer(pc: Device) {
+    let contact = pc.contactsHandler.createContact(ContactAddrFamily.IPv4, ContactProto.UDP);
+
+    contact.recieveFrom = (_, data) => {
+        console.log(
+            new IPV4Address(data.subarray(0, 4)).toString(),
+            uint8_readUint16BE(data, 4)
+        )
+
+        // close contact
+        contact.close();
+    }
+
+    let s = contact.sendTo({
+        address: iface_pc3.ipv4Address!,
+        port: SERVER_PORT,
+        proto: ContactProto.UDP,
+        addrFamily: ContactAddrFamily.IPv4
+    }, data)
+
+    if (!s) {
+        contact.close();
+        console.log("failed to send")
+    }
+}
+
 // UDP server pc3
 // respond whith address and port
 
-const SERVER_PORT = 1337;
+const SERVER_PORT = 3640; // ECHO
 
 let serverContact = pc3.contactsHandler.createContact(ContactAddrFamily.IPv4, ContactProto.UDP);
 
@@ -142,6 +173,7 @@ if (!serverContact.bind({
 }
 
 serverContact.recieveFrom = (caddr, _) => {
+    console.info("[UDP_ECHO_SERVER] recieved request ... responding")
     serverContact.sendTo(caddr, uint8_concat([
         caddr.address.buffer,
         uint8_fromNumber(caddr.port, 2)
@@ -158,14 +190,6 @@ export const TestingComponent: Component = () => {
                 <h2>This is a component where trying things are acceptable.</h2>
             </header>
             <button onClick={() => {
-                contact.sendTo({
-                    address: iface_pc3.ipv4Address!,
-                    port: 9000,
-                    proto: ContactProto.UDP,
-                    addrFamily: ContactAddrFamily.IPv4
-                }, data)
-            }}>Send UDP using contact </button>
-            <button onClick={() => {
                 resolveDHCPv4(pc2, iface_pc2);
             }}>Init {pc2.name} using DHCPv4</button>
             <div>
@@ -176,21 +200,27 @@ export const TestingComponent: Component = () => {
                 <DeviceComponent device={pc3} />
             </div>
 
-            {[pc1, pc2].map((device) => (
-                <button onClick={async () => {
-                    let ip = prompt("Please enter a destination ip, from: " + device.name)
+            {[pc1, pc2, pc3].map((device) => (
+                <div>
+                    <button onClick={async () => {
+                        let ip = prompt("Please enter a destination ip, from: " + device.name)
 
-                    if (!ip) return;
+                        if (!ip) return;
 
-                    if (IPV4Address.validate(ip)) {
-                        await pingVersion4(device, new IPV4Address(ip))
-                    } else if (/* IPV6Address.validate(ip) */ true) {
-                        await pingVersion6(device, new IPV6Address(ip))
-                    }
+                        if (IPV4Address.validate(ip)) {
+                            await pingVersion4(device, new IPV4Address(ip))
+                        } else if (/* IPV6Address.validate(ip) */ true) {
+                            await pingVersion6(device, new IPV6Address(ip))
+                        }
 
-                    console.log("%c ECHO Reply recieved: " + device.name, ['background: green', 'color: white', 'display: block', 'text-align: center', 'font-size: 24px'].join(';'))
+                        console.log("%c ECHO Reply recieved: " + device.name, ['background: green', 'color: white', 'display: block', 'text-align: center', 'font-size: 24px'].join(';'))
 
-                }}>Ping from: {device.name}</button>
+                    }}>Ping from: {device.name}</button>
+
+                    <button onClick={() => {
+                        screamToEchoUDPServer(device)
+                    }}>Send to ECHO Server</button>
+                </div>
             ))}
         </div>
     )
