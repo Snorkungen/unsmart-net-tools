@@ -13,8 +13,8 @@ type TerminalRendererCursor = {
 
 export class TerminalRenderer {
     // options start
-    COLUMN_WIDTH = 30;
-    ROW_HEIGHT = 10;
+    COLUMN_WIDTH = 2 * 8;
+    ROW_HEIGHT = 2 * 8;
 
 
     COLORS = [
@@ -33,11 +33,12 @@ export class TerminalRenderer {
         this.container = container;
 
         this.container.style.fontFamily = "monospace";
-        this.container.style.backgroundColor = this.color(this.COLOR_BG);
+        // this.container.style.backgroundColor = this.color(this.COLOR_BG);
 
         // fill container with rows
         for (let i = 0; i < this.ROW_HEIGHT; i++) {
             let row = document.createElement("div")
+            row.style.backgroundColor = this.color(this.COLOR_BG);
             for (let j = 0; j < this.COLUMN_WIDTH; j++) {
                 let p = document.createElement("span")
                 p.innerHTML = this.EMPTY_CHAR
@@ -69,10 +70,19 @@ export class TerminalRenderer {
 
             // INSPIRATION <https://en.wikipedia.org/wiki/ANSI_escape_code>
             switch (byte) {
-                case 0x00:  i++; continue char_parse_loop;
+                case 0x00: i++; continue char_parse_loop;
                 case 0x08: {
                     // handle backspace
                     this.cursor.x -= 1
+
+                    if (this.cursor.x < 0) {
+                        this.cursor.x = 0;
+                        this.cursor.y -= 1;
+                        if (this.cursor.y < 0) {
+                            this.cursor.y = 0;
+                            break;
+                        }
+                    }
 
                     let activeElement = this.container.children[this.cursor.y].children[this.cursor.x] as HTMLElement;
                     activeElement.innerHTML = this.EMPTY_CHAR
@@ -81,6 +91,10 @@ export class TerminalRenderer {
                 case 0x09: {
                     // handle Tab
                     this.cursor.x += 8 - this.cursor.x % 8;
+                    if (this.cursor.x >= this.COLUMN_WIDTH) {
+                        this.cursor.x = 0;
+                        this.cursor.y += 1;
+                    }
                     break;
                 } case 0x0A: {
                     // handle new line
@@ -112,7 +126,10 @@ export class TerminalRenderer {
             activeElement.textContent = String.fromCharCode(byte)
 
             // advance cursor
-            this.cursor.x += 1
+            this.cursor.x += 1;
+            if (this.cursor.x >= this.COLUMN_WIDTH) {
+                this.cursor.y += 1;
+            }
 
             i++; continue char_parse_loop;
         }
