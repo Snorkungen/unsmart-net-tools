@@ -10,8 +10,8 @@ const App: Component = () => {
         <Container>
           <Navbar.Brand href="#home">Navbar</Navbar.Brand>
           <Nav class="me-auto">
-            <For each={views}>{([component, name]) => (
-              <NavLink href={createViewHref(component.name)}>{name}</NavLink>
+            <For each={views}>{([component, name], i) => (
+              <NavLink href={createViewHref(component.name + i())}>{name}</NavLink>
             )}</For>
           </Nav>
         </Container>
@@ -19,9 +19,9 @@ const App: Component = () => {
       <Container>
         <Card bg='dark' text='light' class='mt-4'>
           <Card.Body>
-            <ViewRouter views={views.map(([Comp]) => ({
+            <ViewRouter views={views.map(([Comp], i) => ({
               element: <Comp />,
-              name: Comp.name
+              name: Comp.name + i
             }))}
               fallback={(
                 <h1>View not found</h1>
