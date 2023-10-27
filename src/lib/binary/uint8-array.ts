@@ -113,4 +113,9 @@ export function uint8_readUint16LE(source: Uint8Array, offset = 0) {
     offset = offset >>> 0; // make positive
     return (source[offset + 1] << 8)
         | (source[offset])
-}       
+}
+
+export function uint8_fromString(str: string): Uint8Array {
+    let encoder = new TextEncoder();
+    return encoder.encode(str)
+}
