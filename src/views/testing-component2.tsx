@@ -1,28 +1,23 @@
 import { Component, createEffect } from "solid-js";
-import { ASCIICodes, TerminalRenderer } from "../lib/terminal/terminal";
+import Terminal, { ASCIICodes, TerminalRenderer } from "../lib/terminal/terminal";
 import { uint8_concat, uint8_fromString } from "../lib/binary/uint8-array";
 
 
 export const TestingComponent2: Component = () => {
 
-    let terminalRenderer: TerminalRenderer;
+    let terminal: Terminal;
 
     let bytes = uint8_fromString("A\tB\tC\bD\nE\tF \b\rG\n")
 
+    createEffect(() => {
 
-    function fooAnimate(bi = 0): void {
-        if (bi > bytes.byteLength) {
-            return;
+        terminal.read = (
+            buf
+        ) => {
+            terminal.write(buf)
         }
+    })
 
-
-        terminalRenderer.buffer = bytes.slice(bi, bi + 1)
-        terminalRenderer.render();
-
-        window.setTimeout(() => fooAnimate(bi + 1), 1000)
-    }
-
-    // createEffect(() => fooAnimate())
 
     function sescape(str: string): Uint8Array {
         return uint8_concat([
@@ -31,67 +26,11 @@ export const TestingComponent2: Component = () => {
         ])
     }
 
-    let bufs = ([
-        sescape("[;B"),
-        uint8_fromString("Hello World"),
-        sescape("[;K"),
-        sescape("[;B"),
-        sescape("[;A"),
-        sescape("[;C"),
-        sescape("[;D"),
-        uint8_fromString("Hello World"),
-        sescape("[2E"),
-        uint8_fromString("Hello World"),
-        sescape("[F"),
-        uint8_fromString("Hello World"),
-        sescape("[1B"),
-        sescape("[4G"),
-        uint8_fromString("_______"),
-        sescape("[1;50H"), uint8_fromString("|"),
-        sescape("[2;50H"), uint8_fromString("|"),
-        sescape("[3;50H"), uint8_fromString("|"),
-        sescape("[4;50H"), uint8_fromString("|"),
-        sescape("[5;50f"), uint8_fromString("|"),
-        sescape("[f"),
-        uint8_fromString("Hello Space-Cadet"),
-        sescape("[;40f"),
-        sescape("[7m"),// invert colors
-        sescape("[2;J"),
-        sescape("[36m"),// invert colors
-        sescape("[43m"),// invert colors
-        uint8_fromString("Hello World"),
-        sescape("[2E"),
-        sescape("[m"), // reset invert of colors
-        uint8_fromString("Hello World"),
-        uint8_fromString("Hello World"),
-
-        sescape("[F"),
-        uint8_fromString("Hello World"),
-    ])
-
-
-    function bazAnimate(bi = 0): void {
-        if (bi >= bufs.length) {
-            return;
-        }
-
-
-        terminalRenderer.buffer = bufs.at(bi)!
-        terminalRenderer.render();
-
-        window.setTimeout(() => bazAnimate(bi + 1), 1000 / 2)
-    }
-
-    createEffect(() => {
-        bazAnimate()
-
-    })
-
     return (
         <div>
 
             <div ref={(el) => {
-                terminalRenderer = new TerminalRenderer(el)
+                terminal = new Terminal(el)
             }}></div>
 
         </div>

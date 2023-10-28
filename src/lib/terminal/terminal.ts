@@ -18,10 +18,102 @@ export enum ASCIICodes {
 
 
 export default class Terminal {
+    private renderer: TerminalRenderer;
+    private container: HTMLElement;
+
+    constructor(container: HTMLElement) {
+        this.container = container;
+        this.renderer = new TerminalRenderer(container);
+
+        this.container.tabIndex = 0;
+
+        this.container.addEventListener("click", (event) => {
+            (event.currentTarget instanceof HTMLElement) && event.currentTarget.focus()
+        })
+
+        this.container.addEventListener("keydown", (event) => {
+            if (!this.read) {
+                return; // no reader attached
+            }
+
+            // What i want to do is to support 7-bit ASCII
+
+            let key = event.key;
+            let buffer: Uint8Array | undefined;
+
+            // not the best way but i don't know if the key code from the browser API is reliable
+            // Source : <https://developer.mozilla.org/en-US/docs/Web/API/UI_Events/Keyboard_event_key_values>
+            // Source 2 : <https://www.man7.org/linux/man-pages/man4/console_codes.4.html>
+            switch (key) {
+                // White space
+                case "Enter": buffer = new Uint8Array([ASCIICodes.NewLine]); break;
+                case "Tab": buffer = new Uint8Array([ASCIICodes.Tab]); break;
+
+                case "Backspace": buffer = new Uint8Array([ASCIICodes.BackSpace]); break;
+
+                // Navigation
+                case "ArrowUp": buffer = new Uint8Array([ASCIICodes.Escape, ASCIICodes.OpenSquareBracket, ASCIICodes.A]); break;
+                case "ArrowDown": buffer = new Uint8Array([ASCIICodes.Escape, ASCIICodes.OpenSquareBracket, ASCIICodes.A + 1]); break;
+                case "ArrowRight": buffer = new Uint8Array([ASCIICodes.Escape, ASCIICodes.OpenSquareBracket, ASCIICodes.A + 2]); break;
+                case "ArrowLeft": buffer = new Uint8Array([ASCIICodes.Escape, ASCIICodes.OpenSquareBracket, ASCIICodes.A + 3]); break;
+
+                default: {
+                    if (key.length > 1) {
+                        return;
+                    }
+
+                    let code = key.charCodeAt(0);
+                    if (code > 0x7f) {
+                        return;
+                    }
+
+                    buffer = new Uint8Array([code])
+                }
+            }
+
+            if (buffer == undefined) {
+                return;
+            }
+
+            this.read(buffer);
+
+            // PREVENT Something unexpected
+            event.preventDefault();
+            event.stopPropagation()
+        })
 
 
 
+        this.container.addEventListener("focus", () => {
+            console.log("focused")
+            this.container.style.border = "blue 2px solid"
+        })
+        this.container.addEventListener("blur", () => {
+            console.log("focused")
+            this.container.style.border = "none"
+        })
 
+
+
+        // render to screen ?
+        // const render = () => {
+        //     this.renderer.render.bind(this.renderer)();
+        //     requestAnimationFrame(render)
+        // }
+        // window.requestAnimationFrame(render);
+    }
+
+    read?: (bytes: Uint8Array) => void;
+
+    // this is a temporary implementation
+    write(bytes: Uint8Array) {
+        this.renderer.buffer = bytes;
+        this.flush()
+    }
+
+    private flush() {
+        this.renderer.render();
+    }
 }
 
 type TerminalRendererCursor = {
@@ -99,9 +191,9 @@ export class TerminalRenderer {
             // clear from cursor to end of screen
 
             // loop thru rows
-            for (let y = 0; y < this.container.children.length; y++) {
-                for (let x = this.cursor.x; x < this.container.children[y].children.length; x++) {
-                    this._eraseCell(x, y)
+            for (let y = this.cursor.y; y < this.container.children.length; y++) {
+                for (let x = 0; x < this.COLUMN_WIDTH; x--) {
+                    this._eraseCell(x, y);
                 }
             }
         }
@@ -109,8 +201,8 @@ export class TerminalRenderer {
             // clear from cursor to end of screen
 
             // loop thru rows
-            for (let y = 0; y < this.container.children.length; y++) {
-                for (let x = this.cursor.x; x >= 0; x--) {
+            for (let y = 0; y < this.cursor.y; y++) {
+                for (let x = 0; x < this.COLUMN_WIDTH; x--) {
                     this._eraseCell(x, y);
                 }
             }
@@ -326,10 +418,11 @@ export class TerminalRenderer {
                     this.cursor.x -= 1
 
                     if (this.cursor.x < 0) {
-                        this.cursor.x = 0;
+                        this.cursor.x = this.COLUMN_WIDTH - 1;
                         this.cursor.y -= 1;
                         if (this.cursor.y < 0) {
                             this.cursor.y = 0;
+                            this.cursor.x = 0;
                             break;
                         }
                     }
