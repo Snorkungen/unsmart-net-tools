@@ -36,12 +36,18 @@ export class TerminalRenderer {
 
 
     COLORS = [
-        "#080808",
-        "#ffffff"
+        "#000000",
+        "#b21818",
+        "#18b218",
+        "#b26818",
+        "#1818b2",
+        "#b218b2",
+        "#18b2b2",
+        "#b2b2b2"
     ]
     COLOR_BG_DEFAULT = 0 % this.COLORS.length;
     COLOR_BG = this.COLOR_BG_DEFAULT;
-    COLOR_FG_DEFAULT = 1 % this.COLORS.length;
+    COLOR_FG_DEFAULT = 7 % this.COLORS.length;
     COLOR_FG = this.COLOR_FG_DEFAULT;
 
     EMPTY_CHAR = "&nbsp;"
@@ -58,6 +64,9 @@ export class TerminalRenderer {
         // fill container with rows
         for (let i = 0; i < this.ROW_HEIGHT; i++) {
             let row = document.createElement("div")
+            row.style.padding = "0";
+            row.style.margin = "0";
+            row.style.lineHeight = "normal";
             row.style.backgroundColor = this.color(this.COLOR_BG);
             for (let j = 0; j < this.COLUMN_WIDTH; j++) {
                 let p = document.createElement("span")
@@ -88,6 +97,7 @@ export class TerminalRenderer {
                 for (let x = this.cursor.x; x < row.children.length; x++) {
                     row.children[x].innerHTML = this.EMPTY_CHAR;
                     (row.children[x] as HTMLElement).style.backgroundColor = this.color(this.COLOR_BG);
+                    (row.children[x] as HTMLElement).style.color = this.color(this.COLOR_FG);
                 }
             }
         }
@@ -99,6 +109,7 @@ export class TerminalRenderer {
                 for (let x = this.cursor.x; x >= 0; x--) {
                     row.children[x].innerHTML = this.EMPTY_CHAR;
                     (row.children[x] as HTMLElement).style.backgroundColor = this.color(this.COLOR_BG);
+                    (row.children[x] as HTMLElement).style.color = this.color(this.COLOR_FG);
                 }
             }
         }
@@ -113,7 +124,31 @@ export class TerminalRenderer {
         }
     }
     private handleSelectGraphicRendition (n: number) {
-        throw new Error("not implemented")
+        if (n == 0) {
+            // reset all attributes
+            this.COLOR_BG = this.COLOR_BG_DEFAULT;
+            this.COLOR_FG = this.COLOR_FG_DEFAULT;
+        } 
+
+        // only support colors for now
+
+        if (n == 7) {
+            // invert colors
+            let tmp = this.COLOR_BG;
+            this.COLOR_BG = this.COLOR_FG;
+            this.COLOR_FG = tmp;
+        }
+
+        if (n >= 30 && n <= 37) {
+            // set foreground color
+            this.COLOR_FG = n - 30;
+        }
+
+        if (n >= 40 && n <= 47) {
+            // set background color
+            this.COLOR_BG = n - 40;
+        }
+
     }
     private handleEscapeSequences(i: number): number {
         let byte = this.buffer[i];
@@ -326,6 +361,8 @@ export class TerminalRenderer {
             let activeElement = this.container.children[this.cursor.y].children[this.cursor.x] as HTMLElement;
 
             activeElement.textContent = String.fromCharCode(byte)
+            activeElement.style.backgroundColor = this.color(this.COLOR_BG);
+            activeElement.style.color = this.color(this.COLOR_FG);
 
             // advance cursor
             this.cursor.x += 1;
