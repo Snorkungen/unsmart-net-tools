@@ -88,16 +88,20 @@ export class TerminalRenderer {
         y: 0
     }
 
+    private _eraseCell(x: number, y: number) {
+        let cell = this.container.children[y].children[x];
+        cell.innerHTML = this.EMPTY_CHAR;
+        (cell as HTMLElement).style.backgroundColor = this.color(this.COLOR_BG);
+        (cell as HTMLElement).style.color = this.color(this.COLOR_FG);
+    }
     private handleEraseDisplay(p: number) {
         const clear_from_cursor_to_end = () => {
             // clear from cursor to end of screen
 
             // loop thru rows
-            for (let row of this.container.children) {
-                for (let x = this.cursor.x; x < row.children.length; x++) {
-                    row.children[x].innerHTML = this.EMPTY_CHAR;
-                    (row.children[x] as HTMLElement).style.backgroundColor = this.color(this.COLOR_BG);
-                    (row.children[x] as HTMLElement).style.color = this.color(this.COLOR_FG);
+            for (let y = 0; y < this.container.children.length; y++) {
+                for (let x = this.cursor.x; x < this.container.children[y].children.length; x++) {
+                    this._eraseCell(x, y)
                 }
             }
         }
@@ -105,11 +109,9 @@ export class TerminalRenderer {
             // clear from cursor to end of screen
 
             // loop thru rows
-            for (let row of this.container.children) {
+            for (let y = 0; y < this.container.children.length; y++) {
                 for (let x = this.cursor.x; x >= 0; x--) {
-                    row.children[x].innerHTML = this.EMPTY_CHAR;
-                    (row.children[x] as HTMLElement).style.backgroundColor = this.color(this.COLOR_BG);
-                    (row.children[x] as HTMLElement).style.color = this.color(this.COLOR_FG);
+                    this._eraseCell(x, y);
                 }
             }
         }
@@ -123,12 +125,32 @@ export class TerminalRenderer {
             clear_from_cursor_to_end()
         }
     }
-    private handleSelectGraphicRendition (n: number) {
+    private handleEraseInLine(p: number) {
+        if (p == 0) {
+            // clear from cursor to end
+            for (let x = this.cursor.x; x < this.COLUMN_WIDTH; x++) {
+                this._eraseCell(x, this.cursor.y);
+            }
+        }
+        else if (p == 1) {
+            // clear from cursor to start
+            for (let x = this.cursor.x; x >= 0; x--) {
+                this._eraseCell(x, this.cursor.y);
+            }
+        }
+        else if (p == 2) {
+            // clear entire screen
+            for (let x = 0; x < this.COLUMN_WIDTH; x++) {
+                this._eraseCell(x, this.cursor.y);
+            }
+        }
+    }
+    private handleSelectGraphicRendition(n: number) {
         if (n == 0) {
             // reset all attributes
             this.COLOR_BG = this.COLOR_BG_DEFAULT;
             this.COLOR_FG = this.COLOR_FG_DEFAULT;
-        } 
+        }
 
         // only support colors for now
 
@@ -182,7 +204,7 @@ export class TerminalRenderer {
             switch (finalByte) {
                 case ASCIICodes.A: {
                     // handle Cursor up
-                    let params = readParams(rawParams, 1,1)
+                    let params = readParams(rawParams, 1, 1)
 
                     this.cursor.y = Math.max(
                         this.cursor.y - params[0],
@@ -193,27 +215,27 @@ export class TerminalRenderer {
                 }
                 case ASCIICodes.A + 1: { // B
                     // handle Cursor down
-                    let params = readParams(rawParams, 1,1)
+                    let params = readParams(rawParams, 1, 1)
                     this.cursor.y += params[0];
                     break;
                 }
                 case ASCIICodes.A + 2: { // C
                     // handle Cursor forward
-                    let params = readParams(rawParams, 1,1)
+                    let params = readParams(rawParams, 1, 1)
 
                     this.cursor.x = Math.min(this.cursor.x + params[0], this.COLUMN_WIDTH)
                     break;
                 }
                 case ASCIICodes.A + 3: { // D
                     // handle Cursor Back
-                    let params = readParams(rawParams, 1,1)
+                    let params = readParams(rawParams, 1, 1)
 
                     this.cursor.x = Math.max(this.cursor.x - params[0], 0)
                     break;
                 }
                 case ASCIICodes.A + 4: { // E
                     // handle Cursor Next Line
-                    let params = readParams(rawParams, 1,1)
+                    let params = readParams(rawParams, 1, 1)
 
                     this.cursor.y += params[0];
                     this.cursor.x = 0;
@@ -221,7 +243,7 @@ export class TerminalRenderer {
                 }
                 case ASCIICodes.A + 5: { // F
                     // handle Cursor Previous Line
-                    let params = readParams(rawParams, 1,1)
+                    let params = readParams(rawParams, 1, 1)
 
                     this.cursor.y = Math.max(
                         this.cursor.y - params[0],
@@ -232,7 +254,7 @@ export class TerminalRenderer {
                 }
                 case ASCIICodes.A + 6: { // G
                     // handle Cursor Horizontal Absolute
-                    let params = readParams(rawParams, 1,1)
+                    let params = readParams(rawParams, 1, 1)
 
                     // I think this is  1-based
                     if (params[0]) {
@@ -265,13 +287,18 @@ export class TerminalRenderer {
                     this.handleEraseDisplay(n)
                     break;
                 }
-                
+                case ASCIICodes.A + 10: { // K
+                    // erase in line
+                    let [n] = readParams(rawParams, 2, 1);
+                    this.handleEraseInLine(n)
+                    break;
+                }
                 case ASCIICodes.m: {
                     // Select Graphic Rendition
                     let [n] = readParams(rawParams, 0);
                     this.handleSelectGraphicRendition(n);
                     break;
-                } 
+                }
 
                 default: return -1; // unhandled control sequence
             }
