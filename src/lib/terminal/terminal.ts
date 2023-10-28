@@ -3,15 +3,17 @@ export enum ASCIICodes {
     NUL = 0,
     BackSpace = 0x08,
     Tab = 0x09,
-    NewLine = 0x0D,
+    NewLine = 0x0A,
     CarriageReturn = 0x0D,
     Escape = 0x1B,
     Semicolon = 0x3B,
     OpenSquareBracket = 0x5B,
 
 
-    A = 0x41, // 65
     Zero = 0x30, // 48
+    A = 0x41, // 65
+    a = 0x61, // 97
+    m = 0x6D, // 109
 }
 
 
@@ -29,7 +31,7 @@ type TerminalRendererCursor = {
 
 export class TerminalRenderer {
     // options start
-    COLUMN_WIDTH = 4 * 8;
+    COLUMN_WIDTH = 8 * 8;
     ROW_HEIGHT = 6 * 8;
 
 
@@ -37,8 +39,10 @@ export class TerminalRenderer {
         "#080808",
         "#ffffff"
     ]
-    COLOR_BG = 0 % this.COLORS.length;
-    COLOR_FG = 1 % this.COLORS.length;
+    COLOR_BG_DEFAULT = 0 % this.COLORS.length;
+    COLOR_BG = this.COLOR_BG_DEFAULT;
+    COLOR_FG_DEFAULT = 1 % this.COLORS.length;
+    COLOR_FG = this.COLOR_FG_DEFAULT;
 
     EMPTY_CHAR = "&nbsp;"
     // options end
@@ -75,6 +79,42 @@ export class TerminalRenderer {
         y: 0
     }
 
+    private handleEraseDisplay(p: number) {
+        const clear_from_cursor_to_end = () => {
+            // clear from cursor to end of screen
+
+            // loop thru rows
+            for (let row of this.container.children) {
+                for (let x = this.cursor.x; x < row.children.length; x++) {
+                    row.children[x].innerHTML = this.EMPTY_CHAR;
+                    (row.children[x] as HTMLElement).style.backgroundColor = this.color(this.COLOR_BG);
+                }
+            }
+        }
+        const clear_from_cursor_to_start = () => {
+            // clear from cursor to end of screen
+
+            // loop thru rows
+            for (let row of this.container.children) {
+                for (let x = this.cursor.x; x >= 0; x--) {
+                    row.children[x].innerHTML = this.EMPTY_CHAR;
+                    (row.children[x] as HTMLElement).style.backgroundColor = this.color(this.COLOR_BG);
+                }
+            }
+        }
+
+        if (p == 0) clear_from_cursor_to_end();
+        else if (p == 1) clear_from_cursor_to_start();
+        else if (p == 2) {
+            // clear entire screen
+            this.cursor.x = 0
+            this.cursor.y = 0
+            clear_from_cursor_to_end()
+        }
+    }
+    private handleSelectGraphicRendition (n: number) {
+        throw new Error("not implemented")
+    }
     private handleEscapeSequences(i: number): number {
         let byte = this.buffer[i];
         if (byte == ASCIICodes.OpenSquareBracket) {
@@ -107,10 +147,7 @@ export class TerminalRenderer {
             switch (finalByte) {
                 case ASCIICodes.A: {
                     // handle Cursor up
-                    let params = readParams(rawParams, 1)
-                    if (params.length < 1) {
-                        return -1;
-                    }
+                    let params = readParams(rawParams, 1,1)
 
                     this.cursor.y = Math.max(
                         this.cursor.y - params[0],
@@ -121,48 +158,35 @@ export class TerminalRenderer {
                 }
                 case ASCIICodes.A + 1: { // B
                     // handle Cursor down
-                    let params = readParams(rawParams, 1)
-                    if (params.length < 1) {
-                        return -1;
-                    }
+                    let params = readParams(rawParams, 1,1)
                     this.cursor.y += params[0];
                     break;
                 }
                 case ASCIICodes.A + 2: { // C
                     // handle Cursor forward
-                    let params = readParams(rawParams, 1)
-                    if (params.length < 1) {
-                        return -1;
-                    }
+                    let params = readParams(rawParams, 1,1)
+
                     this.cursor.x = Math.min(this.cursor.x + params[0], this.COLUMN_WIDTH)
                     break;
                 }
                 case ASCIICodes.A + 3: { // D
                     // handle Cursor Back
-                    let params = readParams(rawParams, 1)
-                    if (params.length < 1) {
-                        return -1;
-                    }
+                    let params = readParams(rawParams, 1,1)
 
                     this.cursor.x = Math.max(this.cursor.x - params[0], 0)
                     break;
                 }
                 case ASCIICodes.A + 4: { // E
                     // handle Cursor Next Line
-                    let params = readParams(rawParams, 1)
-                    if (params.length < 1) {
-                        return -1;
-                    }
+                    let params = readParams(rawParams, 1,1)
+
                     this.cursor.y += params[0];
                     this.cursor.x = 0;
                     break;
                 }
                 case ASCIICodes.A + 5: { // F
                     // handle Cursor Previous Line
-                    let params = readParams(rawParams, 1)
-                    if (params.length < 1) {
-                        return -1;
-                    }
+                    let params = readParams(rawParams, 1,1)
 
                     this.cursor.y = Math.max(
                         this.cursor.y - params[0],
@@ -173,9 +197,11 @@ export class TerminalRenderer {
                 }
                 case ASCIICodes.A + 6: { // G
                     // handle Cursor Horizontal Absolute
-                    let params = readParams(rawParams, 1)
-                    if (params.length < 1) {
-                        return -1;
+                    let params = readParams(rawParams, 1,1)
+
+                    // I think this is  1-based
+                    if (params[0]) {
+                        params[0] -= 1
                     }
 
                     this.cursor.x = Math.min(
@@ -185,6 +211,32 @@ export class TerminalRenderer {
 
                     break;
                 }
+                case ASCIICodes.A + 7: case ASCIICodes.a + 5: { // H f
+                    // handle set Cursor position
+                    let params = readParams(rawParams, 1, 2);
+
+                    let [row, col] = params;
+                    // ESC [ <y> ; <x> H <https://github.com/0x5c/VT100-Examples/blob/master/vt_seq.md#simple-cursor-positioning>
+                    row = Math.max(row - 1, 0);
+                    col = Math.max(col - 1, 0); // 1-based
+
+                    this.cursor.x = Math.min(col, this.COLUMN_WIDTH);
+                    this.cursor.y = row;
+
+                    break;
+                }
+                case ASCIICodes.A + 9: { // J
+                    let [n] = readParams(rawParams, 2, 1);
+                    this.handleEraseDisplay(n)
+                    break;
+                }
+                
+                case ASCIICodes.m: {
+                    // Select Graphic Rendition
+                    let [n] = readParams(rawParams, 0);
+                    this.handleSelectGraphicRendition(n);
+                    break;
+                } 
 
                 default: return -1; // unhandled control sequence
             }
@@ -306,9 +358,10 @@ export class TerminalRenderer {
     }
 }
 
-function readParams(params: number[], fallback: number): number[] {
+function readParams(params: number[], fallback: number, minLength?: number): number[] {
     if (params.length == 0) {
-        return [fallback]
+
+        return (new Array<number>(minLength || 1)).fill(fallback)
     }
 
     let result: number[] = [], numBuffer: number[] = [];
@@ -347,5 +400,13 @@ function readParams(params: number[], fallback: number): number[] {
     if (numBuffer.length > 0) {
         result.push(consumeNumBuffer())
     }
+
+    if (minLength && result.length < minLength) {
+        // fill to the minimu length
+        let diff = minLength - result.length;
+
+        result.push(...(new Array(diff)).fill(fallback))
+    }
+
     return result;
 }
