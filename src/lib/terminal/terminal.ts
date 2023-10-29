@@ -544,11 +544,16 @@ export class TerminalRenderer {
             ) {
                 i++; continue char_parse_loop;
             }
-
             // draw character and move cursor position
             let activeElement = this.container.children[this.cursor.y].children[this.cursor.x] as HTMLElement;
+            
+            // hacky fix
+            if (byte == ASCIICodes.Space) {
+                activeElement.innerHTML = "&nbsp"
+            } else {
+                activeElement.innerHTML = String.fromCharCode(byte);
+            }
 
-            activeElement.textContent = String.fromCharCode(byte)
             activeElement.style.backgroundColor = this.color(this.COLOR_BG);
             activeElement.style.color = this.color(this.COLOR_FG);
 
