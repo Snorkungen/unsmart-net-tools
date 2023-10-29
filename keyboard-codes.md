@@ -4,49 +4,49 @@
 
 > [MDN Keys](<https://developer.mozilla.org/en-US/docs/Web/API/UI_Events/Keyboard_event_key_values>)
 
-|Key        |Unmodified |`Ctrl`     |`Ctrl`+`Shift` |  
-|-----------|-----------|-----------|---------------|
-|Enter      |`CR`       |`CR`       |`ESC`OM        |
-|Tab        |`TAB`      |           |               |
-|ArrowUp    |`ESC`[A    |`ESC`[1;5A |`ESC`[1;6A     |
-|ArrowDown  |`ESC`[B    |`ESC`[1;5B |`ESC`[1;6B     |
-|ArrowRight |`ESC`[C    |`ESC`[1;5C |`ESC`[1;6C     |
-|ArrowLeft  |`ESC`[D    |`ESC`[1;5D |`ESC`[1;6D     |
-|Home       |`ESC`[H    |`ESC`[1;5H |               |
-|End        |`ESC`[F    |`ESC`[1;5F |               |
-|PageUp     |`ESC`[5~   |           |               |
-|PageDown   |`ESC`[6~   |           |               |
-|Insert     |`ESC`[2~   |`ESC`[2;5~ |`ESC`[2;6~     |
-|Delete     |`ESC`[3~   |`ESC`[3;5~ |`ESC`[3;6~     |
-|Backspace  |`DEL`      |`BS`       |               |
-|Escape     |`ESC`      |           |               |
-|" "        |`Space`    |`NUL` = 0  |               |
-|A          |A          |`SOH` = 1  |               |
-|B          |B          |`STX` = 2  |               |
-|C          |C          |`ETX` = 3  |               |
-|D          |D          |`EOT` = 4  |               |
-|E          |E          |`ENQ` = 5  |               |
-|F          |F          |`ACK` = 6  |               |
-|G          |G          |`BEL` = 7  |               |
-|H          |H          |`BS`  = 8  |               |
-|I          |I          |`TAB` = 9  |               |
-|J          |J          |`LF`  = 10 |               |
-|K          |K          |`VT`  = 11 |               |
-|L          |L          |`FF`  = 12 |               |
-|M          |M          |`CR`  = 13 |               |
-|N          |N          |`SO`  = 14 |               |
-|O          |O          |`SI`  = 15 |               |
-|P          |P          |`DLE` = 16 |               |
-|Q          |Q          |`DC1` = 17 |               |
-|R          |R          |`DC2` = 18 |               |
-|S          |S          |`DC3` = 19 |               |
-|T          |T          |`DC4` = 20 |               |
-|U          |U          |`NAK` = 21 |               |
-|V          |V          |`SYN` = 22 |               |
-|W          |W          |`ETB` = 23 |               |
-|X          |X          |`CAN` = 24 |               |
-|Y          |Y          |`EM`  = 25 |               |
-|Z          |Z          |`SUB` = 26 |               |
+|Key        |Unmodified |`Ctrl`     |`Shift`    |`Ctrl`+`Shift` |  
+|-----------|-----------|-----------|-----------|---------------|
+|Enter      |`CR`       |`CR`       |`CR`       |`CR`           |
+|Tab        |`TAB`      |`TAB`      |`ESC`[Z    |`ESC`[Z        |
+|ArrowUp    |`ESC`[A    |`ESC`[1;5A |`ESC`[1;2A |`ESC`[1;6A     |
+|ArrowDown  |`ESC`[B    |`ESC`[1;5B |`ESC`[1;2B |`ESC`[1;6B     |
+|ArrowRight |`ESC`[C    |`ESC`[1;5C |`ESC`[1;2C |`ESC`[1;6C     |
+|ArrowLeft  |`ESC`[D    |`ESC`[1;5D |`ESC`[1;2D |`ESC`[1;6D     |
+|End        |`ESC`[F    |`ESC`[1;5F |`ESC`[1;2F |`ESC`[1;6F     |
+|Home       |`ESC`[H    |`ESC`[1;5H |`ESC`[1;2H |`ESC`[1;6H     |
+|PageUp     |`ESC`[5~   |`ESC`[5;5~ |           |               |
+|PageDown   |`ESC`[6~   |`ESC`[6;5~ |           |               |
+|Insert     |`ESC`[2~   |`ESC`[2;5~ |`ESC`[2;2~ |`ESC`[2;6~     |
+|Delete     |`ESC`[3~   |`ESC`[3;5~ |`ESC`[3;2~ |`ESC`[3;6~     |
+|Backspace  |`DEL`      |`BS`       |           |               |
+|Escape     |`ESC`      |           |           |               |
+|" "        |`Space`    |`NUL` = 0  |           |               |
+|A          |A          |`SOH` = 1  |           |               |
+|B          |B          |`STX` = 2  |           |               |
+|C          |C          |`ETX` = 3  |           |               |
+|D          |D          |`EOT` = 4  |           |               |
+|E          |E          |`ENQ` = 5  |           |               |
+|F          |F          |`ACK` = 6  |           |               |
+|G          |G          |`BEL` = 7  |           |               |
+|H          |H          |`BS`  = 8  |           |               |
+|I          |I          |`TAB` = 9  |           |               |
+|J          |J          |`LF`  = 10 |           |               |
+|K          |K          |`VT`  = 11 |           |               |
+|L          |L          |`FF`  = 12 |           |               |
+|M          |M          |`CR`  = 13 |           |               |
+|N          |N          |`SO`  = 14 |           |               |
+|O          |O          |`SI`  = 15 |           |               |
+|P          |P          |`DLE` = 16 |           |               |
+|Q          |Q          |`DC1` = 17 |           |               |
+|R          |R          |`DC2` = 18 |           |               |
+|S          |S          |`DC3` = 19 |           |               |
+|T          |T          |`DC4` = 20 |           |               |
+|U          |U          |`NAK` = 21 |           |               |
+|V          |V          |`SYN` = 22 |           |               |
+|W          |W          |`ETB` = 23 |           |               |
+|X          |X          |`CAN` = 24 |           |               |
+|Y          |Y          |`EM`  = 25 |           |               |
+|Z          |Z          |`SUB` = 26 |           |               |
 
 ## Definitions Table
 
