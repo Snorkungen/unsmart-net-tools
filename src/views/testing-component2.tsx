@@ -14,7 +14,8 @@ export const TestingComponent2: Component = () => {
         terminal.read = (
             buf
         ) => {
-            terminal.write(buf)
+            // console.log(buf)
+            terminal.write(buf.map(b => b == ASCIICodes.CarriageReturn ? ASCIICodes.NewLine : b)) // replace `CR` with `LF`
         }
     })
 

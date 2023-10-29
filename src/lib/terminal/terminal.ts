@@ -6,16 +6,36 @@ export enum ASCIICodes {
     NewLine = 0x0A,
     CarriageReturn = 0x0D,
     Escape = 0x1B,
+    Space = 0x20,
+
+    Tilde = 0x7E,  // 126
     Semicolon = 0x3B,
     OpenSquareBracket = 0x5B,
-
+    Underscore = 0x95,
 
     Zero = 0x30, // 48
+    One = 0x31, // 49
+    Two = 0x32, // 50
+    Three = 0x33, // 51
+    Five = 0x35, // 53
+    Six = 0x36, // 54
+
     A = 0x41, // 65
+    B = 0x41 + 1, // 66
+    C = 0x41 + 2, // 67
+    D = 0x41 + 3, // 68
+    E = 0x41 + 4, // 69
+    F = 0x41 + 5, // 70
+    G = 0x41 + 6, // 71
+    H = 0x41 + 7, // 72
+    Z = 0x41 + 25, // 90
+
     a = 0x61, // 97
     m = 0x6D, // 109
-}
+    z = 0x7A, // 109
 
+    Delete = 0x7F // 127
+}
 
 export default class Terminal {
     private renderer: TerminalRenderer;
@@ -41,21 +61,54 @@ export default class Terminal {
             let key = event.key;
             let buffer: Uint8Array | undefined;
 
+            let ESC = (...nums: number[]) => new Uint8Array([ASCIICodes.Escape, ...nums]);
+            let CSI = (...nums: number[]) => ESC(ASCIICodes.OpenSquareBracket, ...nums);
+
+            let CSI_NAVIGATION = (id: ASCIICodes) => (event.ctrlKey && event.shiftKey) ? (
+                CSI(ASCIICodes.One, ASCIICodes.Semicolon, ASCIICodes.Six, id)
+            ) : event.shiftKey ? (
+                CSI(ASCIICodes.One, ASCIICodes.Semicolon, ASCIICodes.Two, id)
+            ) : event.ctrlKey ? (
+                CSI(ASCIICodes.One, ASCIICodes.Semicolon, ASCIICodes.Five, id)
+            ) : CSI(id)
+
+            let CSI_TILDE = (p: ASCIICodes) => (event.ctrlKey && event.shiftKey) ? (
+                CSI(p, ASCIICodes.Semicolon, ASCIICodes.Six, ASCIICodes.Tilde)
+            ) : event.shiftKey ? (
+                CSI(p, ASCIICodes.Semicolon, ASCIICodes.Two, ASCIICodes.Tilde)
+            ) : event.ctrlKey ? (
+                CSI(p, ASCIICodes.Semicolon, ASCIICodes.Five, ASCIICodes.Tilde)
+            ) : CSI(ASCIICodes.Tilde)
+
             // not the best way but i don't know if the key code from the browser API is reliable
             // Source : <https://developer.mozilla.org/en-US/docs/Web/API/UI_Events/Keyboard_event_key_values>
             // Source 2 : <https://www.man7.org/linux/man-pages/man4/console_codes.4.html>
             switch (key) {
                 // White space
-                case "Enter": buffer = new Uint8Array([ASCIICodes.NewLine]); break;
-                case "Tab": buffer = new Uint8Array([ASCIICodes.Tab]); break;
-
-                case "Backspace": buffer = new Uint8Array([ASCIICodes.BackSpace]); break;
+                case "Enter": buffer = new Uint8Array([ASCIICodes.CarriageReturn]); break;
+                case "Tab": buffer = event.shiftKey ? (
+                    CSI(ASCIICodes.Z)
+                ) : new Uint8Array([ASCIICodes.Tab]); break;
 
                 // Navigation
-                case "ArrowUp": buffer = new Uint8Array([ASCIICodes.Escape, ASCIICodes.OpenSquareBracket, ASCIICodes.A]); break;
-                case "ArrowDown": buffer = new Uint8Array([ASCIICodes.Escape, ASCIICodes.OpenSquareBracket, ASCIICodes.A + 1]); break;
-                case "ArrowRight": buffer = new Uint8Array([ASCIICodes.Escape, ASCIICodes.OpenSquareBracket, ASCIICodes.A + 2]); break;
-                case "ArrowLeft": buffer = new Uint8Array([ASCIICodes.Escape, ASCIICodes.OpenSquareBracket, ASCIICodes.A + 3]); break;
+                case "ArrowUp": buffer = CSI_NAVIGATION(ASCIICodes.A); break;
+                case "ArrowDown": buffer = CSI_NAVIGATION(ASCIICodes.B); break;
+                case "ArrowRight": buffer = CSI_NAVIGATION(ASCIICodes.C); break;
+                case "ArrowLeft": buffer = CSI_NAVIGATION(ASCIICodes.D); break;
+                case "End": buffer = CSI_NAVIGATION(ASCIICodes.F); break;
+                case "Home": buffer = CSI_NAVIGATION(ASCIICodes.H); break;
+
+                case "PageUp": buffer = CSI_TILDE(ASCIICodes.Five); break;
+                case "PageDown": buffer = CSI_TILDE(ASCIICodes.Six); break;
+
+                case "Insert": buffer = CSI_TILDE(ASCIICodes.Two); break;
+                case "Delete": buffer = CSI_TILDE(ASCIICodes.Three); break;
+
+                case "Backspace": buffer = event.ctrlKey ? (
+                    new Uint8Array([ASCIICodes.BackSpace])
+                ) : new Uint8Array([ASCIICodes.Delete]); break;
+
+                case "Escape": buffer = new Uint8Array([ASCIICodes.Escape]); break;
 
                 default: {
                     if (key.length > 1) {
@@ -65,6 +118,22 @@ export default class Terminal {
                     let code = key.charCodeAt(0);
                     if (code > 0x7f) {
                         return;
+                    }
+
+                    if (event.ctrlKey) {
+                        let c = code;
+
+                        if (c >= ASCIICodes.a && c <= ASCIICodes.z) {
+                            c -= 32;
+                        }
+
+                        if (c >= ASCIICodes.A && c <= ASCIICodes.Underscore) {
+                            code = c - (ASCIICodes.A - 1) // 64 
+                        }
+
+                        if (code == ASCIICodes.Space) {
+                            code = 0;
+                        }
                     }
 
                     buffer = new Uint8Array([code])
@@ -427,8 +496,7 @@ export class TerminalRenderer {
                         }
                     }
 
-                    let activeElement = this.container.children[this.cursor.y].children[this.cursor.x] as HTMLElement;
-                    activeElement.innerHTML = this.EMPTY_CHAR
+                    this._eraseCell(this.cursor.x, this.cursor.y);
                     break;
                 }
                 case ASCIICodes.Tab: {
