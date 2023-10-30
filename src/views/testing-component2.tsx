@@ -1,22 +1,23 @@
 import { Component, createEffect } from "solid-js";
-import Terminal, { ASCIICodes, TerminalRenderer } from "../lib/terminal/terminal";
+import Terminal, { TerminalRenderer } from "../lib/terminal/terminal";
 import { uint8_concat, uint8_fromString } from "../lib/binary/uint8-array";
+import { Device } from "../lib/device/device";
+import Shell from "../lib/terminal/shell";
+import { ASCIICodes } from "../lib/terminal/shared";
 
 
 export const TestingComponent2: Component = () => {
 
     let terminal: Terminal;
 
-    let bytes = uint8_fromString("A\tB\tC\bD\nE\tF \b\rG\n")
+
+    let device = new Device()
+    device.name = "DEVICE-1"
+
+    let shell = new Shell(device);
 
     createEffect(() => {
-
-        terminal.read = (
-            buf
-        ) => {
-            // console.log(buf)
-            terminal.write(buf.map(b => b == ASCIICodes.CarriageReturn ? ASCIICodes.NewLine : b)) // replace `CR` with `LF`
-        }
+        shell.configureTerminal(terminal);
     })
 
 

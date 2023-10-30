@@ -10,6 +10,7 @@
       - [x] Recieve packet
     - [ ] TCP protocol support
 - [ ] Redo "Terminal Emulator" design
+  - [ ] Extend `TerminalRenderer` to handle *Auto-Scrolling*
 - [x] Remove `Buffer` from client build
   - [x] Remove `buffer` polyfill
   - [x] remove dependence on `Buffer` from lib/address
