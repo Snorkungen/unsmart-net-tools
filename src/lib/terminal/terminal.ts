@@ -1,6 +1,4 @@
 import { ASCIICodes, CSI } from "./shared";
-
-
 export default class Terminal {
     private renderer: TerminalRenderer;
     private container: HTMLElement;
@@ -150,11 +148,18 @@ type TerminalRendererCursor = {
     y: number;
 }
 
+type TerminalRendererCell = {
+    content?: string;
+
+    fg: number;
+    bg: number;
+
+    // space for future
+}
 export class TerminalRenderer {
     // options start
     COLUMN_WIDTH = 8 * 8;
     ROW_HEIGHT = 6 * 8;
-
 
     COLORS = [
         "#000000",
@@ -172,7 +177,14 @@ export class TerminalRenderer {
     COLOR_FG = this.COLOR_FG_DEFAULT;
 
     EMPTY_CHAR = "&nbsp;"
+    EMPTY_CELL = {
+        fg: this.COLOR_FG,
+        bg: this.COLOR_BG,
+    };
     // options end
+
+    private rows: TerminalRendererCell[][];
+    private yOffset: number = 0;
 
     container: HTMLElement;
 
@@ -182,8 +194,14 @@ export class TerminalRenderer {
         this.container.style.fontFamily = "monospace";
         // this.container.style.backgroundColor = this.color(this.COLOR_BG);
 
+        // init rows
+        this.rows = new Array<TerminalRendererCell[]>(this.ROW_HEIGHT);
+
         // fill container with rows
         for (let i = 0; i < this.ROW_HEIGHT; i++) {
+            // duplicate state
+            this.rows[i] = new Array<TerminalRendererCell>(this.COLUMN_WIDTH);
+
             let row = document.createElement("div")
             row.style.padding = "0";
             row.style.margin = "0";
@@ -193,6 +211,11 @@ export class TerminalRenderer {
                 let p = document.createElement("span")
                 p.innerHTML = this.EMPTY_CHAR
                 row.append(p)
+
+                // duplicate state
+                this.rows[i][j] = {
+                    ...this.EMPTY_CELL
+                }
             }
             this.container.append(row)
         }
@@ -210,28 +233,53 @@ export class TerminalRenderer {
     }
 
     private _eraseCell(x: number, y: number) {
-        let cell = this.container.children[y].children[x];
+        this.handleScroll();
+        if (y - this.yOffset < 0) return;
+
+        let cell = this.container.children[y - this.yOffset].children[x];
         cell.innerHTML = this.EMPTY_CHAR;
         (cell as HTMLElement).style.backgroundColor = this.color(this.COLOR_BG);
         (cell as HTMLElement).style.color = this.color(this.COLOR_FG);
+
+        if (this.rows[y] && this.rows[y][x]) this.rows[y][x] = {
+            fg: this.COLOR_FG, bg: this.COLOR_BG
+        }
     }
+
+    // NOTE THIS FUNCTION BELOW NEEDS TO BE REWORKED DUE "SCROLLING"
     private handleEraseDisplay(p: number) {
         const clear_from_cursor_to_end = () => {
             // clear from cursor to end of screen
 
             // loop thru rows
-            for (let y = this.cursor.y; y < this.container.children.length; y++) {
-                for (let x = 0; x < this.COLUMN_WIDTH; x--) {
+            // truncate rows not in view
+            let posInView = this.cursor.y - this.yOffset;
+            let rowsAfterView = this.rows.length - (this.cursor.y + (this.ROW_HEIGHT - 1) + posInView) - 1
+            for (let i = 1; i < rowsAfterView; i++) {
+                this.rows.pop()
+            }
+
+            let rowsInViewToBeErased = (this.ROW_HEIGHT - 1) - posInView;
+
+            for (let y = this.cursor.y; y <= this.cursor.y + rowsInViewToBeErased; y++) {
+                for (let x = 0; x < this.COLUMN_WIDTH; x++) {
                     this._eraseCell(x, y);
                 }
             }
         }
         const clear_from_cursor_to_start = () => {
-            // clear from cursor to end of screen
+            let posInView = this.cursor.y - this.yOffset;
+            let rowsBeforeView = this.cursor.y - posInView;
+            for (let i = 0; i < rowsBeforeView; i++) {
+                this.rows.shift()
+            }
 
-            // loop thru rows
-            for (let y = 0; y < this.cursor.y; y++) {
-                for (let x = 0; x < this.COLUMN_WIDTH; x--) {
+            this.prevCursor.y -= (rowsBeforeView);
+            this.cursor.y = posInView;
+            this.yOffset = 0;
+
+            for (let y = this.cursor.y; y >= 0; y--) {
+                for (let x = 0; x < this.COLUMN_WIDTH; x++) {
                     this._eraseCell(x, y);
                 }
             }
@@ -399,6 +447,7 @@ export class TerminalRenderer {
                     col = Math.max(col - 1, 0); // 1-based
 
                     this.cursor.x = Math.min(col, this.COLUMN_WIDTH);
+                    console.log(row)
                     this.cursor.y = row;
 
                     break;
@@ -504,9 +553,12 @@ export class TerminalRenderer {
             ) {
                 i++; continue char_parse_loop;
             }
+
+            this.handleScroll();
+
             // draw character and move cursor position
-            let activeElement = this.container.children[this.cursor.y].children[this.cursor.x] as HTMLElement;
-            
+            let activeElement = this.container.children[this.cursor.y - this.yOffset].children[this.cursor.x] as HTMLElement;
+
             // hacky fix
             if (byte == ASCIICodes.Space) {
                 activeElement.innerHTML = "&nbsp"
@@ -516,6 +568,11 @@ export class TerminalRenderer {
 
             activeElement.style.backgroundColor = this.color(this.COLOR_BG);
             activeElement.style.color = this.color(this.COLOR_FG);
+
+            // pararell state
+            this.rows[this.cursor.y][this.cursor.x].bg = this.COLOR_BG;
+            this.rows[this.cursor.y][this.cursor.x].fg = this.COLOR_FG;
+            this.rows[this.cursor.y][this.cursor.x].content = String.fromCharCode(byte);
 
             // advance cursor
             this.cursor.x += 1;
@@ -527,13 +584,21 @@ export class TerminalRenderer {
             i++; continue char_parse_loop;
         }
 
+        this.handleScroll();
+
+        let cursorElement: HTMLElement;
+
         // clear previous cursor
-        let cursorElement = this.container.children[this.prevCursor.y].children[this.prevCursor.x] as HTMLElement;
-        cursorElement.style.backgroundColor = this.color(this.COLOR_BG)
-        cursorElement.style.color = this.color(this.COLOR_FG)
+        // ignore prev cursor if prevcursor not in view
+        if (this.container.children[this.prevCursor.y - this.yOffset]) {
+            cursorElement = this.container.children[this.prevCursor.y - this.yOffset].children[this.prevCursor.x] as HTMLElement;
+            cursorElement.style.backgroundColor = this.color(this.COLOR_BG)
+            cursorElement.style.color = this.color(this.COLOR_FG)
+        }
+
 
         // draw current cursor
-        cursorElement = this.container.children[this.cursor.y].children[this.cursor.x] as HTMLElement;
+        cursorElement = this.container.children[this.cursor.y - this.yOffset].children[this.cursor.x] as HTMLElement;
         cursorElement.style.backgroundColor = this.color(this.COLOR_FG)
         cursorElement.style.color = this.color(this.COLOR_BG)
         this.prevCursor.x = this.cursor.x;
@@ -541,6 +606,47 @@ export class TerminalRenderer {
 
         // empty buffer 
         this.buffer = new Uint8Array();
+    }
+
+    /** This method automagically scrolls the view */
+    private handleScroll() {
+        // scroll to new line if y is larger than container
+        if ((this.cursor.y - this.yOffset) >= this.ROW_HEIGHT) {
+            // scroll down
+            let diff = (this.cursor.y - this.yOffset + 1) - (this.ROW_HEIGHT);
+            // add extra rows to `this.rows`
+            for (let i = 0; i < diff; i++) {
+                let row = new Array<TerminalRendererCell>(this.COLUMN_WIDTH);
+                for (let j = 0; j < row.length; j++) {
+                    row[j] = { ...this.EMPTY_CELL }
+                }
+                this.rows.push(
+                    row
+                )
+            }
+
+            this.yOffset += (diff);
+        } else if (this.cursor.y < this.yOffset) {
+            this.yOffset -= (this.yOffset - this.cursor.y);
+
+            if (this.yOffset < 0) {
+                this.yOffset = 0;
+            }
+        } else {
+            return;
+        }
+
+        // shift container rows
+        for (let j = 0; j < this.container.children.length; j++) {
+            for (let i = 0; i < this.container.children[j].children.length; i++) {
+                let cellData = this.rows[j + this.yOffset][i], cellElem = this.container.children[j].children[i] as HTMLElement;
+
+                cellElem.style.backgroundColor = this.color(cellData.bg)
+                cellElem.style.color = this.color(cellData.fg)
+                cellElem.innerHTML = cellData.content || this.EMPTY_CHAR;
+            }
+        }
+
     }
 
     private color(n: number) {
