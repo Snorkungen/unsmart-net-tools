@@ -1,3 +1,4 @@
+import { uint8_concat } from "../binary/uint8-array";
 import { ASCIICodes, CSI, readParams } from "./shared";
 export default class Terminal {
     private renderer: TerminalRenderer;
@@ -131,7 +132,8 @@ export default class Terminal {
 
     // this is a temporary implementation
     write(bytes: Uint8Array) {
-        this.renderer.buffer = bytes;
+        // this is the issue
+        this.renderer.buffer = uint8_concat([this.renderer.buffer, bytes]); // this copies to much theres no need for ram
     }
 
     flush() {
