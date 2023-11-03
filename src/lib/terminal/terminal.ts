@@ -1,4 +1,4 @@
-import { ASCIICodes, CSI } from "./shared";
+import { ASCIICodes, CSI, readParams } from "./shared";
 export default class Terminal {
     private renderer: TerminalRenderer;
     private container: HTMLElement;
@@ -110,18 +110,14 @@ export default class Terminal {
             event.stopPropagation()
         })
 
-
-
         this.container.addEventListener("focus", () => {
             console.log("focused")
-            this.container.style.border = "blue 2px solid"
+            this.container.style.border = "blue 2px solid"; // in future change cursor style
         })
         this.container.addEventListener("blur", () => {
             console.log("focused")
-            this.container.style.border = "none"
+            this.container.style.border = "none"; // in future change cursor style
         })
-
-
 
         // render to screen ?
         const render = () => {
@@ -138,7 +134,7 @@ export default class Terminal {
         this.renderer.buffer = bytes;
     }
 
-    private flush() {
+    flush() {
         this.renderer.render();
     }
 }
@@ -159,7 +155,7 @@ type TerminalRendererCell = {
 export class TerminalRenderer {
     // options start
     COLUMN_WIDTH = 8 * 8;
-    ROW_HEIGHT = 6 * 8;
+    ROW_HEIGHT = 4;
 
     COLORS = [
         "#000000",
@@ -652,57 +648,4 @@ export class TerminalRenderer {
     private color(n: number) {
         return this.COLORS[n % this.COLORS.length];
     }
-}
-
-function readParams(params: number[], fallback: number, minLength?: number): number[] {
-    if (params.length == 0) {
-
-        return (new Array<number>(minLength || 1)).fill(fallback)
-    }
-
-    let result: number[] = [], numBuffer: number[] = [];
-    let j = 0;
-
-    let consumeNumBuffer = () => {
-        // consumeNumBuffer implementation taken from <https://www.geeksforgeeks.org/c-program-to-write-your-own-atoi/>
-        let n = 0;
-        for (let k = 0; k < numBuffer.length; k++) {
-            n = n * 10 + numBuffer[k] - ASCIICodes.Zero
-        }
-
-        numBuffer = [];
-        return n
-    }
-    while (j < params.length) {
-        let pb = params[j]
-        if (pb == ASCIICodes.Semicolon) {
-            // read number buffer
-            if (numBuffer.length == 0) {
-                result.push(fallback)
-            } else {
-                result.push(consumeNumBuffer())
-            }
-            j++;
-            continue;
-        }
-
-        if (pb >= ASCIICodes.Zero && pb < ASCIICodes.Zero + 10) {
-            numBuffer.push(pb)
-        }
-
-        j++;
-    }
-
-    if (numBuffer.length > 0) {
-        result.push(consumeNumBuffer())
-    }
-
-    if (minLength && result.length < minLength) {
-        // fill to the minimu length
-        let diff = minLength - result.length;
-
-        result.push(...(new Array(diff)).fill(fallback))
-    }
-
-    return result;
 }

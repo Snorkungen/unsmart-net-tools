@@ -3,6 +3,7 @@
 ## Tasks
 
 - Develop on device logic
+  - [ ] Research and develop a syste for **localhost** as an `Interface`
   - [ ] Device -> contact
     - Design the api
     - [ ] UDP protocol support
@@ -11,6 +12,8 @@
     - [ ] TCP protocol support
 - [ ] Redo "Terminal Emulator" design
   - [x] Extend `TerminalRenderer` to handle *Auto-Scrolling*
+  - [ ] *Auto resize `TerminaleRenderer` View* haven't decided on what this means
+  - [ ] Document Escape codes
 - [x] Remove `Buffer` from client build
   - [x] Remove `buffer` polyfill
   - [x] remove dependence on `Buffer` from lib/address

@@ -39,3 +39,58 @@ export enum ASCIICodes {
 
 export const ESC = (...nums: number[]) => new Uint8Array([ASCIICodes.Escape, ...nums]);
 export const CSI = (...nums: number[]) => ESC(ASCIICodes.OpenSquareBracket, ...nums);
+
+
+
+export function readParams(params: number[], fallback: number, minLength?: number): number[] {
+    if (params.length == 0) {
+
+        return (new Array<number>(minLength || 1)).fill(fallback)
+    }
+
+    let result: number[] = [], numBuffer: number[] = [];
+    let j = 0;
+
+    let consumeNumBuffer = () => {
+        // consumeNumBuffer implementation taken from <https://www.geeksforgeeks.org/c-program-to-write-your-own-atoi/>
+        let n = 0;
+        for (let k = 0; k < numBuffer.length; k++) {
+            n = n * 10 + numBuffer[k] - ASCIICodes.Zero
+        }
+
+        numBuffer = [];
+        return n
+    }
+    while (j < params.length) {
+        let pb = params[j]
+        if (pb == ASCIICodes.Semicolon) {
+            // read number buffer
+            if (numBuffer.length == 0) {
+                result.push(fallback)
+            } else {
+                result.push(consumeNumBuffer())
+            }
+            j++;
+            continue;
+        }
+
+        if (pb >= ASCIICodes.Zero && pb < ASCIICodes.Zero + 10) {
+            numBuffer.push(pb)
+        }
+
+        j++;
+    }
+
+    if (numBuffer.length > 0) {
+        result.push(consumeNumBuffer())
+    }
+
+    if (minLength && result.length < minLength) {
+        // fill to the minimu length
+        let diff = minLength - result.length;
+
+        result.push(...(new Array(diff)).fill(fallback))
+    }
+
+    return result;
+}
