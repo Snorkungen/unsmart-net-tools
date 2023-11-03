@@ -3,6 +3,7 @@
 - Intro
 - [Navigation](#navigation)
 - [Erase](#erase)
+- [Scrolling](#scrolling)
 - [Select Graphic Rendetion](#select-graphic-rendetion)
 - [References](#references)
 
@@ -36,6 +37,12 @@ Where **n** (default 2) is a parameter that determines what row that the erasure
 
 `CSI` n *K* - Erase in line \
 Where **n** (default 2) determinse what gets erased. If n is 0 the line gets erased startin from the cursor position to the end, if n is 1 the line gets erased from the start to the cursor position, if n is 2 the entire row gets cleared the cursor remains in position.
+
+## Scrolling
+
+`CSI` n *S* - Scroll up \
+`CSI` n *T* - Scroll down \
+Where **n** (default 1) determinse by how many pages/views are scrolled. If scrolling down page gets filled with extra rows so to show an entire row.
 
 ## Select Graphic Rendetion
 

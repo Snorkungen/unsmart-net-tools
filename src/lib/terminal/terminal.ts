@@ -375,37 +375,31 @@ export class TerminalRenderer {
                         this.cursor.y - params[0],
                         0
                     )
-
-                    break;
-                }
+                }; break;
                 case ASCIICodes.A + 1: { // B
                     // handle Cursor down
                     let params = readParams(rawParams, 1, 1)
                     this.cursor.y += params[0];
-                    break;
-                }
+                }; break;
                 case ASCIICodes.A + 2: { // C
                     // handle Cursor forward
                     let params = readParams(rawParams, 1, 1)
 
                     this.cursor.x = Math.min(this.cursor.x + params[0], this.COLUMN_WIDTH)
-                    break;
-                }
+                }; break;
                 case ASCIICodes.A + 3: { // D
                     // handle Cursor Back
                     let params = readParams(rawParams, 1, 1)
 
                     this.cursor.x = Math.max(this.cursor.x - params[0], 0)
-                    break;
-                }
+                }; break;
                 case ASCIICodes.A + 4: { // E
                     // handle Cursor Next Line
                     let params = readParams(rawParams, 1, 1)
 
                     this.cursor.y += params[0];
                     this.cursor.x = 0;
-                    break;
-                }
+                }; break;
                 case ASCIICodes.A + 5: { // F
                     // handle Cursor Previous Line
                     let params = readParams(rawParams, 1, 1)
@@ -415,8 +409,7 @@ export class TerminalRenderer {
                         0
                     )
                     this.cursor.x = 0;
-                    break;
-                }
+                }; break;
                 case ASCIICodes.A + 6: { // G
                     // handle Cursor Horizontal Absolute
                     let params = readParams(rawParams, 1, 1)
@@ -431,8 +424,7 @@ export class TerminalRenderer {
                         this.COLUMN_WIDTH
                     )
 
-                    break;
-                }
+                }; break;
                 case ASCIICodes.A + 7: case ASCIICodes.a + 5: { // H f
                     // handle set Cursor position
                     let params = readParams(rawParams, 1, 2);
@@ -443,11 +435,8 @@ export class TerminalRenderer {
                     col = Math.max(col - 1, 0); // 1-based
 
                     this.cursor.x = Math.min(col, this.COLUMN_WIDTH);
-                    console.log(row)
                     this.cursor.y = row;
-
-                    break;
-                }
+                }; break;
                 case ASCIICodes.A + 9: { // J
                     let [n] = readParams(rawParams, 2, 1);
                     this.handleEraseDisplay(n)
@@ -457,18 +446,41 @@ export class TerminalRenderer {
                     // erase in line
                     let [n] = readParams(rawParams, 2, 1);
                     this.handleEraseInLine(n)
-                    break;
-                }
+                }; break;
+
+                case ASCIICodes.S: { // S
+                    // Scroll Up
+                    let [n] = readParams(rawParams, 1, 1);
+                    if (n <= 0) break;
+
+                    this.cursor.y = Math.max(
+                        (Math.floor(this.cursor.y / this.ROW_HEIGHT) - n),
+                        0
+                    ) * this.ROW_HEIGHT;
+
+                }; break;
+                case ASCIICodes.S + 1: { // T
+                    // Scroll Down
+                    let [n] = readParams(rawParams, 1, 1);
+                    
+                    
+                    let tmp = this.ROW_HEIGHT - 1;
+                    this.cursor.y = (Math.floor(this.cursor.y / this.ROW_HEIGHT) + n) * this.ROW_HEIGHT + tmp;
+
+                    // this is hacky
+                    // add the required rows to make it padded
+                    this.handleScroll();
+                    this.cursor.y -= tmp;
+                }; break;
+
                 case ASCIICodes.m: {
                     // Select Graphic Rendition
                     let [n] = readParams(rawParams, 0);
                     this.handleSelectGraphicRendition(n);
-                    break;
-                }
+                }; break;
 
                 default: return -1; // unhandled control sequence
             }
-
             return i;
         }
 
@@ -620,7 +632,6 @@ export class TerminalRenderer {
                     row
                 )
             }
-
             this.yOffset += (diff);
         } else if (this.cursor.y < this.yOffset) {
             this.yOffset -= (this.yOffset - this.cursor.y);

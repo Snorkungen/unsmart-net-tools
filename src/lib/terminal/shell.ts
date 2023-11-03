@@ -4,6 +4,7 @@ import { ASCIICodes, CSI } from "./shared";
 
 interface ShellTerminal {
     write(bytes: Uint8Array): void;
+    flush(): void;
     read?(bytes: Uint8Array): void;
 }
 
@@ -56,6 +57,7 @@ export default class Shell {
         // set the x position of the cursor
         this.cursorX = 2 + this.device.name.length;
 
+        this.terminal.flush(); // in-case there is something in the buffer to render
         this.terminal.write(promptBuff)
 
     }
@@ -85,7 +87,7 @@ export default class Shell {
                         if (this.promptBuffer.length <= 0) {
                             i++; continue char_parse_loop;
                         }
-                        
+
                         this.promptBuffer = this.promptBuffer.substring(0, this.promptBuffer.length - 1);
 
                         this.terminal.write(new Uint8Array([ASCIICodes.BackSpace]));
@@ -96,7 +98,7 @@ export default class Shell {
                         console.log("[ENTER] Pressed")
                         // do stuff
 
-                        
+
                         // for now just to get stuff happening on the screen
                         this.promptBuffer = "";
                         this.writePrompt();
