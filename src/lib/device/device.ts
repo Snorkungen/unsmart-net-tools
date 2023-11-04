@@ -9,7 +9,7 @@ import { uint8_concat, uint8_fromNumber } from "../binary/uint8-array";
 
 let macAddressCount = 0;
 let startBuf = new Uint8Array([0xfa, 0xff, 0x0f, 0])
-function createMacAddress() : MACAddress {
+function createMacAddress(): MACAddress {
     let buf = uint8_fromNumber(macAddressCount++, 2)
     return new MACAddress(uint8_concat([startBuf, buf]))
 }
@@ -122,4 +122,37 @@ export class Device {
 
         this.services.push(service);
     }
+
+    programs: DevicePrograms = {};
+    registerProgram(name: string, program: DeviceProgram) {
+        this.programs[name] = program;
+    }
+}
+
+export enum DeviceProgramStatus {
+    OK,
+    ERROR = -1,
+    CANCELED
+}
+
+export interface DeviceProgramTerminal {
+    write(bytes: Uint8Array): void;
+    flush(): void;
+    read?(bytes: Uint8Array): void;
+}
+
+export interface DeviceProgram {
+    // run time injections
+    device: Device;
+    terminal: DeviceProgramTerminal;
+
+    cancel(): void;
+    run(args: string): Promise<DeviceProgramStatus>;
+
+    description?: string;
+    sub?: DevicePrograms
+}
+
+export interface DevicePrograms {
+    [x: string]: DeviceProgram;
 }

@@ -96,6 +96,27 @@ export default class Shell {
                         console.log("[ENTER] Pressed")
                         // do stuff
 
+                        // i'm just testing this is not that simple due to the many ways i could solve this
+                        let [name] = this.promptBuffer.split(" ");
+                        if (this.device.programs[name]) {
+                            let p = this.device.programs[name];
+
+
+                            this.state = ShellState.RUNNING_PROGRAM;
+
+                            p.device = this.device;
+                            p.terminal = this.terminal;
+
+                            this.terminal.write(new Uint8Array([ASCIICodes.NewLine]))
+                            p.run(this.promptBuffer.substring(name.length + 1)).then(() => {
+                                this.promptBuffer = "";
+                                this.writePrompt();
+                            }) 
+
+                            break char_parse_loop;
+                        }
+
+
 
                         // for now just to get stuff happening on the screen
                         this.promptBuffer = "";
