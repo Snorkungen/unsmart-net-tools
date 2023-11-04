@@ -12,6 +12,9 @@ import { NetworkRouter } from "../lib/device/network-router";
 import { ContactAddrFamily, ContactProto } from "../lib/device/contact/contact";
 import { UNSET_IPV4_ADDRESS } from "../lib/device/contact/contacts-handler";
 import { uint8_concat, uint8_fromNumber, uint8_readUint16BE } from "../lib/binary/uint8-array";
+import { ICMPV4_TYPES, ICMPV6_TYPES, ICMP_ECHO_HEADER, ICMP_HEADER } from "../lib/header/icmp";
+import { calculateChecksum } from "../lib/binary/checksum";
+import { IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS, createIPV4Header } from "../lib/header/ip";
 const selectContents = (ev: MouseEvent) => {
     if (!(ev.currentTarget instanceof HTMLElement)) return;
     let range = document.createRange();
@@ -204,16 +207,72 @@ export const TestingComponent: Component = () => {
                 <div>
                     <button onClick={async () => {
                         let ip = prompt("Please enter a destination ip, from: " + device.name)
-
                         if (!ip) return;
 
+                        function success() {
+                            console.log("%c ECHO Reply recieved: " + device.name, ['background: green', 'color: white', 'display: block', 'text-align: center', 'font-size: 24px'].join(';'))
+                        }
+                        let identifier = Math.floor(Math.random() * 1_000), sequence = 1;
+
+                        let echoHdr = ICMP_ECHO_HEADER.create({
+                            id: identifier,
+                            seq: sequence
+                        })
+
                         if (IPV4Address.validate(ip)) {
-                            await pingVersion4(device, new IPV4Address(ip))
+                            let contact = device.contactsHandler.createContact(ContactAddrFamily.IPv4, ContactProto.RAW);
+                            contact.recieve = ( ) => {
+                                contact.close();
+                                success()
+                            };
+
+                            let icmpHdr = ICMP_HEADER.create({
+                                type: ICMPV4_TYPES.ECHO_REQUEST,
+                                data: echoHdr.getBuffer()
+                            });
+
+                            icmpHdr.set("csum", calculateChecksum(icmpHdr.getBuffer()));
+
+                            let ipHdr = createIPV4Header({
+                                saddr: UNSET_IPV4_ADDRESS,
+                                daddr: new IPV4Address(ip),
+                                proto: PROTOCOLS.ICMP,
+                                payload: icmpHdr.getBuffer()
+                            })
+
+                            contact.send(ipHdr.getBuffer());
+                            
                         } else if (/* IPV6Address.validate(ip) */ true) {
-                            await pingVersion6(device, new IPV6Address(ip))
+                            let contact = device.contactsHandler.createContact(ContactAddrFamily.IPv6, ContactProto.RAW);
+                            contact.recieve = ( ) => {
+                                contact.close();
+                                success()
+                            };
+
+                            let icmpHdr = ICMP_HEADER.create({
+                                type: ICMPV6_TYPES.ECHO_REQUEST,
+                                data: echoHdr.getBuffer()
+                            });
+
+                            let pseudoHdr = IPV6_PSEUDO_HEADER.create({
+                                saddr: device.interfaces[0].ipv6Address!,
+                                daddr: new IPV6Address(ip),
+                                len: icmpHdr.size,
+                                proto: PROTOCOLS.IPV6_ICMP,
+                            })
+                        
+                            icmpHdr.set("csum", calculateChecksum(uint8_concat([pseudoHdr.getBuffer(), icmpHdr.getBuffer()])));
+                        
+                            let ipHdr = IPV6_HEADER.create({
+                                saddr: device.interfaces[0].ipv6Address!,
+                                daddr: new IPV6Address(ip),
+                                nextHeader: PROTOCOLS.IPV6_ICMP,
+                                payload: icmpHdr.getBuffer()
+                            })
+
+                            contact.send(ipHdr.getBuffer());
                         }
 
-                        console.log("%c ECHO Reply recieved: " + device.name, ['background: green', 'color: white', 'display: block', 'text-align: center', 'font-size: 24px'].join(';'))
 
                     }}>Ping from: {device.name}</button>
 

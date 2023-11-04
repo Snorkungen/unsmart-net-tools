@@ -9,10 +9,15 @@ import { calculateChecksum } from "../../binary/checksum";
 import { Interface } from "../interface";
 import { uint8_equals } from "../../binary/uint8-array";
 import { UDP_HEADER, createUDPHeader } from "../../header/udp";
+import { createMask } from "../../address/mask";
 
 export const UNSET_MAC_ADDRESS = new MACAddress(new Uint8Array(MACAddress.ADDRESS_LENGTH / 8));
 export const UNSET_IPV4_ADDRESS = new IPV4Address(new Uint8Array(IPV4Address.ADDRESS_LENGTH / 8));
 export const UNSET_IPV6_ADDRESS = new IPV6Address(new Uint8Array(IPV6Address.ADDRESS_LENGTH / 8));
+
+export const LOOPBACK_IPV4_ADDRESS = new IPV4Address("127.0.0.1");
+export const LOOPBACK_IPV4_MASK = createMask(IPV4Address, 8);
+export const LOOPBACK_INTERFACE = new Interface(-1, UNSET_MAC_ADDRESS, () => null);
 
 export class ContactsHandler {
     contacts: Array<Contact<ContactAddrFamily, ContactProto>> = []
@@ -189,7 +194,7 @@ export class ContactsHandler {
     }
     private async recieveIPv4(contact: Contact<ContactAddrFamily, ContactProto>, buf: Uint8Array, caddr?: ContactAddress) {
         let saddr: IPV4Address, daddr: IPV4Address;
-
+        let daddrLoopback = false;
         // something something something check if caddr
         // if saddr unset find a suitable iface
 
@@ -210,19 +215,25 @@ export class ContactsHandler {
             saddr = ip_hdr.get("saddr");
         }
 
+        let destinationIsLoopback = LOOPBACK_IPV4_MASK.compare(LOOPBACK_IPV4_ADDRESS, daddr);
+
         if (uint8_equals(saddr.buffer, UNSET_IPV4_ADDRESS.buffer)) {
-            // have some special sauce to determine a suitable interface
-
-            let iface = this.device.interfaces.find(({ ipv4Address, ipv4SubnetMask }) => ipv4Address && ipv4SubnetMask?.compare(ipv4Address, daddr));
-            if (!iface) {
-                iface = this.device.interfaces.find(i => i.ipv4Address);
+            if (destinationIsLoopback) {
+                saddr = LOOPBACK_IPV4_ADDRESS;
+            } else {
+                // have some special sauce to determine a suitable interface
+    
+                let iface = this.device.interfaces.find(({ ipv4Address, ipv4SubnetMask }) => ipv4Address && ipv4SubnetMask?.compare(ipv4Address, daddr));
+                if (!iface) {
+                    iface = this.device.interfaces.find(i => i.ipv4Address);
+                }
+                if (!iface) {
+                    throw new Error("no available interface to send from")
+                    return false; // no interface to choose from
+                }
+    
+                saddr = iface.ipv4Address!
             }
-            if (!iface) {
-                throw new Error ("no available interface to send from")
-                return false; // no interface to choose from
-            }
-
-            saddr = iface.ipv4Address!
         }
 
         // something something something construct ipHdr
@@ -254,6 +265,19 @@ export class ContactsHandler {
             // recalculate checksum
             ipHdr.set("csum", 0);
             ipHdr.set("csum", calculateChecksum(ipHdr.getBuffer().subarray(0, 20)));
+        }
+
+        if (destinationIsLoopback) {
+            let eth_hdr = ETHERNET_HEADER.create({
+                smac: UNSET_MAC_ADDRESS,
+                dmac: UNSET_MAC_ADDRESS,
+                ethertype: ETHER_TYPES.IPv4,
+                payload: ipHdr.getBuffer()
+            });
+
+            this.device.log(eth_hdr, LOOPBACK_INTERFACE, "SEND")
+            this.handle(eth_hdr, LOOPBACK_INTERFACE)
+            return;
         }
 
         for (let iface of this.device.interfaces) {
@@ -295,7 +319,6 @@ export class ContactsHandler {
 
             this.device.log(eth_hdr, iface, "SEND")
             return iface.send(eth_hdr);
-
         }
     }
     private async recieveIPv6(contact: Contact<ContactAddrFamily, ContactProto>, buf: Uint8Array, caddr?: ContactAddress) {
