@@ -253,7 +253,7 @@ export class TerminalRenderer {
             // truncate rows not in view
             let posInView = this.cursor.y - this.yOffset;
             let rowsAfterView = this.rows.length - (this.cursor.y + (this.ROW_HEIGHT - 1) + posInView) - 1
-            for (let i = 1; i < rowsAfterView; i++) {
+            for (let i = 1; i <= rowsAfterView; i++) {
                 this.rows.pop()
             }
 
@@ -289,6 +289,7 @@ export class TerminalRenderer {
             // clear entire screen
             this.cursor.x = 0
             this.cursor.y = 0
+            this.handleScroll()
             clear_from_cursor_to_end()
         }
     }
