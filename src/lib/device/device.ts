@@ -123,9 +123,10 @@ export class Device {
         this.services.push(service);
     }
 
-    programs: DevicePrograms = {};
-    registerProgram(name: string, program: DeviceProgram) {
-        this.programs[name] = program;
+    programs: DeviceProgram[] = [];
+    registerProgram(program: DeviceProgram) {
+        // could in future have special logic ensuring that no duplicate name programs exist
+        this.programs.unshift(program)
     }
 }
 
@@ -141,18 +142,13 @@ export interface DeviceProgramTerminal {
     read?(bytes: Uint8Array): void;
 }
 
-export interface DeviceProgram {
-    // run time injections
-    device: Device;
+export type DeviceProgramOptions = {
     terminal: DeviceProgramTerminal;
-
-    cancel(): void;
-    run(args: string): Promise<DeviceProgramStatus>;
-
-    description?: string;
-    sub?: DevicePrograms
+    device: Device;
 }
-
-export interface DevicePrograms {
-    [x: string]: DeviceProgram;
+export interface DeviceProgram {
+    run(args: string, options: DeviceProgramOptions): Promise<DeviceProgramStatus>
+    name: string;
+    description?: string;
+    sub?: DeviceProgram[];
 }

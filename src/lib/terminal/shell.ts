@@ -1,5 +1,5 @@
 import { uint8_concat, uint8_fromString } from "../binary/uint8-array";
-import { Device } from "../device/device";
+import type { Device } from "../device/device";
 import { ASCIICodes, CSI } from "./shared";
 
 interface ShellTerminal {
@@ -14,9 +14,42 @@ enum ShellState {
     RUNNING_PROGRAM,
 }
 
+class ShellHistory {
+    private history: string[] = [];
+    private pos: number = -1;
+
+    previous(): string | null {
+        if (this.pos <= -1) {
+            return null;
+        }
+
+        return this.history.at(this.pos--) || null;
+    }
+
+    next(): string | null {
+        console.log(this.pos)
+        if (this.pos >= this.history.length - 1) {
+            return null;
+        }
+
+        return this.history.at(this.pos++) || null;
+    }
+
+    add(str: string): boolean {
+        if (this.history.length > 0 && this.history[this.history.length - 1] == str) {
+            return false;
+        }
+
+        this.pos = this.history.push(str) - 1;
+        return true;
+    }
+}
+
 export default class Shell {
     private device: Device;
     private terminal?: ShellTerminal;
+
+    private history = new ShellHistory();
 
     private state: ShellState = ShellState.UNITIALIZED;
 
@@ -61,7 +94,7 @@ export default class Shell {
 
     }
 
-    private read(bytes: Uint8Array) {
+    read(bytes: Uint8Array) {
         if (!this.terminal) {
             return; // should probably throw an error as this should not be called if there is no attached terminal
         }
@@ -70,6 +103,9 @@ export default class Shell {
             case ShellState.UNITIALIZED: return; // do nothing
             case ShellState.PROMPT: {
                 let i = 0; char_parse_loop: while (i < bytes.byteLength) {
+                    if (this.state != ShellState.PROMPT) {
+                        console.log("Hlel")
+                    };
                     let byte = bytes[i];
 
                     // handle writing characters to the screen
@@ -98,20 +134,32 @@ export default class Shell {
 
                         // i'm just testing this is not that simple due to the many ways i could solve this
                         let [name] = this.promptBuffer.split(" ");
-                        if (this.device.programs[name]) {
-                            let p = this.device.programs[name];
 
+                        let program = this.device.programs.find((dp) => dp.name == name);
 
+                        // TODO! read sub programs, this could maybe be something that isn't a shell thing
+
+                        if (program) {
                             this.state = ShellState.RUNNING_PROGRAM;
+                            this.terminal.write(new Uint8Array([ASCIICodes.NewLine]));
 
-                            p.device = this.device;
-                            p.terminal = this.terminal;
+                            program.run(this.promptBuffer, {
+                                terminal: this.terminal!,
+                                device: this.device,
+                            })
+                                .then(() => {
+                                    this.state = ShellState.PROMPT;
+                                    this.history.add(this.promptBuffer);
+                                    this.promptBuffer = "";
 
-                            this.terminal.write(new Uint8Array([ASCIICodes.NewLine]))
-                            p.run(this.promptBuffer.substring(name.length + 1)).then(() => {
-                                this.promptBuffer = "";
-                                this.writePrompt();
-                            }) 
+                                    // retake ownership of terminal
+                                    this.configureTerminal(this.terminal!)
+
+                                    // continue reading bytes from buf
+                                    if (bytes.byteLength > i + 1) {
+                                        this.read.bind(this)(bytes.subarray(i))
+                                    }
+                                });
 
                             break char_parse_loop;
                         }
