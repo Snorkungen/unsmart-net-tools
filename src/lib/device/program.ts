@@ -1,6 +1,6 @@
 import { uint8_fromString } from "../binary/uint8-array";
 import { ASCIICodes, CSI } from "../terminal/shared";
-import { DeviceProgram, DeviceProgramStatus } from "./device";
+import { DeviceProgram, DeviceProgramStatus } from "./device-program";
 
 export const DEVICE_PROGRAM_CLEAR: DeviceProgram = {
     name: "clear",

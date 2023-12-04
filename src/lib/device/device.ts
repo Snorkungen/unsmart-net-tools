@@ -6,6 +6,7 @@ import { Interface } from "./interface";
 import DeviceService from "./service/service";
 import NeighborTable from "./neighbor-table";
 import { uint8_concat, uint8_fromNumber } from "../binary/uint8-array";
+import { DeviceProgram } from "./device-program";
 
 let macAddressCount = 0;
 let startBuf = new Uint8Array([0xfa, 0xff, 0x0f, 0])
@@ -130,25 +131,3 @@ export class Device {
     }
 }
 
-export enum DeviceProgramStatus {
-    OK,
-    ERROR = -1,
-    CANCELED
-}
-
-export interface DeviceProgramTerminal {
-    write(bytes: Uint8Array): void;
-    flush(): void;
-    read?(bytes: Uint8Array): void;
-}
-
-export type DeviceProgramOptions = {
-    terminal: DeviceProgramTerminal;
-    device: Device;
-}
-export interface DeviceProgram {
-    run(args: string, options: DeviceProgramOptions): Promise<DeviceProgramStatus>
-    name: string;
-    description?: string;
-    sub?: DeviceProgram[];
-}

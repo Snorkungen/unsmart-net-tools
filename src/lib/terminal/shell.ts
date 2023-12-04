@@ -1,5 +1,6 @@
 import { uint8_concat, uint8_fromString } from "../binary/uint8-array";
 import type { Device } from "../device/device";
+import { DPSignal, DeviceProgram, DeviceProgramSignal, DeviceProgramTerminal } from "../device/device-program";
 import { ASCIICodes, CSI } from "./shared";
 
 interface ShellTerminal {
@@ -64,6 +65,11 @@ export default class Shell {
         this.writePrompt();
     }
 
+    private runningProgramInformation?: {
+        terminal: DeviceProgramTerminal;
+        signal: DeviceProgramSignal;
+        program: DeviceProgram;
+    }
 
     // Writing information that needs to be kept track off
     private cursorX: number = 1; // keeps track of wher cursor is 1-based 
@@ -103,9 +109,6 @@ export default class Shell {
             case ShellState.UNITIALIZED: return; // do nothing
             case ShellState.PROMPT: {
                 let i = 0; char_parse_loop: while (i < bytes.byteLength) {
-                    if (this.state != ShellState.PROMPT) {
-                        console.log("Hlel")
-                    };
                     let byte = bytes[i];
 
                     // handle writing characters to the screen
@@ -140,14 +143,27 @@ export default class Shell {
                         // TODO! read sub programs, this could maybe be something that isn't a shell thing
 
                         if (program) {
-                            this.state = ShellState.RUNNING_PROGRAM;
                             this.terminal.write(new Uint8Array([ASCIICodes.NewLine]));
+                            this.state = ShellState.RUNNING_PROGRAM;
+
+                            let signal = new DeviceProgramSignal();
+                            let terminal: DeviceProgramTerminal = {
+                                write: this.terminal.write.bind(this.terminal),
+                                flush: this.terminal.flush.bind(this.terminal),
+                            }
+
+                            this.runningProgramInformation = {
+                                signal,
+                                terminal,
+                                program
+                            }
 
                             program.run(this.promptBuffer, {
-                                terminal: this.terminal!,
+                                terminal: terminal,
                                 device: this.device,
+                                signal: signal
                             })
-                                .then(() => {
+                                .then(() => { // Instead of DevicePrograms being a promise it should instead rely upon the DeviceProgramSignal.
                                     this.state = ShellState.PROMPT;
                                     this.history.add(this.promptBuffer);
                                     this.promptBuffer = "";
@@ -164,8 +180,6 @@ export default class Shell {
                             break char_parse_loop;
                         }
 
-
-
                         // for now just to get stuff happening on the screen
                         this.promptBuffer = "";
                         this.writePrompt();
@@ -176,9 +190,33 @@ export default class Shell {
                     // Escaped bytes
 
                     i++;
-                }
+                }; break;
 
             }
+            case ShellState.RUNNING_PROGRAM: {
+                /**
+                 * IMPORTANT PLS READ
+                 * The following logic is not thought through
+                 */
+
+                if (!this.runningProgramInformation) {
+                    throw new Error(Shell.name + ": this.runningProgramInformation is undefined, ", this.runningProgramInformation);
+                }
+
+                let t = this.runningProgramInformation.terminal;
+                if (t.read) {
+                    // just forward everything do not care
+                    t.read(bytes);
+                } else {
+                    // check for Ctrl+C
+                    if (bytes.includes(3)) {
+                        this.runningProgramInformation.signal.send(DPSignal.TERMINATE)
+
+                        // in future add logic for terminating programs
+                    }
+                    
+                }
+            }; break;
             default: break;
         }
 
