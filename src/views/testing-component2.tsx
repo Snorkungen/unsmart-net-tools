@@ -3,7 +3,7 @@ import Terminal, { TerminalRenderer } from "../lib/terminal/terminal";
 import { uint8_concat, uint8_fromString } from "../lib/binary/uint8-array";
 import { Device } from "../lib/device/device";
 import Shell from "../lib/terminal/shell";
-import { ASCIICodes } from "../lib/terminal/shared";
+import { ASCIICodes, CSI } from "../lib/terminal/shared";
 import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_HELP } from "../lib/device/program";
 import { DPSignal, DeviceProgramStatus } from "../lib/device/device-program";
 
@@ -52,6 +52,7 @@ export const TestingComponent2: Component = () => {
         <div>
             <button onClick={() => {
                 shell.read(sescape("echo hellow orlf looser\nhelp\ntest\necho cool"))
+                // shell.read(CSI(...sescape("1;5H Hello World")))
             }}>dump commands</button>
             <div ref={(el) => {
                 terminal = new Terminal(el)

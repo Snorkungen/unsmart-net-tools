@@ -1,7 +1,7 @@
 import { uint8_concat, uint8_fromString } from "../binary/uint8-array";
 import type { Device } from "../device/device";
 import { DPSignal, DeviceProgram, DeviceProgramSignal, DeviceProgramTerminal } from "../device/device-program";
-import { ASCIICodes, CSI } from "./shared";
+import { ASCIICodes, CSI, readParams } from "./shared";
 
 interface ShellTerminal {
     write(bytes: Uint8Array): void;
@@ -20,28 +20,28 @@ class ShellHistory {
     private pos: number = -1;
 
     previous(): string | null {
-        if (this.pos <= -1) {
+        if (this.pos <= 0) {
             return null;
         }
 
-        return this.history.at(this.pos--) || null;
+        return this.history.at(--this.pos) || null;
     }
 
     next(): string | null {
-        console.log(this.pos)
         if (this.pos >= this.history.length - 1) {
             return null;
         }
 
-        return this.history.at(this.pos++) || null;
+        return this.history.at(++this.pos) || null;
     }
 
     add(str: string): boolean {
         if (this.history.length > 0 && this.history[this.history.length - 1] == str) {
+            this.pos = this.history.length;
             return false;
         }
 
-        this.pos = this.history.push(str) - 1;
+        this.pos = this.history.push(str);
         return true;
     }
 }
@@ -73,28 +73,46 @@ export default class Shell {
 
     // Writing information that needs to be kept track off
     private cursorX: number = 1; // keeps track of wher cursor is 1-based 
+    private promptXOffset = 0;
 
     private promptBuffer: string = "";
 
-    private writePrompt() {
+    private clearCurrentLine() {
+        if (!this.terminal) {
+            return;
+        }
+        // set cursor position and clear
+        this.terminal.write(uint8_concat([
+            CSI(ASCIICodes.One, ASCIICodes.G),
+            CSI(ASCIICodes.Zero, ASCIICodes.K)
+        ]))
+    }
+    private writePrompt(newLine = true) {
         if (!this.terminal) {
             return;
         }
 
         this.state = ShellState.PROMPT;
 
-        let promptBuff = uint8_concat([
+        let bufs = [
             new Uint8Array([ASCIICodes.CarriageReturn, ASCIICodes.NewLine,]),// New Line
             uint8_fromString("<"),
             CSI(ASCIICodes.Three, ASCIICodes.Three, ASCIICodes.m),
             uint8_fromString(this.device.name),
             CSI(ASCIICodes.Zero, ASCIICodes.m),
             uint8_fromString(">"),
-        ])
+        ];
+
+        if (!newLine) {
+            bufs.shift();
+        }
+
+        let promptBuff = uint8_concat(bufs)
 
 
         // set the x position of the cursor
-        this.cursorX = 2 + this.device.name.length;
+        this.promptXOffset = 2 + this.device.name.length;
+        this.cursorX = this.promptXOffset + 1;
 
         this.terminal.write(promptBuff)
 
@@ -113,22 +131,52 @@ export default class Shell {
 
                     // handle writing characters to the screen
                     if (byte >= ASCIICodes.Space && byte < ASCIICodes.Delete) {
-                        // append byte to prompt buffer
-                        this.promptBuffer += String.fromCharCode(byte);
-                        this.cursorX += 1;
-                        this.terminal.write(new Uint8Array([byte]));
+                        let char = String.fromCharCode(byte);
+                        if ((this.cursorX - this.promptXOffset - 1) < this.promptBuffer.length) { // issues with non ascii-char
+                            // special logic
+                            let p = (this.cursorX - this.promptXOffset - 1);
+                            this.promptBuffer = this.promptBuffer.slice(0, p) + char + this.promptBuffer.slice(p);
+
+                            this.cursorX += 1;
+
+                            this.terminal.write(uint8_concat([
+                                CSI(...uint8_fromString((this.promptXOffset + 1).toString()), ASCIICodes.G), // move cursor to begin of prompt
+                                CSI(ASCIICodes.Zero, ASCIICodes.K), // Clear Line
+                                uint8_fromString(this.promptBuffer), // write buffer to screen
+                                CSI(...uint8_fromString(this.cursorX.toString()), ASCIICodes.G) // move cursor to new position
+                            ]))
+                        } else {
+                            this.promptBuffer += char
+                            this.terminal.write(new Uint8Array([byte]));
+                            this.cursorX += 1;
+                        }
 
                         i++; continue char_parse_loop;
                     }
 
                     if (byte == ASCIICodes.Delete || byte == ASCIICodes.BackSpace) {
-                        if (this.promptBuffer.length <= 0) {
+                        if (this.promptBuffer.length <= 0 || this.cursorX <= this.promptXOffset + 1) {
                             i++; continue char_parse_loop;
                         }
-                        this.promptBuffer = this.promptBuffer.substring(0, this.promptBuffer.length - 1);
 
-                        this.terminal.write(new Uint8Array([ASCIICodes.BackSpace]));
-                        this.cursorX -= 1;
+                        if ((this.cursorX - this.promptXOffset - 1) < this.promptBuffer.length) {
+                            let p = (this.cursorX - this.promptXOffset - 1);
+                            this.promptBuffer = this.promptBuffer.slice(0, p - 1) + this.promptBuffer.slice(p);
+
+                            this.cursorX -= 1;
+
+                            this.terminal.write(uint8_concat([
+                                CSI(...uint8_fromString((this.promptXOffset + 1).toString()), ASCIICodes.G), // move cursor to begin of prompt
+                                CSI(ASCIICodes.Zero, ASCIICodes.K), // Clear Line
+                                uint8_fromString(this.promptBuffer), // write buffer to screen
+                                CSI(...uint8_fromString(this.cursorX.toString()), ASCIICodes.G) // move cursor to new position
+                            ]))
+                        } else {
+                            this.promptBuffer = this.promptBuffer.substring(0, this.promptBuffer.length - 1);
+                            this.terminal.write(new Uint8Array([ASCIICodes.BackSpace]));
+                            this.cursorX -= 1;
+                        }
+
                     } else if (byte == ASCIICodes.Tab) {
                         console.log("[TAB] Pressed")
                     } else if (byte == ASCIICodes.CarriageReturn || byte == ASCIICodes.NewLine) {
@@ -175,6 +223,12 @@ export default class Shell {
                                     if (bytes.byteLength > i + 1) {
                                         this.read.bind(this)(bytes.subarray(i))
                                     }
+
+                                    // teardown running program
+                                    terminal.write = () => null;
+                                    terminal.flush = () => null;
+                                    delete this.runningProgramInformation;
+
                                 });
 
                             break char_parse_loop;
@@ -183,11 +237,112 @@ export default class Shell {
                         // for now just to get stuff happening on the screen
                         this.promptBuffer = "";
                         this.writePrompt();
+                    } else if (byte == ASCIICodes.Escape) {
+                        if (i == bytes.byteLength - 1) {// last byte 
+                            continue char_parse_loop;
+                        }
+                        byte = bytes[++i]
+
+                        if (byte != ASCIICodes.OpenSquareBracket) {
+                            continue char_parse_loop;
+                        }
+
+                        let rawParams: number[] = [];
+                        while (++i < bytes.byteLength) {
+                            byte = bytes[i];
+
+                            if (
+                                byte >= 0x30 &&
+                                byte <= 0x3f
+                            ) {
+                                rawParams.push(byte);
+                            } else if (
+                                byte >= 0x40 &&
+                                byte <= 0x7E
+                            ) {
+                                rawParams.push(byte);
+                                break;
+                            }
+                        }
+
+                        if (rawParams.length == 0) {
+                            continue char_parse_loop; // error
+                        }
+
+                        let finalByte = rawParams[rawParams.length - 1]; rawParams.pop();
+
+                        let interperetNavigationParams = (params: number[]): {
+                            ctrl: boolean;
+                            shift: boolean;
+                        } => {
+                            params = readParams(rawParams, -1);
+                            let lastN = params[params.length - 1];
+                            return { ctrl: lastN >= 5, shift: lastN == 2 || lastN == 6 }
+                        }
+
+                        switch (finalByte) {
+                            case ASCIICodes.A: { // ArrowUp
+                                let previous = this.history.previous();
+                                if (previous != null) {
+                                    // clear the line and change'
+                                    this.clearCurrentLine();
+                                    this.writePrompt(false);
+                                    this.read(uint8_fromString(previous))
+                                }
+                            }; break;
+                            case ASCIICodes.B: { // ArrowDown
+                                let next = this.history.next();
+                                if (next != null) {
+                                    // clear the line and change'
+                                    this.clearCurrentLine();
+                                    this.writePrompt(false);
+                                    this.read(uint8_fromString(next))
+                                }
+                            }; break;
+                            case ASCIICodes.C: { // ArrowRight
+                                let { ctrl } = interperetNavigationParams(rawParams)
+
+                                // move cursor to right
+                                let isAtEnd = ((this.cursorX - this.promptXOffset) > this.promptBuffer.length)
+                                if (isAtEnd) {
+                                    break;
+                                }
+
+                                let step = 0;
+
+                                if (!ctrl) {
+                                    // simple move
+                                    step = 1;
+                                }
+
+                                if (step > 0) {
+                                    this.cursorX += step;
+                                    this.terminal.write(CSI(...uint8_fromString(step.toString()), ASCIICodes.C));
+                                }
+
+                            }; break;
+                            case ASCIICodes.D: { // ArrowLeft
+                                let { ctrl } = interperetNavigationParams(rawParams)
+
+                                let isAtBegin = this.cursorX <= (this.promptXOffset + 1)
+                                if (isAtBegin) {
+                                    break;
+                                }
+                                let step = 0;
+                                // move cursor to left
+                                if (!ctrl) {
+                                    // simple move
+                                    step = 1;
+                                }
+
+                                if (step > 0) {
+                                    this.cursorX -= step;
+                                    this.terminal.write(CSI(...uint8_fromString(step.toString()), ASCIICodes.D));
+                                }
+                            }; break;
+                        }
                     }
 
-                    // handle Tab & Enter & Backspace
-
-                    // Escaped bytes
 
                     i++;
                 }; break;
@@ -214,7 +369,7 @@ export default class Shell {
 
                         // in future add logic for terminating programs
                     }
-                    
+
                 }
             }; break;
             default: break;
