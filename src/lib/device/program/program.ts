@@ -1,4 +1,4 @@
-import { uint8_fromString } from "../../binary/uint8-array";
+import { uint8_concat, uint8_fromString } from "../../binary/uint8-array";
 import { ASCIICodes, CSI } from "../../terminal/shared";
 import { DeviceProgram, DeviceProgramStatus } from "../device-program";
 import { getLengthOfLongestElement, parseArgs } from "./helpers";
@@ -39,9 +39,9 @@ export const DEVICE_PROGRAM_HELP: DeviceProgram = {
 Example 1: help
 Example 2: help help`,
     run(args, options): Promise<DeviceProgramStatus> {
-
-        let cols = 8 * 8; // this is hacky i should come up with a system of getting the terminal size
-        let tabSize = 8;
+        options.terminal.flush()
+        const cols = 8 * 8; // this is hacky i should come up with a system of getting the terminal size
+        const tabSize = 8;
 
         function stringChunker(
             str: string,
@@ -85,28 +85,41 @@ Example 2: help help`,
             }
 
             let minNameLength = getLengthOfLongestElement(names);
+
             // Above min NameLegth + tab char
             for (let i = 0; i < programs.length + 1; i++) {
                 let name = names[i], description = descriptions[i];
 
-                name = name.padEnd(minNameLength - name.length);
+                // write name
+                options.terminal.write(uint8_concat([
+                    uint8_fromString(name),
+                    CSI(...uint8_fromString((minNameLength - name.length).toString()),
+                        ASCIICodes.C,
+                        ASCIICodes.Tab) // move cursor n amount to right
+                ]));
 
                 // hacky format description with padding
-
                 let nameColSizeOffset = (minNameLength + (minNameLength % tabSize));
                 if ((description.length + nameColSizeOffset) > cols) {
-                    let chunkSize = cols - nameColSizeOffset;
+                    let chunkSize = cols - nameColSizeOffset - 1;
                     let chunks: string[] = stringChunker(description, chunkSize)
 
-                    description = chunks.join(
-                        "\n".padEnd(nameColSizeOffset + 1, " ")
+                    // join chunks
+                    let moveBuf = CSI(
+                        ...uint8_fromString((nameColSizeOffset).toString()),
+                        ASCIICodes.C
                     )
+                    let bufs: Uint8Array[] = [];
+                    for (let ci = 0; ci < chunks.length - 1; ci++) {
+                        bufs.push(uint8_fromString(chunks[ci] + "\n"), moveBuf)
+                    }
+
+                    bufs.push(uint8_fromString(chunks[chunks.length - 1] + "\n")); // last chunk
+
+                    options.terminal.write(uint8_concat(bufs))
+                } else {
+                    options.terminal.write(uint8_fromString(description + "\n"))
                 }
-
-                options.terminal.write(uint8_fromString(
-                    name + "\t" + description + "\n"
-                ))
-
             }
         }
 
@@ -117,23 +130,29 @@ Example 2: help help`,
                 // List all programs
                 displayPrograms(options.device.programs);
             } else {
-                let prog: DeviceProgram | undefined = options.device.programs.find(p => p.name == argv.shift());
-
-                while (argv.length > 0) {
+                let name = argv.shift();
+                let prog: DeviceProgram | undefined = options.device.programs.find(p => p.name == name);
+                let parents: string[] = []
+                while (argv.length > 0 && prog) {
                     let name = argv.shift();
 
+                    let tmp = prog;
                     prog = prog?.sub?.find((p) => name == p.name)
+                    if (!prog) {
+                        prog = tmp;
+                        break;
+                    } else {
+                        parents.push(tmp.name)
+                    }
                 }
-
                 if (prog) {
                     options.terminal.write(uint8_fromString(
-                        prog.name + "\n" +
+                        parents.join(" ") + " " + prog.name + "\n" +
                         ((prog.description && stringChunker(prog.description, cols).join("\n") + "\n") || "") + "\n" +
                         ((prog.content && stringChunker(prog.content, cols).join("\n") + "\n") || "")
                     ))
 
                     if (prog.sub) {
-                        console.log(prog.sub)
                         displayPrograms(prog.sub)
                     }
                 }
