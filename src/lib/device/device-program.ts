@@ -56,6 +56,7 @@ export interface DeviceProgram {
     run(args: string, options: DeviceProgramOptions): Promise<DeviceProgramStatus>
     name: string;
     description?: string;
+    content?: string;
     sub?: DeviceProgram[];
 }
 

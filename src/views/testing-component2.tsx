@@ -4,7 +4,7 @@ import { uint8_concat, uint8_fromString } from "../lib/binary/uint8-array";
 import { Device } from "../lib/device/device";
 import Shell from "../lib/terminal/shell";
 import { ASCIICodes, CSI } from "../lib/terminal/shared";
-import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_HELP } from "../lib/device/program";
+import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_HELP } from "../lib/device/program/program";
 import { DPSignal, DeviceProgramStatus } from "../lib/device/device-program";
 
 export const TestingComponent2: Component = () => {
@@ -24,13 +24,22 @@ export const TestingComponent2: Component = () => {
                     resolve(DeviceProgramStatus.OK);
                     console.log("Canned")
                 })
-                
+                terminal.write(sescape("gg\tHello, nice fellow"))
                 setTimeout(() => {
                     terminal.write(sescape("Hello world Looser"))
                     resolve(DeviceProgramStatus.OK)
                 }, 1000)
             })
-        }
+        },
+        sub: [
+            {
+                name: "TEst Sub",
+                run(args, options) {
+                    return new Promise(r => r(DeviceProgramStatus.ERROR))
+                },
+
+            }
+        ]
     })
 
     let shell = new Shell(device);
