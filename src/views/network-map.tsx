@@ -7,9 +7,22 @@ import { Device } from "../lib/device/device";
 import { NetworkSwitch } from "../lib/device/network-switch";
 import { Interface } from "../lib/device/interface";
 import ping from "../lib/device/applications/ping";
-import { TTY } from "../components/tty";
+import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_HELP } from "../lib/device/program";
+import Shell from "../lib/terminal/shell";
+import Terminal from "../lib/terminal/terminal";
 
-const [ttyDevice , setTTYDevice] = createSignal<Device| null>(null,{"equals" : false});
+let shell = new Shell(new Device);
+function setShellDevice(device: Device) {
+
+    device.programs = [
+        DEVICE_PROGRAM_CLEAR,
+        DEVICE_PROGRAM_ECHO,
+        DEVICE_PROGRAM_HELP
+    ]
+
+    shell.configureDevice(device)
+}
+
 
 class NetworkMapInterface {
     iface: Interface;
@@ -74,8 +87,8 @@ class NetworkMapInterface {
 class NetworkMapDevice {
     x: number;
     y: number;
-    width:number;
-    height:number;
+    width: number;
+    height: number;
     device: Device;
     nmInterfaces: Array<NetworkMapInterface>
     constructor(x: number, y: number, device: Device) {
@@ -141,9 +154,7 @@ class NetworkMapDevice {
             onMouseUp={() => this.mouseIsDown = false}
             onMouseLeave={() => this.mouseIsDown = false}
 
-            onClick={() => {
-                setTTYDevice(this.device)
-            }}
+            onClick={() => setShellDevice(this.device)}
         >
             {this.rect}
             {this.text}
@@ -399,6 +410,9 @@ export default function NetworkMapViewer(): JSX.Element {
     nmap.addDevice(nmDevice_pc5)
     nmap.addDevice(nmDevice_sw2)
 
+
+    let terminal: Terminal;
+
     return <div style={{ width: "100%" }} >
 
         <svg width={"100%"} height={500} >
@@ -419,9 +433,11 @@ export default function NetworkMapViewer(): JSX.Element {
             }}
         >Ping IPV4 pc4 =&gt pc5</button>
 
-        <Show when={ttyDevice()} >
-            <TTY device={ttyDevice()!} />
-        </Show>
+        <div ref={(el) => {
+            setShellDevice(pc1)
+            terminal = new Terminal(el);
+            shell.configureTerminal(terminal)
+        }}></div>
     </div>
 };
 

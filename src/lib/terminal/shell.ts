@@ -65,6 +65,15 @@ export default class Shell {
         this.writePrompt();
     }
 
+    configureDevice (device: Device) {
+        if (this.state == ShellState.RUNNING_PROGRAM) {
+            return;
+        }
+
+        this.device = device;
+        this.writePrompt();
+    }
+
     private runningProgramInformation?: {
         terminal: DeviceProgramTerminal;
         signal: DeviceProgramSignal;
