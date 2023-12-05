@@ -65,7 +65,7 @@ export default class Shell {
         this.writePrompt();
     }
 
-    configureDevice (device: Device) {
+    configureDevice(device: Device) {
         if (this.state == ShellState.RUNNING_PROGRAM) {
             return;
         }
@@ -86,7 +86,7 @@ export default class Shell {
 
     private promptBuffer: string = "";
 
-    private replacePromptBuffer(text: string, cursorX = this.promptXOffset + this.promptBuffer.length + 1) {
+    private replacePromptBuffer(text: string, cursorX?: number) {
         if (!this.terminal) {
             return;
         }
@@ -94,7 +94,7 @@ export default class Shell {
         // clear the line and change'
 
         this.promptBuffer = text;
-        this.cursorX = cursorX;
+        this.cursorX = cursorX || this.promptXOffset + this.promptBuffer.length + 1;
         this.terminal.write(uint8_concat([
             CSI(...uint8_fromString((this.promptXOffset + 1).toString()), ASCIICodes.G), // move cursor to begin of prompt
             CSI(ASCIICodes.Zero, ASCIICodes.K), // Clear Line
