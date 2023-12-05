@@ -313,6 +313,19 @@ export default class Shell {
                                 if (!ctrl) {
                                     // simple move
                                     step = 1;
+                                } else {
+                                    let x = this.cursorX - this.promptXOffset - 1; // due to cursor being 1-based
+
+                                    // find the position of the first char behind a whitespace
+
+                                    let char = this.promptBuffer[x];
+                                    let prevc = char;
+
+                                    while (char && !(char != " " && prevc == " ")) {
+                                        step += 1;
+                                        prevc = char;
+                                        char = this.promptBuffer[x + step];
+                                    }
                                 }
 
                                 if (step > 0) {
@@ -333,12 +346,41 @@ export default class Shell {
                                 if (!ctrl) {
                                     // simple move
                                     step = 1;
+                                } else {
+                                    let x = this.cursorX - this.promptXOffset - 1; // due todsa dsa cursor being 1-based
+
+                                    let char = this.promptBuffer[x - 1];
+                                    let prevc = char;
+
+                                    while (char && !(prevc != " " && char == " ") || char == prevc) {
+                                        step += 1;
+                                        prevc = char;
+                                        char = this.promptBuffer[x - step];
+                                    }
+                                    step -= 1
                                 }
 
                                 if (step > 0) {
                                     this.cursorX -= step;
                                     this.terminal.write(CSI(...uint8_fromString(step.toString()), ASCIICodes.D));
                                 }
+                            }; break;
+                            case ASCIICodes.F: { // End
+                                // move cursor to end
+
+                                // Note There is a problem due to the terminal renederer auto wrapping text and then the states diverge
+
+                                this.cursorX = this.promptXOffset + this.promptBuffer.length + 1;
+                                this.terminal.write(CSI(...uint8_fromString((
+                                    this.cursorX
+                                ).toString()), ASCIICodes.G));
+                            }; break;
+                            case ASCIICodes.H: { // Home
+                                // move cursor to Begin
+                                this.cursorX = this.promptXOffset + 1;
+                                this.terminal.write(CSI(...uint8_fromString((
+                                    this.cursorX
+                                ).toString()), ASCIICodes.G));
                             }; break;
                         }
                     }
