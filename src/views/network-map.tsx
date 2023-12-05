@@ -7,9 +7,10 @@ import { Device } from "../lib/device/device";
 import { NetworkSwitch } from "../lib/device/network-switch";
 import { Interface } from "../lib/device/interface";
 import ping from "../lib/device/applications/ping";
-import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_HELP } from "../lib/device/program/program";
+import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_HELP } from "../lib/device/program/program";
 import Shell from "../lib/terminal/shell";
 import Terminal from "../lib/terminal/terminal";
+import { DEVICE_PROGRAM_IFINFO } from "../lib/device/program/ifinfo";
 
 let shell = new Shell(new Device);
 function setShellDevice(device: Device) {
@@ -17,7 +18,9 @@ function setShellDevice(device: Device) {
     device.programs = [
         DEVICE_PROGRAM_CLEAR,
         DEVICE_PROGRAM_ECHO,
-        DEVICE_PROGRAM_HELP
+        DEVICE_PROGRAM_HELP,
+        DEVICE_PROGRAM_DOWNLOAD,
+        DEVICE_PROGRAM_IFINFO
     ]
 
     shell.configureDevice(device)

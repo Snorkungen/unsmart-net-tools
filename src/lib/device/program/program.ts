@@ -1,7 +1,7 @@
 import { uint8_concat, uint8_fromString } from "../../binary/uint8-array";
 import { ASCIICodes, CSI } from "../../terminal/shared";
-import { DeviceProgram, DeviceProgramStatus } from "../device-program";
-import { getLengthOfLongestElement, parseArgs } from "./helpers";
+import { DeviceProgram, DeviceProgramOptions, DeviceProgramStatus } from "../device-program";
+import { COLS, getLengthOfLongestElement, parseArgs, TAB_SIZE, chunkString, tabAlign } from "./helpers";
 
 export const DEVICE_PROGRAM_CLEAR: DeviceProgram = {
     name: "clear",
@@ -39,41 +39,6 @@ export const DEVICE_PROGRAM_HELP: DeviceProgram = {
 Example 1: help
 Example 2: help help`,
     run(args, options): Promise<DeviceProgramStatus> {
-        options.terminal.flush()
-        const cols = 8 * 8; // this is hacky i should come up with a system of getting the terminal size
-        const tabSize = 8;
-
-        function stringChunker(
-            str: string,
-            chunkSize: number,
-            minChunkSize: number = 12
-        ): string[] {
-            let chunks: string[] = new Array(Math.ceil(str.length / chunkSize));
-            let ci = 0;
-
-            // smarter chunking
-            while (str.length > 0) {
-                let chunkEnd = Math.min(str.length - 1, chunkSize);
-
-                if (str.length - 1 < chunkSize) {
-                    chunks[ci++] = str;
-                    break;
-                }
-
-                // looks for the first space
-                while (chunkEnd > minChunkSize) {
-                    if (str[chunkEnd] == " ") {
-                        break;
-                    }
-                    chunkEnd--;
-                }
-
-                chunks[ci++] = str.substring(0, chunkEnd);
-                str = str.substring(1 + chunkEnd); // disappear a space char
-            }
-            return chunks;
-        }
-
         function displayPrograms(programs: DeviceProgram[]) {
             // List all programs
 
@@ -99,10 +64,10 @@ Example 2: help help`,
                 ]));
 
                 // hacky format description with padding
-                let nameColSizeOffset = (minNameLength + (minNameLength % tabSize));
-                if ((description.length + nameColSizeOffset) > cols) {
-                    let chunkSize = cols - nameColSizeOffset - 1;
-                    let chunks: string[] = stringChunker(description, chunkSize)
+                let nameColSizeOffset = tabAlign(minNameLength);
+                if ((description.length + nameColSizeOffset) > COLS) {
+                    let chunkSize = COLS - nameColSizeOffset - 1;
+                    let chunks: string[] = chunkString(description, chunkSize)
 
                     // join chunks
                     let moveBuf = CSI(
@@ -148,8 +113,8 @@ Example 2: help help`,
                 if (prog) {
                     options.terminal.write(uint8_fromString(
                         parents.join(" ") + " " + prog.name + "\n" +
-                        ((prog.description && stringChunker(prog.description, cols).join("\n") + "\n") || "") + "\n" +
-                        ((prog.content && stringChunker(prog.content, cols).join("\n") + "\n") || "")
+                        ((prog.description && chunkString(prog.description, COLS).join("\n") + "\n") || "") + "\n" +
+                        ((prog.content && chunkString(prog.content, COLS).join("\n") + "\n") || "")
                     ))
 
                     if (prog.sub) {
@@ -161,4 +126,39 @@ Example 2: help help`,
             resolve(DeviceProgramStatus.OK)
         })
     }
+}
+
+const PCAP_FILE_EXTENSION = ".cap"
+export const DEVICE_PROGRAM_DOWNLOAD: DeviceProgram = {
+    name: "download",
+    description: "Download the devices packet-capture.",
+    content: "<download>\n<donwload> [name]",
+    run: function (args: string, { device, terminal }: DeviceProgramOptions): Promise<DeviceProgramStatus> {
+        return new Promise((resolve) => {
+            let [, name] = parseArgs(args);
+
+            if (name && name.substring(name.length - PCAP_FILE_EXTENSION.length) != PCAP_FILE_EXTENSION) {
+                name += PCAP_FILE_EXTENSION
+            }
+
+            let file = device.createCaptureFile(name);
+
+            if (!file) {
+                terminal.write(uint8_fromString("Nothing to download."));
+                return resolve(DeviceProgramStatus.ERROR);
+            }
+
+            terminal.write(uint8_fromString(`Downloading: ${file.name}`));
+
+            let anchor = document.createElement("a");
+            anchor.href = URL.createObjectURL(file);
+            anchor.download = file.name;
+
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove()
+
+            resolve(DeviceProgramStatus.OK);
+        })
+    },
 }
