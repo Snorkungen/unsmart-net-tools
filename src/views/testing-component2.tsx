@@ -45,6 +45,7 @@ export const TestingComponent2: Component = () => {
             {
                 name: "TEst Sub",
                 run(args, options) {
+                    options.terminal.write(new Uint8Array([65,65,66,66,67,67.68]))
                     return new Promise(r => r(DeviceProgramStatus.ERROR))
                 },
 

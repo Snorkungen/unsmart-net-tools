@@ -1,6 +1,7 @@
 import { uint8_concat, uint8_fromString } from "../binary/uint8-array";
 import type { Device } from "../device/device";
 import { DPSignal, DeviceProgram, DeviceProgramSignal, DeviceProgramTerminal } from "../device/device-program";
+import { parseArgs } from "../device/program/helpers";
 import { ASCIICodes, CSI, readParams } from "./shared";
 
 interface ShellTerminal {
@@ -178,12 +179,22 @@ export default class Shell {
                         console.log("[ENTER] Pressed")
                         // do stuff
 
-                        // i'm just testing this is not that simple due to the many ways i could solve this
-                        let [name] = this.promptBuffer.split(" ");
-
-                        let program = this.device.programs.find((dp) => dp.name == name);
+                        let argv = parseArgs(this.promptBuffer);
+                        let name = argv.shift();
+                        let program: DeviceProgram | undefined = this.device.programs.find(p => p.name == name);
+                        while (argv.length > 0 && program) {
+                            name = argv.shift();
+                            let tmp = program;
+                            program = program?.sub?.find((p) => name == p.name)
+                            if (!program) {
+                                program = tmp;
+                                break;
+                            }
+                        }
 
                         // TODO! read sub programs, this could maybe be something that isn't a shell thing
+
+                        this.history.add(this.promptBuffer);
 
                         if (program) {
                             this.terminal.write(new Uint8Array([ASCIICodes.NewLine]));
@@ -208,7 +219,6 @@ export default class Shell {
                             })
                                 .then(() => { // Instead of DevicePrograms being a promise it should instead rely upon the DeviceProgramSignal.
                                     this.state = ShellState.PROMPT;
-                                    this.history.add(this.promptBuffer);
                                     this.promptBuffer = "";
 
                                     // retake ownership of terminal
@@ -229,7 +239,6 @@ export default class Shell {
                             break char_parse_loop;
                         }
 
-                        // for now just to get stuff happening on the screen
                         this.promptBuffer = "";
                         this.writePrompt();
                     } else if (byte == ASCIICodes.Escape) {

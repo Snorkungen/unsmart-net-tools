@@ -86,6 +86,9 @@ Example 2: help help`,
                     if (prog.sub) {
                         displayPrograms(prog.sub)
                     }
+                } else {
+                    options.terminal.write(uint8_fromString("No program found with the name \"" + args.substring(this.name.length + 1) + "\"\n"));
+                    displayPrograms(options.device.programs); 
                 }
             }
 

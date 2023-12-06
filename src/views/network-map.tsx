@@ -11,6 +11,7 @@ import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_ECHO, DEV
 import Shell from "../lib/terminal/shell";
 import Terminal from "../lib/terminal/terminal";
 import { DEVICE_PROGRAM_IFINFO } from "../lib/device/program/ifinfo";
+import { DEVICE_PROGRAM_PING } from "../lib/device/program/ping";
 
 let shell = new Shell(new Device);
 function setShellDevice(device: Device) {
@@ -20,7 +21,8 @@ function setShellDevice(device: Device) {
         DEVICE_PROGRAM_ECHO,
         DEVICE_PROGRAM_HELP,
         DEVICE_PROGRAM_DOWNLOAD,
-        DEVICE_PROGRAM_IFINFO
+        DEVICE_PROGRAM_IFINFO,
+        DEVICE_PROGRAM_PING
     ]
 
     shell.configureDevice(device)
