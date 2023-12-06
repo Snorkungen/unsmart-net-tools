@@ -1,0 +1,13 @@
+extension,total_size,total_lines,total_files
+.md,15217,338,5
+.json,1004,47,3
+.yaml,77801,2269,1
+.ts,317902,9309,99
+.tsx,54987,1448,9
+.ico,15086,3,1
+.scss,661,51,1
+.html,499,17,1
+.py,849,40,1
+.js,232,11,1
+.gitignore,40,6,1
+.csv,0,1,1
