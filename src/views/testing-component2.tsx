@@ -6,6 +6,7 @@ import Shell from "../lib/terminal/shell";
 import { ASCIICodes, CSI } from "../lib/terminal/shared";
 import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_HELP } from "../lib/device/program/program";
 import { DPSignal, DeviceProgramStatus } from "../lib/device/device-program";
+import { formatTable } from "../lib/device/program/helpers";
 
 export const TestingComponent2: Component = () => {
 
@@ -21,10 +22,19 @@ export const TestingComponent2: Component = () => {
         run: function (args: string, { terminal, signal }): Promise<DeviceProgramStatus> {
             return new Promise<DeviceProgramStatus>((resolve) => {
                 signal.on(DPSignal.TERMINATE, () => {
+                    terminal.write(uint8_fromString("Cancelled"))
                     resolve(DeviceProgramStatus.OK);
-                    console.log("Canned")
                 })
-                terminal.write(sescape("gg\tHello, nice fellow"))
+
+                let table = [
+                    ["Hello, World.", "I'm so sad i'm trying to get this to work. Am i being over-written?", "-0-"],
+                    ["Something", "Foo, Bar", "-1-"],
+                    ["Something", "Foo, Bar", "-3-"],
+                    ["Something", "Foo, Bar", "-4-"]
+                ]
+
+                terminal.write(formatTable(table))
+
                 setTimeout(() => {
                     terminal.write(sescape("Hello world Looser"))
                     resolve(DeviceProgramStatus.OK)
