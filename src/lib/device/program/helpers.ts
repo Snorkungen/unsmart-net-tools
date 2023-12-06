@@ -1,7 +1,7 @@
 import { uint8_concat, uint8_fromString } from "../../binary/uint8-array";
 import { CSI, ASCIICodes } from "../../terminal/shared";
 
-export const COLS = 8 * 8; // this is hacky i should come up with a system of getting the terminal size
+export const COLS = 80; // this is hacky i should come up with a system of getting the terminal size
 export const TAB_SIZE = 8;
 
 export const tabAlign = (n: number) => n + TAB_SIZE - (n % TAB_SIZE);
@@ -40,32 +40,6 @@ export function chunkString(
         str = str.substring(1 + chunkEnd); // disappear a space char
     }
     return chunks;
-}
-
-export function leftOffsetStr(str: string, offset: number, cols = COLS): Uint8Array {
-    let chunkSize = cols - offset;
-    let chunks = chunkString(str, chunkSize);
-
-    // join chunks
-    let moveBuf = CSI(
-        ...uint8_fromString((offset).toString()),
-        ASCIICodes.G
-    )
-    let bufs: Uint8Array[] = [];
-
-    if (chunks.length == 1) {
-        return uint8_concat ([
-            moveBuf, uint8_fromString(chunks[chunks.length - 1] + "\n") // This is garbage
-        ])
-    }
-
-    for (let ci = 0; ci < chunks.length - 1; ci++) {
-        bufs.push(uint8_fromString(chunks[ci] + "\n"), moveBuf)
-    }
-
-    bufs.push(uint8_fromString(chunks[chunks.length - 1] + "\n")); // last chunk
-
-    return uint8_concat(bufs)
 }
 
 export function parseArgs(args: string): string[] {
@@ -173,17 +147,27 @@ export function formatTable(table: (string | undefined)[][]): Uint8Array {
                 )
             } else {
                 let chunks = chunkString(content, colSizes[i]);
-                newlines = Math.max(newlines, chunks.length - 1);
                 // first chunk is already aligned
                 for (let ci = 0; ci < chunks.length - 1; ci++) {
-                    console.log(chunks, newlines)
                     buf.push(uint8_fromString(chunks[ci] + "\n"), padBuf)
                 }
-
                 buf.push(uint8_fromString(chunks[chunks.length - 1])); // last chunk
+
+                let tmp = chunks.length - 1;
+
+                // if last row elem no new newlines
+                // if last
+                if (i + 1 == row.length) {
+                    if (newlines > tmp) {
+                         newlines = newlines - tmp;
+                    } else {
+                        newlines = 0;
+                    }
+                } else {
+                    newlines = Math.max(newlines, tmp);
+                }
             }
         }
-
 
         buf.push(new Uint8Array(new Array(newlines + 1).fill(ASCIICodes.NewLine)))
     }

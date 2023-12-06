@@ -156,7 +156,7 @@ type TerminalRendererCell = {
 }
 export class TerminalRenderer {
     // options start
-    COLUMN_WIDTH = 8 * 8;
+    COLUMN_WIDTH = 80;
     ROW_HEIGHT = 2 * 8;
 
     COLORS = [

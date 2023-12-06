@@ -1,7 +1,7 @@
 import { uint8_concat, uint8_fromString } from "../../binary/uint8-array";
 import { ASCIICodes, CSI } from "../../terminal/shared";
 import { DeviceProgram, DeviceProgramOptions, DeviceProgramStatus } from "../device-program";
-import { COLS, getLengthOfLongestElement, parseArgs, TAB_SIZE, chunkString, tabAlign } from "./helpers";
+import { COLS, getLengthOfLongestElement, parseArgs, TAB_SIZE, chunkString, tabAlign, formatTable } from "./helpers";
 
 export const DEVICE_PROGRAM_CLEAR: DeviceProgram = {
     name: "clear",
@@ -41,51 +41,15 @@ Example 2: help help`,
     run(args, options): Promise<DeviceProgramStatus> {
         function displayPrograms(programs: DeviceProgram[]) {
             // List all programs
+            let table: (string | undefined)[][] = [
+                ["Program Name", "Description"]
+            ];
 
-            let names: string[] = ["Program Name"];
-            let descriptions: string[] = ["Description"];
             for (let p of programs) {
-                names.push(p.name);
-                descriptions.push(p.description || "")
+                table.push([p.name, p.description])
             }
 
-            let minNameLength = getLengthOfLongestElement(names);
-
-            // Above min NameLegth + tab char
-            for (let i = 0; i < programs.length + 1; i++) {
-                let name = names[i], description = descriptions[i];
-
-                // write name
-                options.terminal.write(uint8_concat([
-                    uint8_fromString(name),
-                    CSI(...uint8_fromString((minNameLength - name.length).toString()),
-                        ASCIICodes.C,
-                        ASCIICodes.Tab) // move cursor n amount to right
-                ]));
-
-                // hacky format description with padding
-                let nameColSizeOffset = tabAlign(minNameLength);
-                if ((description.length + nameColSizeOffset) > COLS) {
-                    let chunkSize = COLS - nameColSizeOffset - 1;
-                    let chunks: string[] = chunkString(description, chunkSize)
-
-                    // join chunks
-                    let moveBuf = CSI(
-                        ...uint8_fromString((nameColSizeOffset).toString()),
-                        ASCIICodes.C
-                    )
-                    let bufs: Uint8Array[] = [];
-                    for (let ci = 0; ci < chunks.length - 1; ci++) {
-                        bufs.push(uint8_fromString(chunks[ci] + "\n"), moveBuf)
-                    }
-
-                    bufs.push(uint8_fromString(chunks[chunks.length - 1] + "\n")); // last chunk
-
-                    options.terminal.write(uint8_concat(bufs))
-                } else {
-                    options.terminal.write(uint8_fromString(description + "\n"))
-                }
-            }
+            return options.terminal.write(formatTable(table))
         }
 
         return new Promise<DeviceProgramStatus>((resolve) => {
@@ -111,8 +75,10 @@ Example 2: help help`,
                     }
                 }
                 if (prog) {
+                    let shownName = parents.length == 0 ? prog.name : parents.join(" ") + " " + prog.name;
+
                     options.terminal.write(uint8_fromString(
-                        parents.join(" ") + " " + prog.name + "\n" +
+                        shownName + "\n" +
                         ((prog.description && chunkString(prog.description, COLS).join("\n") + "\n") || "") + "\n" +
                         ((prog.content && chunkString(prog.content, COLS).join("\n") + "\n") || "")
                     ))

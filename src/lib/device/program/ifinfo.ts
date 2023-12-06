@@ -1,6 +1,5 @@
-import { uint8_fromString } from "../../binary/uint8-array";
 import { DeviceProgram, DeviceProgramStatus, DeviceProgramTerminal } from "../device-program";
-import { leftOffsetStr, parseArgs, tabAlign } from "./helpers";
+import { formatTable, parseArgs } from "./helpers";
 
 
 
@@ -20,21 +19,19 @@ export const DEVICE_PROGRAM_IFINFO: DeviceProgram = {
 
             for (let iface of interfaces) {
                 let ifID = iface.ifID + ":";
-                let leftOffset = tabAlign(ifID.length)
 
-                // write if id
-                terminal.write(uint8_fromString(ifID + "\t"))
+                let table: (string | undefined)[][] = [
+                    [ifID,],
+                ]
 
                 // write macaddress and vlan info
-                let info: { toString(): string }[] = [iface.macAddress];
-                if (iface.vlan) {
-                    info.push(
-                        iface.vlan.type,
-                        iface.vlan.vids.join(",")
-                    )
-                }
+                let info: unknown[] = [
+                    iface.macAddress,
+                    iface.vlan?.type,
+                    iface.vlan?.vids.join(",")
+                ].filter(Boolean);
 
-                terminal.write(leftOffsetStr(info.join(" "), leftOffset))
+                table[0][1] = info.join(" ");
 
                 // write ipv4 info
                 info = [
@@ -45,7 +42,7 @@ export const DEVICE_PROGRAM_IFINFO: DeviceProgram = {
                 ].filter(Boolean)
 
                 if (info.length) {
-                    terminal.write(leftOffsetStr(info.join(" "), leftOffset))
+                    table.push([undefined, info.join(" ")])
                 }
 
                 // write ipv6 info
@@ -56,8 +53,10 @@ export const DEVICE_PROGRAM_IFINFO: DeviceProgram = {
                 ].filter(Boolean)
 
                 if (info.length) {
-                    terminal.write(leftOffsetStr(info.join(" "), leftOffset))
+                    table.push([undefined, info.join()])
                 }
+
+                terminal.write(formatTable(table))
             }
 
             return resolve(DeviceProgramStatus.OK);
