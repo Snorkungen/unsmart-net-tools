@@ -30,7 +30,7 @@ export class Interface {
     /** This value tells the device that this interface should be configured using DHCP, either using DHCPv4, DHCPv6 or both.  */
     dhcp?: (4 | 6)[];
 
-    constructor(public ifID: number, macAddress: MACAddress, public forwardCallback: (frame: TEthernetFrame, iface: Interface) => void) {
+    constructor(public ifID: string, macAddress: MACAddress, public forwardCallback: (frame: TEthernetFrame, iface: Interface) => void) {
         this.macAddress = macAddress;
     }
 

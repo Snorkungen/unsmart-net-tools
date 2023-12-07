@@ -57,7 +57,7 @@ export class Device {
     }
 
     createInterface(): Interface {
-        let iface = new Interface(this.interfaces.length, createMacAddress(), this.listener.bind(this))
+        let iface = new Interface(this.interfaces.length.toString(), createMacAddress(), this.listener.bind(this))
         this.interfaces.push(iface);
 
         iface.onConnect = this.handleInterfaceConnection.bind(this);

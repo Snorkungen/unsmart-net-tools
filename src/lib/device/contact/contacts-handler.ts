@@ -17,7 +17,7 @@ export const UNSET_IPV6_ADDRESS = new IPV6Address(new Uint8Array(IPV6Address.ADD
 
 export const LOOPBACK_IPV4_ADDRESS = new IPV4Address("127.0.0.1");
 export const LOOPBACK_IPV4_MASK = createMask(IPV4Address, 8);
-export const LOOPBACK_INTERFACE = new Interface(-1, UNSET_MAC_ADDRESS, () => null);
+export const LOOPBACK_INTERFACE = new Interface("-1", UNSET_MAC_ADDRESS, () => null);
 
 export class ContactsHandler {
     contacts: Array<Contact<ContactAddrFamily, ContactProto>> = []

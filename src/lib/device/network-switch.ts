@@ -6,7 +6,7 @@ import { Interface } from "./interface";
 export class NetworkSwitch extends Device {
     macaddresses = new Map<string, Interface>()
 
-    private flood(frame: typeof ETHERNET_HEADER, ifID: number) {
+    private flood(frame: typeof ETHERNET_HEADER, ifID: string) {
         for (let iface of this.interfaces) {
             if (iface.ifID == ifID) {
                 continue;
