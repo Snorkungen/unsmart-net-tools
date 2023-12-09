@@ -1,12 +1,17 @@
 import { MACAddress } from "../address/mac";
 import { ETHERNET_HEADER } from "../header/ethernet";
 import { PCAP_GLOBAL_HEADER, PCAP_MAGIC_NUMBER, PCAP_RECORD_HEADER } from "../header/pcap";
-import { ContactsHandler } from "./contact/contacts-handler";
+import { ContactsHandler, UNSET_IPV4_ADDRESS } from "./contact/contacts-handler";
 import { Interface } from "./interface";
 import DeviceService from "./service/service";
 import NeighborTable from "./neighbor-table";
 import { uint8_concat, uint8_fromNumber } from "../binary/uint8-array";
 import { DeviceProgram } from "./device-program";
+import { DeviceRoute } from "./routing-table";
+import { DeviceRouteFlag } from "./routing-table";
+import { IPV4Address } from "../address/ipv4";
+import { AddressMask } from "../address/mask";
+import { and } from "../binary";
 
 let macAddressCount = 0;
 let startBuf = new Uint8Array([0xfa, 0xff, 0x0f, 0])
@@ -21,6 +26,8 @@ export class Device {
     name = Math.floor(Math.random() * 10_000).toString() + "A";
 
     interfaces: Interface[] = [];
+
+    routes: DeviceRoute[] = [];
     contactsHandler = new ContactsHandler(this)
 
     neighborTable: NeighborTable = new NeighborTable(this);
@@ -61,12 +68,29 @@ export class Device {
         this.interfaces.push(iface);
 
         iface.onConnect = this.handleInterfaceConnection.bind(this);
+        iface.onDisconnect = this.handleInterfaceDisconnection.bind(this);
 
         return iface;
     }
 
     handleInterfaceConnection(iface: Interface) {
-        iface;
+        for (let route of this.routes) {
+            if (route.iface !== iface) {
+                continue;
+            }
+            route.flags.push(DeviceRouteFlag.UP);
+        }
+        return; // #DONOTHING
+    }
+
+    handleInterfaceDisconnection(iface: Interface) {
+        for (let route of this.routes) {
+            if (route.iface !== iface) {
+                continue;
+            }
+
+            route.flags = route.flags.filter(f => f !== DeviceRouteFlag.UP);
+        }
         return; // #DONOTHING
     }
 
@@ -128,6 +152,29 @@ export class Device {
     registerProgram(program: DeviceProgram) {
         // could in future have special logic ensuring that no duplicate name programs exist
         this.programs.unshift(program)
+    }
+
+    configureIPv4Address(iface: Interface, address: IPV4Address, netmask: AddressMask<typeof IPV4Address>) {
+        // clear from routes a dynamic route based on previous config
+        this.routes = this.routes.filter(route =>
+            !(route.iface === iface && route.flags.includes(DeviceRouteFlag.DYNAMIC)))
+
+        iface.ipv4Address = address;
+        iface.ipv4SubnetMask = netmask;
+
+        let flags = [DeviceRouteFlag.DYNAMIC,]
+
+        if (iface.isConnected) {
+            flags.push(DeviceRouteFlag.UP);
+        }
+
+        return this.routes.push({
+            destination: new IPV4Address(and(address.buffer, netmask.buffer)),
+            netmask,
+            gateway: new IPV4Address("0.0.0.0"),
+            iface,
+            flags
+        })
     }
 }
 

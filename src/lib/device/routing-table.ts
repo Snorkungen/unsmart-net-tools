@@ -3,6 +3,7 @@ import { AddressMask } from "../address/mask";
 import { Interface } from "./interface";
 
 export enum DeviceRouteFlag {
+    DYNAMIC = 0x00,
     UP = 0x01,
     GATEWAY = 0x02,
     HOST = 0x04,

@@ -82,8 +82,8 @@ function setIP4Address(routes: DeviceRoute[], iface: Interface, address: IPV4Add
     return ridx;
 }
 
-let pc1 = new Host();
-let pc2 = new Host();
+let pc1 = new Device();
+let pc2 = new Device();
 pc1.name = "PC1"
 pc2.name = "PC2"
 
