@@ -5,10 +5,11 @@
 - Develop on device logic
   - [ ] Research and develop a system for **localhost** as an `Interface`
   - [ ] Device -> contact
+    - [ ] ipv4 routing & routing table
     - Design the api
     - [x] UDP protocol support
     - [ ] TCP protocol support
-- [ ] Terminal & Shell 
+- [ ] Terminal & Shell
   - [ ] *Auto resize `TerminaleRenderer` View* haven't decided on what this means
   - [ ] Feature parity with previous "tty"
     - [ ] Tab completion
