@@ -3,6 +3,8 @@
 ## Tasks
 
 - Develop on device logic
+  - [ ] Overhaul Device
+    - [ ] Make the DeviceInterface an actual interface
   - [ ] Research and develop a system for **localhost** as an `Interface`
   - [ ] Device -> contact
     - [ ] ipv4 routing & routing table

@@ -3,6 +3,14 @@ import { MACAddress } from "../address/mac";
 import type { AddressMask } from "../address/mask";
 import type { Device } from "./device";
 
+export enum NetworkAddressFamily {
+    UNSPECIFIED,
+    IPv4,
+    IPv6,
+    /** For sneaking in an entire ethernet header */
+    LINK,
+}
+
 export enum NetworkInterfaceType {
     ETHERNET = "eth",
     LOOPBACK = "lo"
@@ -75,6 +83,20 @@ export interface NetworkData {
     buffer: Uint8Array;
 }
 
+export type NetworkGenericAddress = {
+    family: NetworkAddressFamily;
+    buffer: Uint8Array;
+}
+
+export type NetworkRouteEntry = {
+    destination: BaseAddress;
+    gateway: BaseAddress;
+    netmask : AddressMask<typeof BaseAddress>
+    interface: NetworkInterface;
+
+    // flags
+}
+
 export interface NetworkInterfaceAddress<AT extends typeof BaseAddress> {
     /** reference to interface */
     netif: NetworkInterface;
@@ -137,8 +159,10 @@ export interface NetworkInterface {
     // !TODO: something, something Berkely Packet Filter
 
     /** output routine (enque) [i haven't made a decision i won't be using a queue] */
-    output?: (netif: NetworkInterface, data: NetworkData,
-        // sockaddr (don't know what this is)
+    output?: (
+        netif: NetworkInterface,
+        data: NetworkData,
+        addr: NetworkGenericAddress,
         // rtentry (this is the routing table entry)
     ) => number;
     /** initiate the output routine */
@@ -150,7 +174,7 @@ export interface NetworkInterface {
 }
 
 export interface NetworkInterfaceLoopback extends NetworkInterface {
-    name : "lo",
+    name: "lo",
     type: NetworkInterfaceType.LOOPBACK;
 }
 
@@ -199,6 +223,9 @@ export function netifInitLoopback(device: Device): NetworkInterfaceLoopback {
     netif.name = "lo"
     netif.unit = 0;
     netif.flags = NetworkInterfaceFlag.LOOPBACK | NetworkInterfaceFlag.MULTICAST;
+    netif.mtu == 1 << 15; // should probably be ((1 << 16 )- 1)
+
+    netif.output = netifOutputLoopback;
 
     return netif;
 }
@@ -222,4 +249,58 @@ export function netifInitEthernet(device: Device, macaddress: MACAddress): Netwo
     netif.macaddress = macaddress;
 
     return netif;
+}
+
+function netifOutputLoopback(
+    netif: NetworkInterface,
+    data: NetworkData,
+    destination: NetworkGenericAddress,
+    // rtentry (this is the routing table entry)
+): number {
+    // !TODO: Something Berkely Packet Filter
+
+    data.rcvif = netif;
+
+    netif.stat_lastchange = new Date();
+    netif.stat_opackets += 1;
+    netif.stat_obytes += data.buffer.length;
+
+    switch (destination.family) {
+        case NetworkAddressFamily.IPv4:
+            // !TODO: Forward data into device ipv4 input
+            // netif.device
+            break;
+        case NetworkAddressFamily.IPv6:
+            // !TODO: Forward data into device ipv6 input
+            // netif.device
+            break;
+        default:
+            throw new Error("Unrecognized address family")
+    }
+
+    netif.stat_ipackets += 1;
+    netif.stat_ibytes += data.buffer.length;
+
+    return 0;
+}
+
+function netifOutputEthernet(
+    netif: NetworkInterface,
+    data: NetworkData,
+    destination: NetworkGenericAddress,
+    // rtentry (this is the routing table entry)
+): number {
+
+    // verify that interface is up
+    if ((netif.flags & NetworkInterfaceFlag.UP) == 0 ) {
+        // !TODO: Do some type of error handling
+        return 1;
+    }
+
+    netif.stat_lastchange = new Date();
+
+    // !TODO: implemetn route entry to be able to complete this logic
+    // (fig. 4.15, p.108)
+
+    return 0;
 }
