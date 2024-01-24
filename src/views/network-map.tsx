@@ -2,11 +2,9 @@ import { Accessor, Component, For, Show, createEffect, createSignal } from "soli
 import { JSX } from "solid-js/jsx-runtime";
 import { IPV4Address } from "../lib/address/ipv4";
 import { createMask } from "../lib/address/mask";
-import { Host } from "../lib/device/host";
 import { Device } from "../lib/device/device";
 import { NetworkSwitch } from "../lib/device/network-switch";
 import { Interface } from "../lib/device/interface";
-import ping from "../lib/device/applications/ping";
 import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_HELP } from "../lib/device/program/program";
 import Shell from "../lib/terminal/shell";
 import Terminal from "../lib/terminal/terminal";
@@ -353,7 +351,7 @@ swIface_trunk.vlan = vlanTrunk;
 swIface2_trunk.vlan = vlanTrunk;
 
 const createHost = (name: string) => {
-    let host = new Host();
+    let host = new Device();
     host.name = name;
     host.neighborTable.timeout = host.neighborTable.timeout * INTERFACE_ANIM_DELAY;
     return host;
@@ -418,6 +416,10 @@ export default function NetworkMapViewer(): JSX.Element {
 
     let terminal: Terminal;
 
+    function ping(pc2: Device, arg1: IPV4Address) {
+        throw new Error("Function not implemented.");
+    }
+
     return <div style={{ width: "100%" }} >
 
         <svg width={"100%"} height={500} >
@@ -425,16 +427,12 @@ export default function NetworkMapViewer(): JSX.Element {
         </svg>
         <button
             onClick={() => {
-                ping(pc2, iface_pc1.ipv4Address!).then(() => {
-                    console.log("%c ECHO Reply recieved: " + pc2.name, ['background: green', 'color: white', 'display: block', 'text-align: center', 'font-size: 24px'].join(';'))
-                })
+                ping(pc2, iface_pc1.ipv4Address!)
             }}
         >Ping IPV4 pc2 =&gt pc1</button>
         <button
             onClick={() => {
-                ping(pc4, iface_pc5.ipv4Address!).then(() => {
-                    console.log("%c ECHO Reply recieved: " + pc5.name, ['background: green', 'color: white', 'display: block', 'text-align: center', 'font-size: 24px'].join(';'))
-                })
+                ping(pc4, iface_pc5.ipv4Address!)
             }}
         >Ping IPV4 pc4 =&gt pc5</button>
 

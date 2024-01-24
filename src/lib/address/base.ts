@@ -7,7 +7,7 @@ export class BaseAddress {
     buffer: Uint8Array;
 
     constructor(input: Uint8Array) {
-        throw new Error("Not Implemented!")
+        this.buffer =  input;
     }
 
     toString(): string {

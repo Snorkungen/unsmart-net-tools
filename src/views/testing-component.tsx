@@ -1,6 +1,5 @@
 import { Component, JSX } from "solid-js";
 import { Device } from "../lib/device/device";
-import { Host } from "../lib/device/host";
 import { AddressMask, createMask } from "../lib/address/mask";
 import { IPV4Address } from "../lib/address/ipv4";
 import { IPV6Address } from "../lib/address/ipv6";
