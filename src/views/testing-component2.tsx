@@ -8,15 +8,17 @@ import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_HELP } from "
 import { DPSignal, DeviceProgramStatus } from "../lib/device/device-program";
 import { formatTable } from "../lib/device/program/helpers";
 import { Device2, EthernetInterface, LoopbackInterface } from "../lib/device/device2";
-import { ICMPV4_TYPES, ICMP_HEADER } from "../lib/header/icmp";
+import { ICMPV4_TYPES, ICMPV6_TYPES, ICMP_HEADER } from "../lib/header/icmp";
 import { IPV4Address } from "../lib/address/ipv4";
 import { calculateChecksum } from "../lib/binary/checksum";
 import { UNSET_IPV4_ADDRESS } from "../lib/device/contact/contacts-handler";
-import { createIPV4Header, IPV4_HEADER, PROTOCOLS } from "../lib/header/ip";
+import { createIPV4Header, IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../lib/header/ip";
 import { MACAddress } from "../lib/address/mac";
 import { createMask } from "../lib/address/mask";
 import { PCAP_GLOBAL_HEADER, PCAP_MAGIC_NUMBER, PCAP_RECORD_HEADER } from "../lib/header/pcap";
 import { BaseAddress } from "../lib/address/base";
+import { IPV6Address } from "../lib/address/ipv6";
+import { UDP_HEADER } from "../lib/header/udp";
 
 function downloadDevice2PCAP(device: Device2) {
     let records = device.log_select_records();
@@ -42,17 +44,6 @@ function downloadDevice2PCAP(device: Device2) {
         )
 
     }
-
-    // join buffers
-    // let totalLength = buffer.reduce((sum, b) => sum + b.byteLength, 0)
-    // let bytes = new Uint8Array(totalLength);
-    // let offset = 0, bi = 0;
-
-    // while (offset < totalLength && bi < buffer.length) {
-    //     uint8_mutateSet(bytes, buffer[bi], offset);
-    //     offset += buffer[bi].byteLength
-    //     bi += 1
-    // }
 
     let file = new File(buffer, `${device.name}-${new Date().getTime()}.cap`, {
         "type": "application/cap",
@@ -131,12 +122,16 @@ export const TestingComponent2: Component = () => {
     newdevice.interfaces.push(etherinterface_1);
     // testing of adding an address to an interface
     let etherinterface_1_ipv4_address = new IPV4Address("192.168.1.10")
+    let etherinterface_1_ipv6_address = new IPV6Address("fe80::faff:0f00:000c:ba00")
     newdevice.interface_set_address(etherinterface_1, etherinterface_1_ipv4_address, createMask(IPV4Address, 24));
-    
+    newdevice.interface_set_address(etherinterface_1, etherinterface_1_ipv6_address, createMask(IPV6Address, 8));
+
     let etherinterface_2 = new EthernetInterface(newdevice2, new MACAddress("fa-ff-0f-00-00-0d"));
     newdevice2.interfaces.push(etherinterface_2)
     let etherinterface_2_ipv4_address = new IPV4Address("192.168.1.20")
+    let etherinterface_2_ipv6_address = new IPV6Address("fe80::faff:0f00:000d:b778")
     newdevice2.interface_set_address(etherinterface_2, etherinterface_2_ipv4_address, createMask(IPV4Address, 24));
+    newdevice2.interface_set_address(etherinterface_2, etherinterface_2_ipv6_address, createMask(IPV4Address, 8));
 
     etherinterface_1.connect(etherinterface_2)
     console.log(newdevice)
@@ -148,7 +143,7 @@ export const TestingComponent2: Component = () => {
         ])
     }
 
-    function test_sending_ipv4 (device: Device2, destination: BaseAddress) {
+    function test_sending_ipv4(device: Device2, destination: IPV4Address) {
         let icmpHdr = ICMP_HEADER.create({
             type: ICMPV4_TYPES.ECHO_REQUEST,
             data: new Uint8Array([0, 0, 0, 1, 1, 1, 1, 1])
@@ -166,6 +161,31 @@ export const TestingComponent2: Component = () => {
             console.log(err.error, err.message)
         }
     }
+    function test_sending_ipv6(device: Device2, destination: IPV6Address) {
+        let udphdr = UDP_HEADER.create({
+        });
+
+        let saddr = new IPV6Address("::");
+        // The actual spec <https://www.rfc-editor.org/rfc/rfc4443#section-2.3>
+        let pseudoHdr = IPV6_PSEUDO_HEADER.create({
+            saddr: saddr,
+            daddr: destination,
+            len: udphdr.size,
+            proto: PROTOCOLS.UDP,
+        })
+
+        let ipHdr = IPV6_HEADER.create({
+            saddr: saddr,
+            daddr: destination,
+            nextHeader: PROTOCOLS.UDP,
+            payload: udphdr.getBuffer()
+        })
+
+        let err = device.output_ipv6(ipHdr, destination)
+        if (err.status) {
+            console.log(err.error, err.message)
+        }
+    }
 
     return (
         <div>
@@ -178,6 +198,7 @@ export const TestingComponent2: Component = () => {
             <button onClick={() => {
                 test_sending_ipv4(newdevice2, new IPV4Address("192.168.1.255"))
             }}>test device 2 ether broadcast</button>
+            <button onClick={() => { test_sending_ipv6(newdevice, etherinterface_2_ipv6_address) }}>ipv6 send</button>
             <button onClick={() => {
                 window.setTimeout(() => downloadDevice2PCAP(newdevice), 150)
                 shell.read(sescape("echo hellow orlf looser\nhelp\ntest\necho cool"))

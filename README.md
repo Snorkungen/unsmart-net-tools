@@ -6,7 +6,8 @@
   - [ ] Overhaul Device
     - [x] Make the DeviceInterface an actual interface
     - [x] Make device able to send ipv4 data
-    - [ ] Make device able to send ipv6 data
+    - [x] Make device able to send ipv6 data
+    - [ ] Integrate Device2 into Contact "Infrastructure"
   - [ ] Device -> contact
     - [x] UDP protocol support
     - [ ] TCP protocol support

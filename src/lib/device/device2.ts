@@ -1,15 +1,16 @@
 import { BaseAddress } from "../address/base";
 import { IPV4Address } from "../address/ipv4";
-import { IPV6Address } from "../address/ipv6";
+import { ALL_LINK_LOCAL_NODES_ADDRESSV6, ALL_LINK_LOCAL_ROUTERS_ADDRESSV6, ALL_NODES_ADDRESSV6, ALL_ROUTERS_ADDRESSV6, IPV6Address } from "../address/ipv6";
 import { MACAddress } from "../address/mac";
 import { AddressMask, createMask } from "../address/mask";
 import { and, not, or } from "../binary";
 import { uint8_fromNumber, uint8_concat, uint8_equals, uint8_readUint32BE } from "../binary/uint8-array";
 import { ETHERNET_HEADER, ETHER_TYPES, EtherType } from "../header/ethernet";
-import { IPV4_HEADER, IPV6_HEADER, PROTOCOLS, createIPV4Header } from "../header/ip";
+import { IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS, createIPV4Header } from "../header/ip";
 import { ARP_HEADER, ARP_OPCODES, createARPHeader } from "../header/arp";
 import { PacketCaptureHFormat, PacketCaptureNFormat, PacketCaptureRecordReader } from "../packet-capture/reader";
 import { calculateChecksum } from "../binary/checksum";
+import { ICMPV6_TYPES, ICMP_HEADER, ICMP_NDP_HEADER } from "../header/icmp";
 
 let macAddressCount = 0;
 let startBuf = new Uint8Array([0xfa, 0xff, 0x0f, 0])
@@ -88,14 +89,14 @@ export class Device2 {
         return this.log_records.filter((record) => record.iface.name + record.iface.unit == iface_id)
     }
 
-    input_ipv4(iphdr: typeof IPV4_HEADER, rcvif: BaseInterface) {
-
+    input_ipv4(iphdr: typeof IPV4_HEADER, data: NetworkData) {
+        if (!data.rcvif) { console.warn("rcvif missing"); return }
         console.log(iphdr.getBuffer())
 
         // then do some checking if this message is for this device
     }
 
-    output_ipv4(iphdr: typeof IPV4_HEADER, destination: IPV4Address): DeviceError<"HOSTUNREACH" | "ERROR"> {
+    output_ipv4(iphdr: typeof IPV4_HEADER, destination: IPV4Address, options?: unknown): DeviceError<"HOSTUNREACH" | "ERROR"> {
         /** So the thinking is that the user would construct the iphdr */
 
         // Select route
@@ -151,12 +152,168 @@ export class Device2 {
         }
     }
 
-    input_ipv6(iphdr: typeof IPV6_HEADER, rcvif: BaseInterface) {
-        throw new Error("not implemented")
+    input_ipv6(iphdr: typeof IPV6_HEADER, data: NetworkData) {
+        if (!data.rcvif) { console.warn("rcvif missing"); return }
+        // demultiplex data
+        // in reality there should be some checking as if the packet is for the device
+
+
+        if (iphdr.get("nextHeader") === PROTOCOLS.IPV6_ICMP) {
+            this.input_icmp6(iphdr, data)
+        } else {
+            console.log(iphdr.getBuffer())
+        }
+
     }
 
-    input_arp(etherheader: typeof ETHERNET_HEADER, rcvif: BaseInterface) {
-        let arpHdr = ARP_HEADER.from(etherheader.get("payload"));
+    output_ipv6(iphdr: typeof IPV6_HEADER, destination: IPV6Address, options?: unknown): DeviceError<"HOSTUNREACH" | "ERROR"> {
+        // Select route
+        let route: DeviceRoute | undefined = this.route_resolve(destination);
+        if (!route) return {
+            status: true,
+            error: "HOSTUNREACH",
+            message: "No outgoing route found"
+        }
+
+        // select an address from the outgoing interface
+        let source = route.iface.addresses.find(value => value.address.constructor == destination.constructor);
+        if (!source) return {
+            status: true,
+            error: "HOSTUNREACH",
+            message: "no source address for intreface found"
+        }
+
+        iphdr.set("version", 6);
+        // flow label something maybe i don't know
+        const DEFAULT_TTL = 64; iphdr.set("hopLimit", iphdr.get("hopLimit") || DEFAULT_TTL);
+        iphdr.set("payloadLength", iphdr.get("payload").byteLength);
+
+        if (iphdr.get("daddr").toString(4) == "::")
+            iphdr.set("daddr", destination);
+        if (iphdr.get("saddr").toString(4) == "::")
+            iphdr.set("saddr", source.address as IPV6Address); // if there's no source set; use the outgoing interfaces ip address
+
+        if (iphdr.get("payloadLength") > route.iface.mtu) {
+            return {
+                status: true,
+                error: "ERROR",
+                "message": "i do not support fragmentation"
+            }
+        }
+
+        let broadcast = destination.isMulticast()
+
+        let res = route.iface.output({
+            buffer: iphdr.getBuffer(),
+            broadcast: broadcast
+        }, destination, route);
+
+        return {
+            status: res.status,
+            error: "ERROR",
+            message: res.message
+        }
+    }
+
+    input_icmp6(iphdr: typeof IPV6_HEADER, data: NetworkData) {
+
+        let icmphdr = ICMP_HEADER.from(iphdr.get("payload"));
+        if (icmphdr.get("type") === ICMPV6_TYPES.NEIGHBOR_ADVERTISMENT) {
+
+        }
+
+        switch (icmphdr.get("type")) {
+            case ICMPV6_TYPES.NEIGHBOR_ADVERTISMENT:
+                this.input_ndp_advertisment(iphdr, data); break;
+            case ICMPV6_TYPES.NEIGHBOR_SOLICITATION:
+                this.input_ndp_solicitation(iphdr, data); break;
+
+        }
+    }
+
+    input_ndp_advertisment(iphdr: typeof IPV6_HEADER, data: NetworkData) {
+        if (!(data.rcvif instanceof EthernetInterface)) {
+            return;
+        }
+
+        let icmphdr = ICMP_HEADER.from(iphdr.get("payload")),
+            ndphdr = ICMP_NDP_HEADER.from(icmphdr.get("data")),
+            ethhdr = ETHERNET_HEADER.from(data.buffer);
+
+        this.arp_cache_entry(ndphdr.get("targetAddress"), {
+            neighbor: iphdr.get("saddr"),
+            iface: data.rcvif,
+            macAddress: ethhdr.get("smac"),
+            createdAt: Date.now()
+        });
+    }
+
+    input_ndp_solicitation(iphdr: typeof IPV6_HEADER, data: NetworkData) {
+        if (!(data.rcvif instanceof EthernetInterface)) {
+            return;
+        }
+
+        let icmphdr = ICMP_HEADER.from(iphdr.get("payload")),
+            ndphdr = ICMP_NDP_HEADER.from(icmphdr.get("data")),
+            ethhdr = ETHERNET_HEADER.from(data.buffer);
+
+        let iface = this.interfaces.find(({ addresses }) => addresses.find(({ address }) => uint8_equals(address.buffer, ndphdr.get("targetAddress").buffer)))
+        if (!iface) {
+            return
+        }
+        let saddr = iface.addresses.find(({ address }) => uint8_equals(address.buffer, ndphdr.get("targetAddress").buffer))?.address, daddr = iphdr.get("saddr");
+        if (!saddr) return; // this should not happen due to the previous check
+
+        // this might not be the correct way of doing this but in fantasy-land this goes
+        this.arp_cache_entry(iphdr.get("saddr"), {
+            neighbor: saddr, // i do not know what this value is doing
+            iface: data.rcvif,
+            macAddress: ethhdr.get("smac"),
+            createdAt: Date.now()
+        });
+
+        // reply to ndp Request
+        // !TODO: add the solicited flag
+        let replyIcmpHdr = ICMP_HEADER.create({
+            type: ICMPV6_TYPES.NEIGHBOR_ADVERTISMENT,
+            data: ndphdr.getBuffer()
+        })
+
+        // The actual spec <https://www.rfc-editor.org/rfc/rfc4443#section-2.3>
+        let pseudoHdr = IPV6_PSEUDO_HEADER.create({
+            saddr: saddr as IPV6Address,
+            daddr: daddr,
+            len: replyIcmpHdr.size,
+            proto: PROTOCOLS.IPV6_ICMP,
+        })
+
+        replyIcmpHdr.set("csum", calculateChecksum(uint8_concat([
+            pseudoHdr.getBuffer(),
+            replyIcmpHdr.getBuffer()
+        ])));
+
+        let replyIPHdr = IPV6_HEADER.create({
+            saddr: saddr as IPV6Address,
+            daddr: daddr,
+            nextHeader: PROTOCOLS.IPV6_ICMP,
+            payloadLength: replyIcmpHdr.size,
+            payload: replyIcmpHdr.getBuffer()
+        })
+
+        data.rcvif.output({ buffer: replyIPHdr.getBuffer() }, new BaseAddress(ETHERNET_HEADER.create({
+            dmac: ethhdr.get("smac"),
+            smac: data.rcvif.macAddress,
+            ethertype: ETHER_TYPES.IPv6
+        }).getBuffer()),
+            {} as DeviceRoute // this is hacky but should work
+        )
+    }
+
+    input_arp(etherheader: typeof ETHERNET_HEADER, data: NetworkData) {
+        if (!data.rcvif) { console.warn("rcvif missing"); return };
+        if (!(data.rcvif instanceof EthernetInterface)) return;
+
+        let arpHdr = ARP_HEADER.from(etherheader.get("payload")), rcvif = data.rcvif;
 
         if (arpHdr.get("oper") == ARP_OPCODES.REPLY) {
             // add entry to neigbor map
@@ -166,27 +323,15 @@ export class Device2 {
                 return
             }
 
-            this.arp_cache.set(arpHdr.get("tpa").toString(), {
+            this.arp_cache_entry(arpHdr.get("tpa"), {
                 neighbor: arpHdr.get("spa"),
-                iface: rcvif,
+                iface: data.rcvif,
                 macAddress: etherheader.get("smac"),
                 createdAt: Date.now()
             });
-
-            // this could be a function call
-
-            let items = this.arp_sendqueue.get((arpHdr.get("tpa").toString()));
-            this.arp_sendqueue.delete(arpHdr.get("tpa").toString())
-            if (!items) {
-                return
-            }
-            for (let item of items) {
-                if (!item || !item[2]) continue;
-                item[2].iface.output(...item)
-            }
         } else if (arpHdr.get("oper") == ARP_OPCODES.REQUEST) {
             // sanity check 
-            if (!(rcvif instanceof EthernetInterface)) {
+            if (!(data.rcvif instanceof EthernetInterface)) {
                 return
             }
 
@@ -194,9 +339,8 @@ export class Device2 {
 
             // naive approach in actuality i should check all interfaces but then again tha might caus unforseen challenging
 
-            let address = rcvif.addresses.find(({ address }) => uint8_equals(address.buffer, tpa.buffer));
-
-            if (!address) {
+            let iface = this.interfaces.find(({ addresses }) => addresses.find(({ address }) => uint8_equals(address.buffer, tpa.buffer)))
+            if (!iface) {
                 return
             }
 
@@ -218,19 +362,19 @@ export class Device2 {
         }
     }
 
-    input_ether(etherframe: typeof ETHERNET_HEADER, rcvif: BaseInterface) {
+    input_ether(etherframe: typeof ETHERNET_HEADER, data: NetworkData) {
         if (etherframe.get("ethertype") == ETHER_TYPES.IPv4) {
             this.input_ipv4(
                 IPV4_HEADER.from(etherframe.get("payload")),
-                rcvif
+                { rcvif: data.rcvif, broadcast: data.broadcast, buffer: etherframe.getBuffer().slice(0, ETHERNET_HEADER.getMinSize()) }
             )
         } else if (etherframe.get("ethertype") == ETHER_TYPES.IPv6) {
             this.input_ipv6(
                 IPV6_HEADER.from(etherframe.get("payload")),
-                rcvif
+                { rcvif: data.rcvif, broadcast: data.broadcast, buffer: etherframe.getBuffer().slice(0, ETHERNET_HEADER.getMinSize()) }
             )
         } else if (etherframe.get("ethertype") == ETHER_TYPES.ARP) {
-            this.input_arp(etherframe, rcvif)
+            this.input_arp(etherframe, { rcvif: data.rcvif, broadcast: data.broadcast, buffer: etherframe.getBuffer().slice(0, ETHERNET_HEADER.getMinSize()) })
         } else if (etherframe.get("ethertype") == ETHER_TYPES.VLAN) {
             throw new Error("not implemented")
         }
@@ -241,7 +385,7 @@ export class Device2 {
     }
 
     arp_sendqueue = new Map<string, (Parameters<BaseInterface["output"]> | null)[]>();
-    arp_cache = new Map<string, NeighborEntry<IPV4Address>>();
+    arp_cache = new Map<string, NeighborEntry<BaseAddress>>();
     arp_resolve(data: NetworkData, destination: BaseAddress, rtentry: DeviceRoute): MACAddress | null {
         if (data.broadcast) {
             // destination is meant to be broad casted
@@ -264,7 +408,7 @@ export class Device2 {
             this.arp_enqueue(data, destination, rtentry);
             // send away arp request
             for (let iface of this.interfaces) {
-                if (!(iface instanceof EthernetInterface)) {
+                if (!(iface instanceof EthernetInterface) || !iface.up) {
                     continue
                 }
 
@@ -291,6 +435,57 @@ export class Device2 {
                     ethertype: ETHER_TYPES.ARP,
                 }).getBuffer()), {} as DeviceRoute)
             }
+        } else if (destination instanceof IPV6Address) {
+            this.arp_enqueue(data, destination, rtentry);
+            for (let iface of this.interfaces) {
+                if (!(iface instanceof EthernetInterface) || !iface.up) continue;
+
+                let ndpHdr = ICMP_NDP_HEADER.create({
+                    targetAddress: destination
+                }), icmpHdr = ICMP_HEADER.create({
+                    type: ICMPV6_TYPES.NEIGHBOR_SOLICITATION,
+                    data: ndpHdr.getBuffer()
+                });
+
+                let saddr = iface.addresses.find(({ address }) => address instanceof IPV6Address)?.address;
+                if (!saddr) {
+                    continue;
+                }
+
+                let daddr = new IPV6Address(ALL_LINK_LOCAL_NODES_ADDRESSV6);
+
+                // The actual spec <https://www.rfc-editor.org/rfc/rfc4443#section-2.3>
+                let pseudoHdr = IPV6_PSEUDO_HEADER.create({
+                    saddr: saddr as IPV6Address,
+                    daddr: daddr,
+                    len: icmpHdr.size,
+                    proto: PROTOCOLS.IPV6_ICMP,
+                })
+
+                icmpHdr.set("csum", calculateChecksum(uint8_concat([
+                    pseudoHdr.getBuffer(),
+                    icmpHdr.getBuffer()
+                ])));
+
+                let ipv6Hdr = IPV6_HEADER.create({
+                    saddr: saddr as IPV6Address,
+                    daddr: daddr,
+                    nextHeader: PROTOCOLS.IPV6_ICMP,
+                    payloadLength: icmpHdr.size,
+                    payload: icmpHdr.getBuffer()
+                })
+
+                // wrap packet in ethernet frame
+                iface.output({
+                    type: "DATA",
+                    buffer: ipv6Hdr.getBuffer(),
+                    broadcast: true
+                }, new BaseAddress(ETHERNET_HEADER.create({
+                    dmac: new MACAddress("ff:ff:ff:ff:ff:ff"),
+                    smac: iface.macAddress,
+                    ethertype: ETHER_TYPES.IPv6,
+                }).getBuffer()), {} as DeviceRoute)
+            }
         }
 
         return null;
@@ -302,6 +497,21 @@ export class Device2 {
         }
         items.push([data, destination, rtentry]);
         this.arp_sendqueue.set(destination.toString(), items);
+    }
+    arp_cache_entry(destination: BaseAddress, entry: NeighborEntry<BaseAddress>) {
+        this.arp_cache.set(destination.toString(), entry);
+
+        // this could be a function call
+
+        let items = this.arp_sendqueue.get(destination.toString());
+        this.arp_sendqueue.delete(destination.toString())
+        if (!items) {
+            return
+        }
+        for (let item of items) {
+            if (!item || !item[2]) continue;
+            item[2].iface.output(...item)
+        }
     }
 
     routes: DeviceRoute[] = [];
@@ -373,13 +583,19 @@ export class Device2 {
             throw new Error("could not add route addressType not recognised")
         }
 
-        // 5th: add a new route
-        this.routes.push({
-            destination: rt_destination,
-            gateway: rt_gateway,
-            netmask: netmask,
-            iface: iface
-        })
+        // 5th: check if a route for the network exists, if not add a new route
+        if (!this.routes.find(value => value.iface === iface &&
+            uint8_equals(value.destination.buffer, rt_destination.buffer) &&
+            uint8_equals(value.gateway.buffer, rt_gateway.buffer) &&
+            uint8_equals(value.netmask.buffer, netmask.buffer) &&
+            !value.f_dynamic && !value.f_gateway && !value.f_host)) {
+            this.routes.push({
+                destination: rt_destination,
+                gateway: rt_gateway,
+                netmask: netmask,
+                iface: iface
+            })
+        }
 
         return {
             status: false
@@ -526,7 +742,7 @@ export class EthernetInterface extends BaseInterface {
             rcvif: this
         }, "RECIEVE")
 
-        this.device.input_ether(etherheader, this);
+        this.device.input_ether(etherheader, { rcvif: this, buffer: etherheader.getBuffer(), broadcast: etherheader.get("dmac").isBroadcast() });
 
         return true;
     }
@@ -601,11 +817,12 @@ export class LoopbackInterface extends BaseInterface {
         this.device.log(log_data, "SEND", false)
         this.device.log(log_data, "RECIEVE", true) // Duplicate recording is probably superflous
 
+        let ndata: NetworkData = { rcvif: this, buffer: new Uint8Array() }
         window.setTimeout(() => {
             if (ethertype == ETHER_TYPES.IPv4) {
-                this.device.input_ipv4(IPV4_HEADER.from(data.buffer), this)
+                this.device.input_ipv4(IPV4_HEADER.from(data.buffer), ndata)
             } else if (ethertype == ETHER_TYPES.IPv6) {
-                this.device.input_ipv6(IPV6_HEADER.from(data.buffer), this)
+                this.device.input_ipv6(IPV6_HEADER.from(data.buffer), ndata)
             }
         }, 0)
 
@@ -623,7 +840,7 @@ export class LoopbackInterface extends BaseInterface {
         this.device.interface_set_address(
             this,
             new IPV6Address("::1"),
-            createMask(IPV6Address, IPV6Address.ADDRESS_LENGTH) // I do not know how ipv6 routing works
+            createMask(IPV6Address, IPV6Address.ADDRESS_LENGTH /* 128 */)
         );
 
         this.up = true;
