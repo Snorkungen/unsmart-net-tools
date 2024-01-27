@@ -1,6 +1,6 @@
 import { Component, createEffect } from "solid-js";
 import Terminal, { TerminalRenderer } from "../lib/terminal/terminal";
-import { uint8_concat, uint8_fromString, uint8_mutateSet } from "../lib/binary/uint8-array";
+import { uint8_concat, uint8_fromNumber, uint8_fromString, uint8_mutateSet, uint8_readUint32BE } from "../lib/binary/uint8-array";
 import { Device } from "../lib/device/device";
 import Shell from "../lib/terminal/shell";
 import { ASCIICodes, CSI } from "../lib/terminal/shared";
@@ -12,10 +12,11 @@ import { ICMPV4_TYPES, ICMP_HEADER } from "../lib/header/icmp";
 import { IPV4Address } from "../lib/address/ipv4";
 import { calculateChecksum } from "../lib/binary/checksum";
 import { UNSET_IPV4_ADDRESS } from "../lib/device/contact/contacts-handler";
-import { createIPV4Header, PROTOCOLS } from "../lib/header/ip";
+import { createIPV4Header, IPV4_HEADER, PROTOCOLS } from "../lib/header/ip";
 import { MACAddress } from "../lib/address/mac";
 import { createMask } from "../lib/address/mask";
 import { PCAP_GLOBAL_HEADER, PCAP_MAGIC_NUMBER, PCAP_RECORD_HEADER } from "../lib/header/pcap";
+import { BaseAddress } from "../lib/address/base";
 
 function downloadDevice2PCAP(device: Device2) {
     let records = device.log_select_records();
@@ -126,14 +127,16 @@ export const TestingComponent2: Component = () => {
     loopbackiface.start()
     newdevice.interfaces.push(loopbackiface)
 
-    let etherinterface_1 = new EthernetInterface(newdevice, new MACAddress("fa-ff-0f-00-00-0c"))
-    newdevice.interfaces.push(etherinterface_1)
+    let etherinterface_1 = new EthernetInterface(newdevice, new MACAddress("fa-ff-0f-00-00-0c"));
+    newdevice.interfaces.push(etherinterface_1);
+    // testing of adding an address to an interface
+    let etherinterface_1_ipv4_address = new IPV4Address("192.168.1.10")
+    newdevice.interface_set_address(etherinterface_1, etherinterface_1_ipv4_address, createMask(IPV4Address, 24));
+    
     let etherinterface_2 = new EthernetInterface(newdevice2, new MACAddress("fa-ff-0f-00-00-0d"));
-    etherinterface_2.addresses.push({
-        address: new IPV4Address("192.168.1.1"),
-        netmask: createMask(IPV4Address, 24)
-    })
     newdevice2.interfaces.push(etherinterface_2)
+    let etherinterface_2_ipv4_address = new IPV4Address("192.168.1.20")
+    newdevice2.interface_set_address(etherinterface_2, etherinterface_2_ipv4_address, createMask(IPV4Address, 24));
 
     etherinterface_1.connect(etherinterface_2)
     console.log(newdevice)
@@ -145,66 +148,38 @@ export const TestingComponent2: Component = () => {
         ])
     }
 
+    function test_sending_ipv4 (device: Device2, destination: BaseAddress) {
+        let icmpHdr = ICMP_HEADER.create({
+            type: ICMPV4_TYPES.ECHO_REQUEST,
+            data: new Uint8Array([0, 0, 0, 1, 1, 1, 1, 1])
+        });
+
+        icmpHdr.set("csum", calculateChecksum(icmpHdr.getBuffer()))
+
+        let ipHdr = IPV4_HEADER.create({
+            proto: PROTOCOLS.ICMP,
+            payload: icmpHdr.getBuffer()
+        });
+
+        let err = device.output_ipv4(ipHdr, destination)
+        if (err.status) {
+            console.log(err.error, err.message)
+        }
+    }
+
     return (
         <div>
             <button onClick={() => {
-
-                let icmpHdr = ICMP_HEADER.create({
-                    type: ICMPV4_TYPES.ECHO_REQUEST,
-                    data: new Uint8Array([0, 0, 0, 1, 1, 1, 1, 1])
-                });
-
-                icmpHdr.set("csum", calculateChecksum(icmpHdr.getBuffer()));
-
-                let ipHdr = createIPV4Header({
-                    saddr: UNSET_IPV4_ADDRESS,
-                    daddr: new IPV4Address("127.12.212.1"),
-                    proto: PROTOCOLS.ICMP,
-                    payload: icmpHdr.getBuffer()
-                })
-
-                loopbackiface.output({
-                    type: "HEADER",
-                    buffer: ipHdr.getBuffer()
-                }, loopbackiface.addresses[0].address)
-            }}>
-                test device 2
-            </button>
+                test_sending_ipv4(newdevice, new IPV4Address("127.0.23.2"))
+            }}>test device 2</button>
             <button onClick={() => {
-
-                let icmpHdr = ICMP_HEADER.create({
-                    type: ICMPV4_TYPES.ECHO_REQUEST,
-                    data: new Uint8Array([0, 0, 0, 1, 1, 1, 1, 1])
-                });
-
-                icmpHdr.set("csum", calculateChecksum(icmpHdr.getBuffer()));
-
-                let ipHdr = createIPV4Header({
-                    saddr: new IPV4Address("192.168.1.10"),
-                    daddr: new IPV4Address("192.168.1.1"),
-                    proto: PROTOCOLS.ICMP,
-                    payload: icmpHdr.getBuffer()
-                })
-
-                etherinterface_1.output({
-                    type: "HEADER",
-                    buffer: ipHdr.getBuffer(),
-                },
-                    new IPV4Address("192.168.1.1"),
-                    {
-                        destination: new IPV4Address("192.168.1.0"),
-                        netmask: createMask(IPV4Address, 24),
-                        iface: etherinterface_1,
-                        gateway: new IPV4Address(new Uint8Array([0, 0, 0, 0])),
-
-                    }
-                )
-
+                test_sending_ipv4(newdevice2, etherinterface_1_ipv4_address)
+            }}>test device 2 ether</button>
+            <button onClick={() => {
+                test_sending_ipv4(newdevice2, new IPV4Address("192.168.1.255"))
+            }}>test device 2 ether broadcast</button>
+            <button onClick={() => {
                 window.setTimeout(() => downloadDevice2PCAP(newdevice), 150)
-            }}>
-                test device 2 ether
-            </button>
-            <button onClick={() => {
                 shell.read(sescape("echo hellow orlf looser\nhelp\ntest\necho cool"))
                 // shell.read(CSI(...sescape("1;5H Hello World")))
             }}>dump commands</button>

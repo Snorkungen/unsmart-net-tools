@@ -4,11 +4,10 @@
 
 - Develop on device logic
   - [ ] Overhaul Device
-    - [ ] Make the DeviceInterface an actual interface
-  - [ ] Research and develop a system for **localhost** as an `Interface`
+    - [x] Make the DeviceInterface an actual interface
+    - [x] Make device able to send ipv4 data
+    - [ ] Make device able to send ipv6 data
   - [ ] Device -> contact
-    - [ ] ipv4 routing & routing table
-    - Design the api
     - [x] UDP protocol support
     - [ ] TCP protocol support
 - [ ] Terminal & Shell

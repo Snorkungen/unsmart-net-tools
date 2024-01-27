@@ -3,12 +3,13 @@ import { IPV4Address } from "../address/ipv4";
 import { IPV6Address } from "../address/ipv6";
 import { MACAddress } from "../address/mac";
 import { AddressMask, createMask } from "../address/mask";
-import { and } from "../binary";
-import { uint8_fromNumber, uint8_concat, uint8_equals } from "../binary/uint8-array";
+import { and, not, or } from "../binary";
+import { uint8_fromNumber, uint8_concat, uint8_equals, uint8_readUint32BE } from "../binary/uint8-array";
 import { ETHERNET_HEADER, ETHER_TYPES, EtherType } from "../header/ethernet";
 import { IPV4_HEADER, IPV6_HEADER, PROTOCOLS, createIPV4Header } from "../header/ip";
 import { ARP_HEADER, ARP_OPCODES, createARPHeader } from "../header/arp";
 import { PacketCaptureHFormat, PacketCaptureNFormat, PacketCaptureRecordReader } from "../packet-capture/reader";
+import { calculateChecksum } from "../binary/checksum";
 
 let macAddressCount = 0;
 let startBuf = new Uint8Array([0xfa, 0xff, 0x0f, 0])
@@ -24,10 +25,19 @@ export type NeighborEntry<AddressT extends BaseAddress = BaseAddress> = {
     createdAt: number;
 };
 
+export type DeviceError<E extends unknown = unknown> = {
+    /** this simply says if it is actually an error*/
+    status: false;
+    error?: E
+    message?: string;
+} | {
+    status: true;
+    error: E;
+    message?: string;
+}
+
 export class Device2 {
     name = Math.floor(Math.random() * 10_000).toString() + "B2";
-    interfaces: BaseInterface[] = [];
-    routes: DeviceRoute[] = [];
 
     /** this approach is different in such a way that it allows to select for a specific interfac if that something i would like to do */
     private log_records: { time: number, buffer: Uint8Array, iface: BaseInterface }[] = []
@@ -84,6 +94,63 @@ export class Device2 {
 
         // then do some checking if this message is for this device
     }
+
+    output_ipv4(iphdr: typeof IPV4_HEADER, destination: IPV4Address): DeviceError<"HOSTUNREACH" | "ERROR"> {
+        /** So the thinking is that the user would construct the iphdr */
+
+        // Select route
+        let route: DeviceRoute | undefined = this.route_resolve(destination);
+        if (!route) return {
+            status: true,
+            error: "HOSTUNREACH",
+            message: "No outgoing route found"
+        }
+        // select an address from the outgoing interface
+        let source = route.iface.addresses.find(value => value.address.constructor == destination.constructor);
+        if (!source) return {
+            status: true,
+            error: "HOSTUNREACH",
+            message: "no source address for intreface found"
+        }
+        //  I'm unsure of how i want to acces the outgoing data and if the iphdr has all the requisite data
+
+        iphdr.set("version", 4);
+        iphdr.set("ihl", iphdr.get("ihl") || iphdr.getMinSize() >> 2); // the user can set the ihl
+        iphdr.set("tos", 0);
+        const DEFAULT_TTL = 64; iphdr.set("ttl", iphdr.get("ttl") || DEFAULT_TTL);
+        iphdr.set("len", iphdr.getBuffer().byteLength);
+
+        if (uint8_readUint32BE(iphdr.get("daddr").buffer) === 0)
+            iphdr.set("daddr", destination);
+        if (uint8_readUint32BE(iphdr.get("saddr").buffer) === 0)
+            iphdr.set("saddr", source.address); // if there's no source set; use the outgoing interfaces ip address
+
+        if (iphdr.get("len") > route.iface.mtu) {
+            return {
+                status: true,
+                error: "ERROR",
+                "message": "i do not support fragmentation"
+            }
+        }
+
+        iphdr.set("csum", 0);
+        iphdr.set("csum", calculateChecksum(iphdr.getBuffer().slice(0, iphdr.get("ihl") << 2)));
+
+        // put some thinking to if the destination is a broadcast address
+        let broadcast = uint8_readUint32BE(not(or(source.netmask.buffer, iphdr.get("daddr").buffer))) === 0;
+
+        let res = route.iface.output({
+            buffer: iphdr.getBuffer(),
+            broadcast: broadcast
+        }, destination, route);
+
+        return {
+            status:res,
+            error: "ERROR",
+            message: "failed to output the packet"
+        }
+    }
+
     input_ipv6(iphdr: typeof IPV6_HEADER, rcvif: BaseInterface) {
         throw new Error("not implemented")
     }
@@ -108,8 +175,8 @@ export class Device2 {
 
             // this could be a function call
 
-            let items = this.arp_sendque.get((arpHdr.get("tpa").toString()));
-            this.arp_sendque.delete(arpHdr.get("tpa").toString())
+            let items = this.arp_sendqueue.get((arpHdr.get("tpa").toString()));
+            this.arp_sendqueue.delete(arpHdr.get("tpa").toString())
             if (!items) {
                 return
             }
@@ -173,7 +240,7 @@ export class Device2 {
         // this should do something or mayber there something listening to all traffic that would be interested in this
     }
 
-    arp_sendque = new Map<string, (Parameters<BaseInterface["output"]> | null)[]>();
+    arp_sendqueue = new Map<string, (Parameters<BaseInterface["output"]> | null)[]>();
     arp_cache = new Map<string, NeighborEntry<IPV4Address>>();
     arp_resolve(data: NetworkData, destination: BaseAddress, rtentry: DeviceRoute): MACAddress | null {
         if (data.broadcast) {
@@ -194,7 +261,7 @@ export class Device2 {
         rtentry.f_gateway = undefined; // this is hacky but logically it should be reasonable
 
         if (destination instanceof IPV4Address) {
-            this.arp_enque(data, destination, rtentry);
+            this.arp_enqueue(data, destination, rtentry);
             // send away arp request
             for (let iface of this.interfaces) {
                 if (!(iface instanceof EthernetInterface)) {
@@ -228,13 +295,95 @@ export class Device2 {
 
         return null;
     }
-    arp_enque(...[data, destination, rtentry]: Parameters<BaseInterface["output"]>) {
-        let items = this.arp_sendque.get(destination.toString())
+    arp_enqueue(...[data, destination, rtentry]: Parameters<BaseInterface["output"]>) {
+        let items = this.arp_sendqueue.get(destination.toString())
         if (!items) {
             items = [];
         }
         items.push([data, destination, rtentry]);
-        this.arp_sendque.set(destination.toString(), items);
+        this.arp_sendqueue.set(destination.toString(), items);
+    }
+
+    routes: DeviceRoute[] = [];
+    route_resolve(destination: BaseAddress): undefined | DeviceRoute {
+        let route: DeviceRoute | undefined
+
+        // 1 find host
+        route = this.routes.find((value) => (
+            (value.destination.constructor == destination.constructor) && value.iface.up &&
+            value.f_host &&
+            uint8_equals(value.destination.buffer, destination.buffer)
+        ));
+
+        if (!route) {
+            // 2 find network
+            route = this.routes.filter((value) => (
+                (value.destination.constructor == destination.constructor) && value.iface.up &&
+                !value.f_host &&
+                value.netmask.compare(value.destination, destination)
+            )).sort((a, b) => b.netmask.length - a.netmask.length)[0]
+        }
+
+        return route;
+    }
+
+    interfaces: BaseInterface[] = [];
+    interface_set_address<AT extends typeof BaseAddress>(iface: BaseInterface, address: InstanceType<AT>, netmask: AddressMask<AT>): DeviceError {
+        // this functions maintains the information about the routes for the network that is just now configured
+
+        // the thing is a interface could support having multiple addresses of the same type, but for simplicity, only one address is supported for now
+
+        // 1st: check if iface already has a address set
+        let addridx = iface.addresses.findIndex(value => value.address.constructor == address.constructor);
+
+        // 2nd set the new address to iface
+        if (addridx < 0) {
+            iface.addresses.push({ netmask, address });
+        } else {
+            iface.addresses[addridx].address = address;
+            iface.addresses[addridx].netmask = netmask;
+        }
+
+        // 3rd: remove routes that are not in the same network as the new network
+        this.routes = this.routes.filter((rtentry) => {
+            if (rtentry.iface !== iface) return true;
+            if (rtentry.destination.constructor !== address.constructor) return true;
+            if (rtentry.f_static) return true;
+
+            // routes netmask cannot be looser than the new netmask
+            if (!rtentry.f_gateway &&  rtentry.netmask.length < netmask.length) return false
+
+            let destination: BaseAddress;
+            if (rtentry.f_gateway) destination = rtentry.gateway;
+            else destination = rtentry.destination;
+
+            // check that thing is in the same "network" as the new route
+            return netmask.compare(address, destination as InstanceType<AT>);
+        });
+
+        // 4th: create route information
+        let rt_destination: BaseAddress, rt_gateway: BaseAddress;
+        if (address instanceof IPV4Address) {
+            rt_destination = new IPV4Address(and(netmask.buffer, address.buffer));
+            rt_gateway = new IPV4Address("0.0.0.0");
+        } else if (address instanceof IPV6Address) {
+            rt_destination = new IPV6Address(and(netmask.buffer, address.buffer));
+            rt_gateway = new IPV6Address("::")
+        } else {
+            throw new Error("could not add route addressType not recognised")
+        }
+
+        // 5th: add a new route
+        this.routes.push({
+            destination: rt_destination,
+            gateway: rt_gateway,
+            netmask: netmask,
+            iface: iface
+        })
+
+        return {
+            status: false
+        }
     }
 }
 
@@ -243,16 +392,17 @@ type DeviceRoute<AddrType extends typeof BaseAddress = typeof BaseAddress> = {
     netmask: AddressMask<AddrType>;
     gateway: InstanceType<AddrType>;
 
+    /** this is statically set by a human */
+    f_static?: true;
     f_dynamic?: true;
     f_gateway?: true;
     f_host?: true;
-
 
     iface: BaseInterface;
 }
 
 interface NetworkData {
-    type: "DATA" | "HEADER";
+    type?: "DATA" | "HEADER";
     buffer: Uint8Array;
 
     rcvif?: BaseInterface;
@@ -464,29 +614,17 @@ export class LoopbackInterface extends BaseInterface {
     /** Initialize stuff idk but for example dhcp or for loclalhost self assign ip address */
     start(): boolean {
 
-        let ipv4Address = {
-            address: new IPV4Address("127.0.0.1"),
-            netmask: createMask(IPV4Address, 8)
-        }, ipv6Address = {
-            address: new IPV6Address("::1"),
-            netmask: createMask(IPV6Address, IPV6Address.ADDRESS_LENGTH) // I do not know how ipv6 routing works
-        }
+        this.device.interface_set_address(
+            this,
+            new IPV4Address("127.0.0.1"),
+            createMask(IPV4Address, 8)
+        );
 
-        this.addresses = [
-            ipv4Address,
-            ipv6Address
-        ]
-
-        // add this to routes list
-        // this should actually be handled by some other logic
-
-
-        this.device.routes.push({
-            destination: new IPV4Address(and(ipv4Address.address.buffer, ipv4Address.netmask.buffer)),
-            netmask: ipv4Address.netmask,
-            gateway: ipv4Address.address,
-            iface: this,
-        })
+        this.device.interface_set_address(
+            this,
+            new IPV6Address("::1"),
+            createMask(IPV6Address, IPV6Address.ADDRESS_LENGTH) // I do not know how ipv6 routing works
+        );
 
         this.up = true;
         return true;
