@@ -26,7 +26,7 @@ export type NeighborEntry<AddressT extends BaseAddress = BaseAddress> = {
 };
 
 export type DeviceError<E extends unknown = unknown> = {
-    /** this simply says if it is actually an error*/
+    /** false says that there is no error */
     status: false;
     error?: E
     message?: string;
@@ -145,9 +145,9 @@ export class Device2 {
         }, destination, route);
 
         return {
-            status:res,
+            status: res.status,
             error: "ERROR",
-            message: "failed to output the packet"
+            message: res.message
         }
     }
 
@@ -351,7 +351,7 @@ export class Device2 {
             if (rtentry.f_static) return true;
 
             // routes netmask cannot be looser than the new netmask
-            if (!rtentry.f_gateway &&  rtentry.netmask.length < netmask.length) return false
+            if (!rtentry.f_gateway && rtentry.netmask.length < netmask.length) return false
 
             let destination: BaseAddress;
             if (rtentry.f_gateway) destination = rtentry.gateway;
@@ -445,11 +445,11 @@ class BaseInterface {
         this.up = false;
     }
 
-    output(data: NetworkData, destination: BaseAddress, rtentry?: DeviceRoute): boolean {
+    output(data: NetworkData, destination: BaseAddress, rtentry?: DeviceRoute): DeviceError {
         throw new Error("method not implemented")
     }
     /** Initialize stuff idk but for example dhcp or for loclalhost self assign ip address */
-    start(): boolean {
+    start(): DeviceError {
         throw new Error("method not implemented")
     };
 }
@@ -466,9 +466,9 @@ export class EthernetInterface extends BaseInterface {
         this.macAddress = macAddress;
     }
 
-    output(data: NetworkData, destination: BaseAddress, rtentry?: DeviceRoute<typeof BaseAddress>): boolean {
+    output(data: NetworkData, destination: BaseAddress, rtentry?: DeviceRoute<typeof BaseAddress>): DeviceError<"UDUMB"> {
         if (!this.up || !rtentry || !this.target) {
-            return false;
+            return { status: true, error: "UDUMB", message: "interface is eiter not up or a route entry is missing" };
         }
 
         let etherheader: typeof ETHERNET_HEADER;
@@ -476,20 +476,20 @@ export class EthernetInterface extends BaseInterface {
             let dmac = this.device.arp_resolve(data, destination, rtentry);
             if (!dmac) {
                 // this method will get called recalled at a later times
-                return true;
+                return { status: false, message: "the interface is waiting for a LINK_LEVEL destination" };
             }
             etherheader = ETHERNET_HEADER.create({ dmac, ethertype: ETHER_TYPES.IPv4 })
         } else if (destination instanceof IPV6Address) {
             let dmac = this.device.arp_resolve(data, destination, rtentry);
             if (!dmac) {
                 // this method will get called recalled at a later times
-                return true;
+                return { status: false, message: "the interface is waiting for a LINK_LEVEL destination" };
             }
             etherheader = ETHERNET_HEADER.create({ dmac, ethertype: ETHER_TYPES.IPv6 })
         } else {
             if (destination.buffer.length < ETHERNET_HEADER.getMinSize()) {
                 // the header is an invalid size
-                return false;
+                return { status: true, error: "UDUMB", message: "the ethernet header added is invalid" };
             }
             etherheader = ETHERNET_HEADER.from(destination.buffer);
         }
@@ -506,7 +506,7 @@ export class EthernetInterface extends BaseInterface {
         if (uint8_equals(etherheader.get("smac").buffer, etherheader.get("dmac").buffer)) {
             // this was meant for myself
             window.setTimeout(() => this.recieve(etherheader), 0)
-            return true
+            return { status: false }
         }
 
         if (etherheader.get("dmac").isBroadcast()) {
@@ -516,7 +516,7 @@ export class EthernetInterface extends BaseInterface {
 
         // somehow put on wire
         window.setTimeout(() => this.target && this.target.recieve.bind(this.target)(etherheader), 0)
-        return true
+        return { status: false }
     }
 
     private recieve(etherheader: typeof ETHERNET_HEADER): boolean {
@@ -572,7 +572,7 @@ export class LoopbackInterface extends BaseInterface {
         )
     }
 
-    output(data: NetworkData, destination: BaseAddress): boolean {
+    output(data: NetworkData, destination: BaseAddress): DeviceError<"UDUMB"> {
         // based on address determine if ipv4 or ipv6
         data.rcvif = this;
 
@@ -585,7 +585,7 @@ export class LoopbackInterface extends BaseInterface {
             ethertype = ETHER_TYPES.IPv6;
         } else {
             // unrecognised address type
-            return false;
+            return { status: true, error: "UDUMB", message: "unrecognised address type" };
         }
 
         let log_data: NetworkData = {
@@ -609,16 +609,16 @@ export class LoopbackInterface extends BaseInterface {
             }
         }, 0)
 
-        return true;
+        return { status: false };
     }
     /** Initialize stuff idk but for example dhcp or for loclalhost self assign ip address */
-    start(): boolean {
+    start(): DeviceError<"UDUMB"> {
 
         this.device.interface_set_address(
             this,
             new IPV4Address("127.0.0.1"),
             createMask(IPV4Address, 8)
-        );
+        ).status;
 
         this.device.interface_set_address(
             this,
@@ -627,6 +627,6 @@ export class LoopbackInterface extends BaseInterface {
         );
 
         this.up = true;
-        return true;
+        return { status: false };
     };
 }
