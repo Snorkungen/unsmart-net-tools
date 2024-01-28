@@ -136,6 +136,9 @@ export const TestingComponent2: Component = () => {
     etherinterface_1.connect(etherinterface_2)
     console.log(newdevice)
 
+    let firstcontact2 = newdevice.contact_create("IPv6", "UDP").data!;
+    newdevice.contact_bind(firstcontact2, { daddr: new IPV6Address("fe80::1") ,dport: 80, sport: 0 })
+
     function sescape(str: string): Uint8Array {
         return uint8_concat([
             new Uint8Array([ASCIICodes.Escape]),
@@ -156,9 +159,9 @@ export const TestingComponent2: Component = () => {
             payload: icmpHdr.getBuffer()
         });
 
-        let err = device.output_ipv4(ipHdr, destination)
-        if (err.status) {
-            console.log(err.error, err.message)
+        let res = device.output_ipv4(ipHdr, destination)
+        if (!res.success) {
+            console.log(res.error, res.message)
         }
     }
     function test_sending_ipv6(device: Device2, destination: IPV6Address) {
@@ -181,9 +184,9 @@ export const TestingComponent2: Component = () => {
             payload: udphdr.getBuffer()
         })
 
-        let err = device.output_ipv6(ipHdr, destination)
-        if (err.status) {
-            console.log(err.error, err.message)
+        let res = device.output_ipv6(ipHdr, destination)
+        if (!res.success) {
+            console.log(res.error, res.message)
         }
     }
 

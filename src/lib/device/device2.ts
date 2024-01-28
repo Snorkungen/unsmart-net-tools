@@ -1,23 +1,16 @@
 import { BaseAddress } from "../address/base";
 import { IPV4Address } from "../address/ipv4";
-import { ALL_LINK_LOCAL_NODES_ADDRESSV6, ALL_LINK_LOCAL_ROUTERS_ADDRESSV6, ALL_NODES_ADDRESSV6, ALL_ROUTERS_ADDRESSV6, IPV6Address } from "../address/ipv6";
+import { ALL_LINK_LOCAL_NODES_ADDRESSV6, IPV6Address } from "../address/ipv6";
 import { MACAddress } from "../address/mac";
 import { AddressMask, createMask } from "../address/mask";
 import { and, not, or } from "../binary";
-import { uint8_fromNumber, uint8_concat, uint8_equals, uint8_readUint32BE } from "../binary/uint8-array";
+import { uint8_concat, uint8_equals, uint8_readUint32BE } from "../binary/uint8-array";
 import { ETHERNET_HEADER, ETHER_TYPES, EtherType } from "../header/ethernet";
-import { IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS, createIPV4Header } from "../header/ip";
+import { IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../header/ip";
 import { ARP_HEADER, ARP_OPCODES, createARPHeader } from "../header/arp";
 import { PacketCaptureHFormat, PacketCaptureNFormat, PacketCaptureRecordReader } from "../packet-capture/reader";
 import { calculateChecksum } from "../binary/checksum";
 import { ICMPV6_TYPES, ICMP_HEADER, ICMP_NDP_HEADER } from "../header/icmp";
-
-let macAddressCount = 0;
-let startBuf = new Uint8Array([0xfa, 0xff, 0x0f, 0])
-function createMacAddress(): MACAddress {
-    let buf = uint8_fromNumber(macAddressCount++, 2)
-    return new MACAddress(uint8_concat([startBuf, buf]))
-}
 
 export type NeighborEntry<AddressT extends BaseAddress = BaseAddress> = {
     neighbor: AddressT;
@@ -26,15 +19,57 @@ export type NeighborEntry<AddressT extends BaseAddress = BaseAddress> = {
     createdAt: number;
 };
 
-export type DeviceError<E extends unknown = unknown> = {
-    /** false says that there is no error */
-    status: false;
-    error?: E
+export type DeviceResult<E extends unknown = unknown, D extends unknown = undefined> = {
+    success: boolean;
+
     message?: string;
-} | {
-    status: true;
+    error?: E;
+    data?: D;
+} & ({
+    success: false;
     error: E;
-    message?: string;
+} | {
+    data: D;
+})
+
+export type NetworkData = {
+    type?: "DATA" | "HEADER";
+    buffer: Uint8Array;
+
+    rcvif?: BaseInterface;
+    broadcast?: boolean;
+}
+
+export type DeviceRoute<AddrType extends typeof BaseAddress = typeof BaseAddress> = {
+    destination: InstanceType<AddrType>;
+    netmask: AddressMask<AddrType>;
+    gateway: InstanceType<AddrType>;
+
+    /** this is statically set by a human */
+    f_static?: true;
+    f_dynamic?: true;
+    f_gateway?: true;
+    f_host?: true;
+
+    iface: BaseInterface;
+}
+
+type ContactAF = "RAW" | "IPv4" | "IPv6";
+type ContactProto = "RAW" | "UDP";
+type ContactError = unknown; // !TODO: conjure up some type of problems that might occur
+
+type ContactAddress2<Addr extends BaseAddress> = {
+    sport: number;
+    dport: number;
+    saddr: Addr;
+    daddr: Addr;
+}
+export interface Contact2<AF extends ContactAF = ContactAF, Proto extends ContactProto = ContactProto, Addr extends BaseAddress = BaseAddress> {
+    addressFamily: AF;
+    proto: Proto;
+
+    /** address naming is just a placeholder */
+    address?: ContactAddress2<Addr>;
 }
 
 export class Device2 {
@@ -96,20 +131,20 @@ export class Device2 {
         // then do some checking if this message is for this device
     }
 
-    output_ipv4(iphdr: typeof IPV4_HEADER, destination: IPV4Address, options?: unknown): DeviceError<"HOSTUNREACH" | "ERROR"> {
+    output_ipv4(iphdr: typeof IPV4_HEADER, destination: IPV4Address, options?: unknown): DeviceResult<"HOSTUNREACH" | "ERROR"> {
         /** So the thinking is that the user would construct the iphdr */
 
         // Select route
         let route: DeviceRoute | undefined = this.route_resolve(destination);
         if (!route) return {
-            status: true,
+            success: false,
             error: "HOSTUNREACH",
             message: "No outgoing route found"
         }
         // select an address from the outgoing interface
         let source = route.iface.addresses.find(value => value.address.constructor == destination.constructor);
         if (!source) return {
-            status: true,
+            success: false,
             error: "HOSTUNREACH",
             message: "no source address for intreface found"
         }
@@ -128,9 +163,9 @@ export class Device2 {
 
         if (iphdr.get("len") > route.iface.mtu) {
             return {
-                status: true,
+                success: false,
                 error: "ERROR",
-                "message": "i do not support fragmentation"
+                message: "i do not support fragmentation"
             }
         }
 
@@ -146,9 +181,9 @@ export class Device2 {
         }, destination, route);
 
         return {
-            status: res.status,
-            error: "ERROR",
-            message: res.message
+            success: res.success,
+            error: res.error ? "ERROR" : undefined,
+            data: res.data
         }
     }
 
@@ -166,11 +201,11 @@ export class Device2 {
 
     }
 
-    output_ipv6(iphdr: typeof IPV6_HEADER, destination: IPV6Address, options?: unknown): DeviceError<"HOSTUNREACH" | "ERROR"> {
+    output_ipv6(iphdr: typeof IPV6_HEADER, destination: IPV6Address, options?: unknown): DeviceResult<"HOSTUNREACH" | "ERROR"> {
         // Select route
         let route: DeviceRoute | undefined = this.route_resolve(destination);
         if (!route) return {
-            status: true,
+            success: false,
             error: "HOSTUNREACH",
             message: "No outgoing route found"
         }
@@ -178,7 +213,7 @@ export class Device2 {
         // select an address from the outgoing interface
         let source = route.iface.addresses.find(value => value.address.constructor == destination.constructor);
         if (!source) return {
-            status: true,
+            success: false,
             error: "HOSTUNREACH",
             message: "no source address for intreface found"
         }
@@ -195,7 +230,7 @@ export class Device2 {
 
         if (iphdr.get("payloadLength") > route.iface.mtu) {
             return {
-                status: true,
+                success: false,
                 error: "ERROR",
                 "message": "i do not support fragmentation"
             }
@@ -209,9 +244,9 @@ export class Device2 {
         }, destination, route);
 
         return {
-            status: res.status,
-            error: "ERROR",
-            message: res.message
+            success: res.success,
+            error: res.error ? "ERROR" : undefined,
+            data: res.data
         }
     }
 
@@ -386,7 +421,7 @@ export class Device2 {
 
     arp_sendqueue = new Map<string, (Parameters<BaseInterface["output"]> | null)[]>();
     arp_cache = new Map<string, NeighborEntry<BaseAddress>>();
-    arp_resolve(data: NetworkData, destination: BaseAddress, rtentry: DeviceRoute): MACAddress | null {
+    arp_resolve(data: NetworkData, destination: BaseAddress, rtentry: DeviceRoute): MACAddress | null { // !TODO: i could  have this return a DeviceError<unknown, MACAddress | null>
         if (data.broadcast) {
             // destination is meant to be broad casted
             return new MACAddress("ff:ff:ff:ff:ff:ff")
@@ -538,7 +573,7 @@ export class Device2 {
     }
 
     interfaces: BaseInterface[] = [];
-    interface_set_address<AT extends typeof BaseAddress>(iface: BaseInterface, address: InstanceType<AT>, netmask: AddressMask<AT>): DeviceError {
+    interface_set_address<AT extends typeof BaseAddress>(iface: BaseInterface, address: InstanceType<AT>, netmask: AddressMask<AT>): DeviceResult { // !TODO: result could include the created route or address entry on iface idk
         // this functions maintains the information about the routes for the network that is just now configured
 
         // the thing is a interface could support having multiple addresses of the same type, but for simplicity, only one address is supported for now
@@ -598,31 +633,133 @@ export class Device2 {
         }
 
         return {
-            status: false
+            success: true,
+            data: undefined
         }
     }
-}
 
-type DeviceRoute<AddrType extends typeof BaseAddress = typeof BaseAddress> = {
-    destination: InstanceType<AddrType>;
-    netmask: AddressMask<AddrType>;
-    gateway: InstanceType<AddrType>;
+    /** this is to ensure that contacts get given unique ephemeral ports */
+    private contact_ephemport = 2000;
+    private contacts: (Contact2<ContactAF, ContactProto> | undefined)[] = []
+    contact_create<CAF extends ContactAF, CProto extends ContactProto>(addressFamily: CAF, proto: CProto): DeviceResult<ContactError, Contact2<CAF, CProto>> {
+        // do some rules checking
+        if (addressFamily === "RAW" && proto !== "RAW") {
+            return { success: false, error: "", message: "AF cannot be RAW when the proto is something other that RAW" }
+        }
 
-    /** this is statically set by a human */
-    f_static?: true;
-    f_dynamic?: true;
-    f_gateway?: true;
-    f_host?: true;
+        let i = -1; while (this.contacts[++i]) { continue; }
+        this.contacts[i] = {
+            addressFamily: addressFamily,
+            proto: proto,
+        };;
 
-    iface: BaseInterface;
-}
+        return { success: true, data: this.contacts[i] as Contact2<CAF, CProto> };
+    }
+    contact_close(contact: Contact2): DeviceResult<ContactError> {
+        // have some logic to stop doing other stuff i.e. TCP
 
-interface NetworkData {
-    type?: "DATA" | "HEADER";
-    buffer: Uint8Array;
+        let i = this.contacts.indexOf(contact);
+        if (i >= 0) {
+            delete this.contacts[i];
+            return { success: true, data: undefined }
+        }
 
-    rcvif?: BaseInterface;
-    broadcast?: boolean;
+        return { success: false, error: undefined, message: "could not locate contact" }
+    }
+    private contact_get_unsetaddress<Addr extends BaseAddress>(contact: Contact2): Addr {
+        switch (contact.addressFamily) {
+            case "IPv4": return new IPV4Address("0.0.0.0") as Addr;
+            case "IPv6": return new IPV6Address("::") as unknown as Addr;
+
+            default: {
+                throw "cannot set empty source address"
+            }
+        }
+    }
+    contact_bind<Addr extends BaseAddress = BaseAddress>(contact: Contact2, caddr?: Partial<ContactAddress2<Addr>>): DeviceResult<ContactError, ContactAddress2<Addr>> {
+        if (contact.addressFamily == "RAW" || contact.proto == "RAW") {
+            return { success: false, error: undefined, message: "cannot bind a RAW contact" };
+        }
+
+        if (contact.address) {
+            if (caddr) {
+                caddr = {
+                    ...contact.address,
+                    ...caddr
+                } as ContactAddress2<Addr>;
+            } else {
+                caddr = contact.address as ContactAddress2<Addr>
+            }
+        }
+
+        if (caddr) {
+            if (!caddr.daddr) {
+                return { success: false, error: undefined, message: "destination address missing" };
+            } else if (!caddr.dport) {
+                return { success: false, error: undefined, message: "destination port missing" };
+            }
+
+            if (!caddr.saddr) {
+                caddr.saddr = this.contact_get_unsetaddress<Addr>(contact);
+            }
+
+            if (!caddr.sport) {
+                // give source port as an ephemeral port
+                caddr.sport = (((this.contact_ephemport += 7) + 2_000) % 0xfffe);
+            }
+
+            if (
+                (caddr.daddr instanceof IPV4Address) && contact.addressFamily != "IPv4" ||
+                (caddr.daddr instanceof IPV6Address) && contact.addressFamily != "IPv6" ||
+                (caddr.saddr instanceof IPV4Address) && contact.addressFamily != "IPv4" ||
+                (caddr.saddr instanceof IPV6Address) && contact.addressFamily != "IPv6"
+            ) {
+                return { success: false, error: undefined, message: "address mismatch" }
+            };
+
+            for (let h_contact of this.contacts) {
+                // !TODO: this is complex enough to require some tests and testing
+
+                // the logic should error when an address is already in use but more specific
+                // addresses allowed for example both of the following are allowed to coexist
+                // {daddr: 20.1.122.1, saddr: 0.0.0.0, dport: 3000, sport: 3000}
+                // {daddr: 20.1.122.1, saddr: 0.0.0.0, dport: 3000, sport: 0}
+                // {daddr: 20.1.122.1, saddr: 192.168.1.10, dport: 3000, sport: 3000}
+
+                if (!h_contact ||
+                    h_contact == contact ||
+                    !h_contact.address ||
+                    h_contact.proto != contact.proto ||
+                    caddr.daddr.constructor != h_contact.address.daddr.constructor ||
+                    caddr.saddr.constructor != h_contact.address.saddr.constructor ||
+                    caddr.sport != h_contact.address.sport ||
+                    caddr.dport != h_contact.address.dport
+                ) continue;
+
+                // test addresses
+                if (
+                    uint8_equals(caddr.daddr.buffer, h_contact.address.daddr.buffer) &&
+                    uint8_equals(caddr.saddr.buffer, h_contact.address.saddr.buffer) &&
+                    caddr.dport == h_contact.address.dport &&
+                    caddr.sport == h_contact.address.sport
+                ) return { success: false, error: undefined, message: "contact address already in use" };
+            }
+
+            // ignored because the logic above should ensure that all values are correct and inplace
+            contact.address = caddr as ContactAddress2<Addr>;
+            return { success: true, data: caddr as ContactAddress2<Addr> }
+        }
+
+        caddr = {
+            daddr: this.contact_get_unsetaddress<Addr>(contact),
+            saddr: this.contact_get_unsetaddress<Addr>(contact),
+            dport: 0,
+            sport: 0
+        }
+
+        contact.address = caddr as ContactAddress2<Addr>;
+        return { success: true, data: caddr as ContactAddress2<Addr> }
+    }
 }
 
 type DeviceAddress<AT extends typeof BaseAddress = typeof BaseAddress> = {
@@ -661,13 +798,17 @@ class BaseInterface {
         this.up = false;
     }
 
-    output(data: NetworkData, destination: BaseAddress, rtentry?: DeviceRoute): DeviceError {
+    output(data: NetworkData, destination: BaseAddress, rtentry?: DeviceRoute): DeviceResult {
         throw new Error("method not implemented")
     }
     /** Initialize stuff idk but for example dhcp or for loclalhost self assign ip address */
-    start(): DeviceError {
+    start(): DeviceResult {
         throw new Error("method not implemented")
     };
+
+    id() {
+        return this.name + this.unit
+    }
 }
 
 export class EthernetInterface extends BaseInterface {
@@ -682,9 +823,9 @@ export class EthernetInterface extends BaseInterface {
         this.macAddress = macAddress;
     }
 
-    output(data: NetworkData, destination: BaseAddress, rtentry?: DeviceRoute<typeof BaseAddress>): DeviceError<"UDUMB"> {
+    output(data: NetworkData, destination: BaseAddress, rtentry?: DeviceRoute<typeof BaseAddress>): DeviceResult<"UDUMB"> {
         if (!this.up || !rtentry || !this.target) {
-            return { status: true, error: "UDUMB", message: "interface is eiter not up or a route entry is missing" };
+            return { success: false, error: "UDUMB", message: "interface is eiter not up or a route entry is missing" };
         }
 
         let etherheader: typeof ETHERNET_HEADER;
@@ -692,20 +833,20 @@ export class EthernetInterface extends BaseInterface {
             let dmac = this.device.arp_resolve(data, destination, rtentry);
             if (!dmac) {
                 // this method will get called recalled at a later times
-                return { status: false, message: "the interface is waiting for a LINK_LEVEL destination" };
+                return { success: true, data: undefined, message: "the interface is waiting for a LINK_LEVEL destination" };
             }
             etherheader = ETHERNET_HEADER.create({ dmac, ethertype: ETHER_TYPES.IPv4 })
         } else if (destination instanceof IPV6Address) {
             let dmac = this.device.arp_resolve(data, destination, rtentry);
             if (!dmac) {
                 // this method will get called recalled at a later times
-                return { status: false, message: "the interface is waiting for a LINK_LEVEL destination" };
+                return { success: true, data: undefined, message: "the interface is waiting for a LINK_LEVEL destination" };
             }
             etherheader = ETHERNET_HEADER.create({ dmac, ethertype: ETHER_TYPES.IPv6 })
         } else {
             if (destination.buffer.length < ETHERNET_HEADER.getMinSize()) {
                 // the header is an invalid size
-                return { status: true, error: "UDUMB", message: "the ethernet header added is invalid" };
+                return { success: true, data: undefined, error: "UDUMB", message: "the ethernet header added is invalid" };
             }
             etherheader = ETHERNET_HEADER.from(destination.buffer);
         }
@@ -722,7 +863,7 @@ export class EthernetInterface extends BaseInterface {
         if (uint8_equals(etherheader.get("smac").buffer, etherheader.get("dmac").buffer)) {
             // this was meant for myself
             window.setTimeout(() => this.recieve(etherheader), 0)
-            return { status: false }
+            return { success: true, data: undefined }
         }
 
         if (etherheader.get("dmac").isBroadcast()) {
@@ -732,7 +873,7 @@ export class EthernetInterface extends BaseInterface {
 
         // somehow put on wire
         window.setTimeout(() => this.target && this.target.recieve.bind(this.target)(etherheader), 0)
-        return { status: false }
+        return { success: true, data: undefined }
     }
 
     private recieve(etherheader: typeof ETHERNET_HEADER): boolean {
@@ -788,7 +929,7 @@ export class LoopbackInterface extends BaseInterface {
         )
     }
 
-    output(data: NetworkData, destination: BaseAddress): DeviceError<"UDUMB"> {
+    output(data: NetworkData, destination: BaseAddress): DeviceResult<"UDUMB"> {
         // based on address determine if ipv4 or ipv6
         data.rcvif = this;
 
@@ -801,7 +942,7 @@ export class LoopbackInterface extends BaseInterface {
             ethertype = ETHER_TYPES.IPv6;
         } else {
             // unrecognised address type
-            return { status: true, error: "UDUMB", message: "unrecognised address type" };
+            return { success: false, error: "UDUMB", message: "unrecognised address type" };
         }
 
         let log_data: NetworkData = {
@@ -826,16 +967,16 @@ export class LoopbackInterface extends BaseInterface {
             }
         }, 0)
 
-        return { status: false };
+        return { success: true, data: undefined };
     }
     /** Initialize stuff idk but for example dhcp or for loclalhost self assign ip address */
-    start(): DeviceError<"UDUMB"> {
+    start(): DeviceResult<"UDUMB"> {
 
         this.device.interface_set_address(
             this,
             new IPV4Address("127.0.0.1"),
             createMask(IPV4Address, 8)
-        ).status;
+        );
 
         this.device.interface_set_address(
             this,
@@ -844,6 +985,6 @@ export class LoopbackInterface extends BaseInterface {
         );
 
         this.up = true;
-        return { status: false };
+        return { success: true, data: undefined };
     };
 }
