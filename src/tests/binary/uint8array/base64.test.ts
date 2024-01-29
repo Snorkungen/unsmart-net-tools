@@ -1,11 +1,12 @@
 import { describe, expect, test } from "vitest";
 import { uint8_fromBase64, uint8_toBase64 } from "../../../lib/binary/uint8array/base64";
+import { uint8_fromString } from "../../../lib/binary/uint8-array";
 
 describe("Base64", () => {
     test("uint8_toBase64", () => {
         let runTestVec = (actual: string, expected: string) => {
             expect(
-                uint8_toBase64(Buffer.from(actual, "ascii"))
+                uint8_toBase64(uint8_fromString(actual))
             ).toBe(expected)
         }
 

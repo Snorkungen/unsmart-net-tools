@@ -1,6 +1,29 @@
-import { Buffer } from "buffer";
 import { describe, expect, test } from "vitest";
 import { INT16, INT32, INT8, SLICE, UINT16, UINT32, UINT8, defineStruct } from "../../lib/binary/struct/";
+
+function __fromHex(hex: string): Uint8Array {
+    let length = Math.floor(hex.length / 2);
+    let buf = new Uint8Array(length);
+
+    let i = 0;
+
+    if (length & 1) {
+        buf[i++] = parseInt(hex.substring(0, 1), 16);
+    }
+
+    for (i; i < hex.length; i += 2) {
+        buf[i / 2] = parseInt(hex.substring(i, i + 2), 16);
+    }
+
+    return buf;
+}
+function __toHex(buf: Uint8Array): string {
+    let str = ""
+    for (let i = 0; i < buf.byteLength; i++) {
+        str += buf[i].toString(16).padStart(2, "0")
+    }
+    return str
+}
 
 describe("Buffer based struct", () => {
 
@@ -14,14 +37,14 @@ describe("Buffer based struct", () => {
             pad: UINT16(4),
             slice: SLICE
         })
-
-        let st = struct.from(Buffer.from("4feff090", "hex"));
+        
+        let st = struct.from(__fromHex("4feff090"));
         expect(st.get("version")).eq(4)
         expect(st.get("ihl")).eq(15)
         expect(st.get("flags")).eq(7)
         expect(st.get("fragOffset")).eq(0x0ff)
         expect(st.get("pad")).eq(0)
-        expect(Buffer.from(st.get("slice")).toString("hex")).eq(Buffer.from("90", "hex").toString("hex"))
+        expect(__toHex(st.get("slice"))).eq("90")
         let sliceText = "Hello World";
         st.set("slice", Buffer.from(sliceText, "ascii"))
         expect(Buffer.from(st.get("slice")).toString("ascii")).eq(sliceText)
@@ -99,7 +122,7 @@ describe("Buffer based struct", () => {
             int: INT8,
             uint: UINT8,
             slice: SLICE
-        }).from(Buffer.from("ffff1111", "hex"))
+        }).from(__fromHex("ffff1111"))
 
         expect(createdStruct.getMinSize()).toEqual(2)
 
@@ -107,29 +130,29 @@ describe("Buffer based struct", () => {
         expect(createdStruct.get("uint")).toEqual(255)
         expect(createdStruct.get("slice").length * 8).toEqual(16)
 
-        createdStruct.set("slice", Buffer.from("ff", "hex"))
+        createdStruct.set("slice", __fromHex("ff"))
         expect(createdStruct.get("slice").length * 8).toEqual(8)
     });
 
     test("create Struct #3", () => {
         let struct = defineStruct({
             uint: UINT16
-        }), createdStruct = struct.from(Buffer.from("0100" /* 0x0100*/, "hex"), { bigEndian: false });
+        }), createdStruct = struct.from(__fromHex("0100" /* 0x0100*/), { bigEndian: false });
         expect(createdStruct.get("uint")).toBe(1)
 
-        createdStruct.set("uint", Buffer.from("0200" /* 0x0200*/, "hex"))
+        createdStruct.set("uint", __fromHex("0200" /* 0x0200*/))
         expect(createdStruct.get("uint")).toEqual(2)
-
+        
         createdStruct.set("uint", 3)
         expect(createdStruct.get("uint")).toEqual(3)
-
+        
         let struct2 = defineStruct({
             int: INT16
-        }), createdStruct2 = struct2.from(Buffer.from("0100" /* 0x0100*/, "hex"), { bigEndian: false });
-
+        }), createdStruct2 = struct2.from(__fromHex("0100" /* 0x0100*/), { bigEndian: false });
+        
         expect(createdStruct2.get("int")).toBe(1)
-
-        createdStruct2.set("int", Buffer.from("0200" /* 0x0200*/, "hex"))
+        
+        createdStruct2.set("int", __fromHex("0200" /* 0x0200*/))
 
         expect(createdStruct2.get("int")).toEqual(2)
         createdStruct2.set("int", 3)

@@ -1,4 +1,3 @@
-import { Buffer } from "buffer";
 import { describe, test, expect } from "vitest";
 import { createMaskBuffer, calculateMaskBufferLength, createMask } from "../../lib/address/mask";
 import { IPV4Address } from "../../lib/address/ipv4";

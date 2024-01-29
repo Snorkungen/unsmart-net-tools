@@ -1,4 +1,3 @@
-import { Buffer } from "buffer";
 import { describe, test, expect } from "vitest";
 import { IPV4Address, calculateSubnetIPV4, IPV4_CLASS_A, IPV4_CLASS_B, IPV4_CLASS_C, classifyIPV4Address, reservedAddresses } from "../../lib/address/ipv4";
 import { createMask } from "../../lib/address/mask";
@@ -7,7 +6,7 @@ import { createLinkLocalIPV4Address } from "../../lib/address/ipv4/link-local";
 describe("IPV4 Address", () => {
     test("toString", () => {
         let addr = "9.0.0.2";
-        let buf = Buffer.from("09000002", "hex");
+        let buf = new Uint8Array([9, 0, 0, 2]);
         expect(new IPV4Address(buf).toString()).eq(addr)
     })
     test("parser", () => {

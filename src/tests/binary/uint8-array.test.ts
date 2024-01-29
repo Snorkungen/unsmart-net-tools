@@ -1,4 +1,3 @@
-import { Buffer } from "buffer";
 import { describe, expect, test } from "vitest";
 import { uint8_concat, uint8_equals, uint8_fill, uint8_fromNumber, uint8_set } from "../../lib/binary/uint8-array";
 
