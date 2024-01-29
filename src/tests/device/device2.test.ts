@@ -60,11 +60,19 @@ describe("Device2 route_resolve", () => {
             netmask: createMask(IPV4Address, 8),
             iface: lb_iface,
             f_gateway: true
+        },
+        {
+            destination: new IPV4Address("127.0.20.128"),
+            gateway: new IPV4Address("127.0.0.128"),
+            netmask: createMask(IPV4Address, 8),
+            iface: lb_iface,
+            f_gateway: true
         }]
 
         expect(device.route_resolve(new IPV4Address("127.0.0.1"))?.gateway.toString()).eq("127.0.0.10")
-        expect(device.route_resolve(new IPV4Address("127.0.20.1"))?.gateway.toString()).eq("127.0.0.20")
         expect(device.route_resolve(new IPV4Address("127.0.30.1"))?.gateway.toString()).eq("127.0.0.30")
+        expect(device.route_resolve(new IPV4Address("127.0.20.1"))?.gateway.toString()).eq("127.0.0.20")
+        expect(device.route_resolve(new IPV4Address("127.0.20.254"))?.gateway.toString()).eq("127.0.0.128")
     })
 })
 

@@ -119,3 +119,25 @@ export function uint8_fromString(str: string): Uint8Array {
     let encoder = new TextEncoder();
     return encoder.encode(str)
 }
+
+export function uint8_matchLength(buffer1: Uint8Array, buffer2: Uint8Array): number {
+    let length = 0;
+    for (let i = 0; i < buffer1.byteLength && i < buffer2.byteLength; i++) {
+        if (buffer1[i] == buffer2[i]) {
+            length += 8;
+        } else {
+            let b1 = buffer1[i], b2 = buffer2[i];
+            if ((b1 & 0xfe) == (b2 & 0xfe)) return length + 7;
+            if ((b1 & 0xfc) == (b2 & 0xfc)) return length + 6;
+            if ((b1 & 0xf8) == (b2 & 0xf8)) return length + 5;
+            if ((b1 & 0xf0) == (b2 & 0xf0)) return length + 4;
+            if ((b1 & 0xe0) == (b2 & 0xe0)) return length + 3;
+            if ((b1 & 0xc0) == (b2 & 0xc0)) return length + 2;
+            if ((b1 & 0x80) == (b2 & 0x80)) return length + 1;
+
+            return length;
+        }
+    }
+
+    return length;
+}

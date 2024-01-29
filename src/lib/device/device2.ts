@@ -4,7 +4,7 @@ import { ALL_LINK_LOCAL_NODES_ADDRESSV6, IPV6Address } from "../address/ipv6";
 import { MACAddress } from "../address/mac";
 import { AddressMask, createMask } from "../address/mask";
 import { and, not, or } from "../binary";
-import { uint8_concat, uint8_equals, uint8_readUint32BE } from "../binary/uint8-array";
+import { uint8_concat, uint8_equals, uint8_matchLength, uint8_readUint32BE } from "../binary/uint8-array";
 import { ETHERNET_HEADER, ETHER_TYPES, EtherType } from "../header/ethernet";
 import { IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../header/ip";
 import { ARP_HEADER, ARP_OPCODES, createARPHeader } from "../header/arp";
@@ -566,7 +566,9 @@ export class Device2 {
                 (value.destination.constructor == destination.constructor) && value.iface.up &&
                 !value.f_host &&
                 value.netmask.compare(value.destination, destination)
-            )).sort((a, b) => b.netmask.length - a.netmask.length)[0]
+            )).sort((a, b) => (
+                uint8_matchLength(destination.buffer, b.destination.buffer) - uint8_matchLength(destination.buffer, a.destination.buffer)
+            ) || b.netmask.length - a.netmask.length)[0]
         }
 
         return route;

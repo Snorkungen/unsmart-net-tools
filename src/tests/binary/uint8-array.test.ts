@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { uint8_concat, uint8_equals, uint8_fill, uint8_fromNumber, uint8_set } from "../../lib/binary/uint8-array";
+import { uint8_concat, uint8_equals, uint8_fill, uint8_fromNumber, uint8_matchLength, uint8_set } from "../../lib/binary/uint8-array";
 
 describe("Uint8Array Helper functions", () => {
     test("uint8_equals", () => {
@@ -78,5 +78,20 @@ describe("Uint8Array Helper functions", () => {
             actual,
             expected
         )).true;
+    })
+
+    test("uint8_matchLength", () => {
+        expect(uint8_matchLength(
+            new Uint8Array([0xff]),
+            new Uint8Array([0xff])
+        )).eq(8)
+        expect(uint8_matchLength(
+            new Uint8Array([0xff, 0,]),
+            new Uint8Array([0xff, 1])
+        )).eq(8 + 7)
+        expect(uint8_matchLength(
+            new Uint8Array([0xff, 0, 0xe2]),
+            new Uint8Array([0xff, 0, 0xf2])
+        )).eq(16 + 3)
     })
 })  
