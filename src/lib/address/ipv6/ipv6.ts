@@ -32,7 +32,6 @@ export class IPV6Address implements BaseAddress {
         if (typeof input == "string") {
             // lazy it is not a trivial thing to ensure a string is a valid ipv6 address
             let addr = new IPV6Address(input);
-            console.log(addr.toString())
             return addr.toString(4) != "::"
         }
 
