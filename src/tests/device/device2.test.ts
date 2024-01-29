@@ -111,3 +111,52 @@ describe("Device2 interface_set_address", () => {
         expect(device.routes.length).eq(1); // 2 - 2 + 1 = 1
     })
 })
+
+describe("Device2 contact_bind", () => {
+    let contact = device.contact_create("IPv4", "UDP").data!;
+
+    test("successful bind", () => {
+        let caddr =  {
+            daddr: lb_address4,
+            saddr: lb_address4,
+            dport: 2000,
+            sport: 2000
+        };
+        let result = device.contact_bind(contact,caddr);
+
+        expect(result.success, result.message).true;
+        expect(caddr === result.data).true;
+    });
+
+    test("server listening with outgoing contacts", () => {
+        let caddrs = [
+            { daddr: new IPV4Address("0.0.0.0"), saddr: new IPV4Address("0.0.0.0"), dport: 0, sport: 3000 },
+            { daddr: lb_address4, saddr: new IPV4Address("0.0.0.0"), dport: 8989, sport: 3000 },
+            { daddr: lb_address4, saddr: new IPV4Address("0.0.0.0"), dport: 7878, sport: 3000 },
+        ];
+
+        for (let caddr of caddrs) {
+            let r = device.contact_create("IPv4", "UDP");
+            expect(r.success, r.message).true;
+            let ra = device.contact_bind(r.data!, caddr);
+            expect(ra.success, ra.message).true;
+        }
+    });
+
+    test("contact already in use", () => {
+        contact = device.contact_create("IPv4", "UDP").data!;
+        let r = device.contact_bind(contact, {
+            saddr: new IPV4Address("0.0.0.0"), daddr: lb_address4, sport: 6000, dport: 80
+        })
+        
+        expect(r.success, r.message).true;
+        
+        contact = device.contact_create("IPv4", "UDP").data!;
+        r = device.contact_bind(contact, {
+            saddr: new IPV4Address("0.0.0.0"), daddr: lb_address4, sport: 6000, dport: 80
+        });
+
+        expect(r.success, r.message).false;
+    })
+});
+

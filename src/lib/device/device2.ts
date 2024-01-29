@@ -641,7 +641,7 @@ export class Device2 {
     }
 
     /** this is to ensure that contacts get given unique ephemeral ports */
-    private contact_ephemport = 2000;
+    private contact_ephemport = (((2_001 + 5) + 8_000) % 0xffff);
     private contacts: (Contact2<ContactAF, ContactProto> | undefined)[] = []
     contact_create<CAF extends ContactAF, CProto extends ContactProto>(addressFamily: CAF, proto: CProto): DeviceResult<ContactError, Contact2<CAF, CProto>> {
         // do some rules checking
@@ -668,99 +668,47 @@ export class Device2 {
 
         return { success: false, error: undefined, message: "could not locate contact" }
     }
-    private contact_get_unsetaddress<Addr extends BaseAddress>(contact: Contact2): Addr {
-        switch (contact.addressFamily) {
-            case "IPv4": return new IPV4Address("0.0.0.0") as Addr;
-            case "IPv6": return new IPV6Address("::") as unknown as Addr;
-
-            default: {
-                throw "cannot set empty source address"
-            }
-        }
-    }
-    contact_bind<Addr extends BaseAddress = BaseAddress>(contact: Contact2, caddr?: Partial<ContactAddress2<Addr>>): DeviceResult<ContactError, ContactAddress2<Addr>> {
+    contact_bind<Addr extends BaseAddress = BaseAddress>(contact: Contact2, caddr: ContactAddress2<Addr>): DeviceResult<ContactError, ContactAddress2<Addr>> {
         if (contact.addressFamily == "RAW" || contact.proto == "RAW") {
             return { success: false, error: undefined, message: "cannot bind a RAW contact" };
         }
 
         if (contact.address) {
-            if (caddr) {
-                caddr = {
-                    ...contact.address,
-                    ...caddr
-                } as ContactAddress2<Addr>;
-            } else {
-                caddr = contact.address as ContactAddress2<Addr>
-            }
+            return { success: false, error: undefined, message: "contact already bound" };
         }
 
-        if (caddr) {
-            if (!caddr.daddr) {
-                return { success: false, error: undefined, message: "destination address missing" };
-            } else if (!caddr.dport) {
-                return { success: false, error: undefined, message: "destination port missing" };
-            }
+        if (
+            (caddr.daddr instanceof IPV4Address) && contact.addressFamily != "IPv4" ||
+            (caddr.daddr instanceof IPV6Address) && contact.addressFamily != "IPv6" ||
+            (caddr.saddr instanceof IPV4Address) && contact.addressFamily != "IPv4" ||
+            (caddr.saddr instanceof IPV6Address) && contact.addressFamily != "IPv6"
+        ) {
+            return { success: false, error: undefined, message: "address mismatch" }
+        };
 
-            if (!caddr.saddr) {
-                caddr.saddr = this.contact_get_unsetaddress<Addr>(contact);
-            }
+        for (let h_contact of this.contacts) {
+            if (!h_contact ||
+                h_contact == contact ||
+                !h_contact.address ||
+                h_contact.proto != contact.proto ||
+                caddr.daddr.constructor != h_contact.address.daddr.constructor ||
+                caddr.saddr.constructor != h_contact.address.saddr.constructor ||
+                caddr.sport != h_contact.address.sport ||
+                caddr.dport != h_contact.address.dport
+            ) continue;
 
-            if (!caddr.sport) {
-                // give source port as an ephemeral port
-                caddr.sport = (((this.contact_ephemport += 7) + 2_000) % 0xfffe);
-            }
-
+            // test addresses
             if (
-                (caddr.daddr instanceof IPV4Address) && contact.addressFamily != "IPv4" ||
-                (caddr.daddr instanceof IPV6Address) && contact.addressFamily != "IPv6" ||
-                (caddr.saddr instanceof IPV4Address) && contact.addressFamily != "IPv4" ||
-                (caddr.saddr instanceof IPV6Address) && contact.addressFamily != "IPv6"
-            ) {
-                return { success: false, error: undefined, message: "address mismatch" }
-            };
-
-            for (let h_contact of this.contacts) {
-                // !TODO: this is complex enough to require some tests and testing
-
-                // the logic should error when an address is already in use but more specific
-                // addresses allowed for example both of the following are allowed to coexist
-                // {daddr: 20.1.122.1, saddr: 0.0.0.0, dport: 3000, sport: 3000}
-                // {daddr: 20.1.122.1, saddr: 0.0.0.0, dport: 3000, sport: 0}
-                // {daddr: 20.1.122.1, saddr: 192.168.1.10, dport: 3000, sport: 3000}
-
-                if (!h_contact ||
-                    h_contact == contact ||
-                    !h_contact.address ||
-                    h_contact.proto != contact.proto ||
-                    caddr.daddr.constructor != h_contact.address.daddr.constructor ||
-                    caddr.saddr.constructor != h_contact.address.saddr.constructor ||
-                    caddr.sport != h_contact.address.sport ||
-                    caddr.dport != h_contact.address.dport
-                ) continue;
-
-                // test addresses
-                if (
-                    uint8_equals(caddr.daddr.buffer, h_contact.address.daddr.buffer) &&
-                    uint8_equals(caddr.saddr.buffer, h_contact.address.saddr.buffer) &&
-                    caddr.dport == h_contact.address.dport &&
-                    caddr.sport == h_contact.address.sport
-                ) return { success: false, error: undefined, message: "contact address already in use" };
-            }
-
-            // ignored because the logic above should ensure that all values are correct and inplace
-            contact.address = caddr as ContactAddress2<Addr>;
-            return { success: true, data: caddr as ContactAddress2<Addr> }
+                uint8_equals(caddr.daddr.buffer, h_contact.address.daddr.buffer) &&
+                uint8_equals(caddr.saddr.buffer, h_contact.address.saddr.buffer) &&
+                caddr.dport == h_contact.address.dport &&
+                caddr.sport == h_contact.address.sport
+            ) return { success: false, error: undefined, message: "contact address already in use" };
         }
 
-        caddr = {
-            daddr: this.contact_get_unsetaddress<Addr>(contact),
-            saddr: this.contact_get_unsetaddress<Addr>(contact),
-            dport: 0,
-            sport: 0
-        }
-
-        contact.address = caddr as ContactAddress2<Addr>;
-        return { success: true, data: caddr as ContactAddress2<Addr> }
+        // ignored because the logic above should ensure that all values are correct and inplace
+        contact.address = caddr;
+        return { success: true, data: caddr }
     }
 }
 
