@@ -64,12 +64,18 @@ type ContactAddress2<Addr extends BaseAddress> = {
     saddr: Addr;
     daddr: Addr;
 }
-export interface Contact2<AF extends ContactAF = ContactAF, Proto extends ContactProto = ContactProto, Addr extends BaseAddress = BaseAddress> {
+export interface Contact2<AF extends ContactAF = ContactAF, Proto extends ContactProto = ContactProto, AT extends typeof BaseAddress = typeof BaseAddress, Addr extends BaseAddress = InstanceType<AT>> {
     addressFamily: AF;
     proto: Proto;
 
     /** address naming is just a placeholder */
     address?: ContactAddress2<Addr>;
+
+    /* Methods */
+    close(contact: Contact2<AF, Proto, AT, Addr>): DeviceResult<ContactError>;
+    bind(contact: Contact2<AF, Proto, AT, Addr>, caddr: ContactAddress2<Addr>): DeviceResult<ContactError, typeof caddr>;
+
+    send(contact: Contact2<AF, Proto, AT, Addr>, data: NetworkData, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
 }
 
 export class Device2 {
@@ -649,11 +655,27 @@ export class Device2 {
             return { success: false, error: "", message: "AF cannot be RAW when the proto is something other that RAW" }
         }
 
+        // methods for sending and doing stuff
+        let m_send: Contact2["send"];
+
+        if (proto == "RAW") {
+            m_send = this.contact_m_send_raw;
+        } else if (proto == "UDP") {
+            m_send = this.contact_m_send_udp;
+        } else {
+            return { success: false, error: undefined, message: "could not determine methods based on ContactProto: " + proto };
+        }
+
         let i = -1; while (this.contacts[++i]) { continue; }
         this.contacts[i] = {
             addressFamily: addressFamily,
             proto: proto,
-        };;
+
+            close: this.contact_close.bind(this),
+            bind: this.contact_bind.bind(this),
+
+            send: m_send.bind(this)
+        };
 
         return { success: true, data: this.contacts[i] as Contact2<CAF, CProto> };
     }
@@ -662,6 +684,8 @@ export class Device2 {
 
         let i = this.contacts.indexOf(contact);
         if (i >= 0) {
+            // !TODO: in future add more logic to the removal of a contact
+            // i.e. TCP has a cooldown period etc.
             delete this.contacts[i];
             return { success: true, data: undefined }
         }
@@ -673,7 +697,7 @@ export class Device2 {
             return { success: false, error: undefined, message: "cannot bind a RAW contact" };
         }
 
-        if (contact.address) {
+        if (false && contact.address) { // !TODO: can the contact be rebound?
             return { success: false, error: undefined, message: "contact already bound" };
         }
 
@@ -709,6 +733,58 @@ export class Device2 {
         // ignored because the logic above should ensure that all values are correct and inplace
         contact.address = caddr;
         return { success: true, data: caddr }
+    }
+
+    private contact_m_send_raw: Contact2["send"] = (contact, data, rtentry) => {
+        let outgoing_iface: BaseInterface;
+        if (data.rcvif) {
+            outgoing_iface = data.rcvif;
+        } else if (rtentry) {
+            outgoing_iface = rtentry.iface;
+        } else {
+            return { success: false, error: undefined, message: "outgoing interface MUST be provided" }
+        }
+
+        let destination: BaseAddress;
+
+        switch (contact.addressFamily) {
+            case "RAW": {
+                if (rtentry && rtentry.destination) {
+                    destination = rtentry.destination;
+                    break;
+                } else if (outgoing_iface.name != "eth") {
+                    return { success: false, error: undefined, message: "can't send AF:RAW on the interface: " + outgoing_iface.id }
+
+                }
+
+                destination = new BaseAddress(data.buffer.slice(0, ETHERNET_HEADER.getMinSize()));
+                data.buffer = data.buffer.slice(ETHERNET_HEADER.getMinSize());
+            }; break;
+            case "IPv4": {
+                destination = IPV4_HEADER.from(data.buffer).get("daddr");
+            }; break;
+            case "IPv6": {
+                destination = IPV6_HEADER.from(data.buffer).get("daddr");
+            }
+        }
+
+        let res = outgoing_iface.output(data, destination, rtentry);
+        return { success: res.success, error: undefined, data: undefined, message: res.message };
+    }
+
+    private contact_m_send_udp: Contact2["send"] = (contact, data, rtentry) => {
+        if (contact.addressFamily == "RAW") {
+            return { success: false, error: undefined, message: "cannot send incorrect \"address family\": " + contact.addressFamily }
+        }
+
+        if (!contact.address) {
+            return { success: false, error: undefined, message: "contact must be bound" };
+        }
+
+        // do the actual sending
+
+        throw "not implemented"
+
     }
 }
 
