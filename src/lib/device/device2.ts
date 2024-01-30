@@ -6,11 +6,12 @@ import { AddressMask, createMask } from "../address/mask";
 import { and, not, or } from "../binary";
 import { uint8_concat, uint8_equals, uint8_matchLength, uint8_readUint32BE } from "../binary/uint8-array";
 import { ETHERNET_HEADER, ETHER_TYPES, EtherType } from "../header/ethernet";
-import { IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../header/ip";
+import { IPV4_HEADER, IPV4_PSEUDO_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../header/ip";
 import { ARP_HEADER, ARP_OPCODES, createARPHeader } from "../header/arp";
 import { PacketCaptureHFormat, PacketCaptureNFormat, PacketCaptureRecordReader } from "../packet-capture/reader";
 import { calculateChecksum } from "../binary/checksum";
 import { ICMPV6_TYPES, ICMP_HEADER, ICMP_NDP_HEADER } from "../header/icmp";
+import { UDP_HEADER } from "../header/udp";
 
 export type NeighborEntry<AddressT extends BaseAddress = BaseAddress> = {
     neighbor: AddressT;
@@ -33,11 +34,12 @@ export type DeviceResult<E extends unknown = unknown, D extends unknown = undefi
 })
 
 export type NetworkData = {
-    type?: "DATA" | "HEADER";
     buffer: Uint8Array;
-
-    rcvif?: BaseInterface;
     broadcast?: boolean;
+    rcvif?: BaseInterface;
+
+    // !TODO: use the extra features that this structure provides
+    type?: "DATA" | "HEADER";
 }
 
 export type DeviceRoute<AddrType extends typeof BaseAddress = typeof BaseAddress> = {
@@ -139,6 +141,58 @@ export class Device2 {
         return this.log_records.filter((record) => record.iface.name + record.iface.unit == iface_id)
     }
 
+    output_udp(data: NetworkData, destination: BaseAddress, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
+        if (!route && !(route = this.route_resolve(destination))) return {
+            success: false,
+            error: "HOSTUNREACH",
+            message: "No outgoing route found"
+        }
+        // select an address from the outgoing interface
+        let source = route.iface.addresses.find(value => value.address.constructor == destination.constructor);
+        if (!source) return {
+            success: false,
+            error: "HOSTUNREACH",
+            message: "no source address for intreface found"
+        }
+
+        if (data.buffer.length < UDP_HEADER.getMinSize()) return { success: false, error: "ERROR", message: "bad header" };
+        let udphdr = UDP_HEADER.from(data.buffer);
+        udphdr.set("length", udphdr.getBuffer().byteLength);
+
+        let ip_output: Device2["output_ipv4"];
+        let iphdr: typeof IPV4_HEADER | typeof IPV6_HEADER;
+
+        udphdr.set("csum", 0);
+        if (destination instanceof IPV4Address) {
+            let pseudohdr = IPV4_PSEUDO_HEADER.create({
+                saddr: source.address as IPV4Address,
+                daddr: destination,
+                proto: PROTOCOLS.UDP,
+                len: udphdr.get("length")
+            });
+
+            udphdr.set("csum", calculateChecksum(uint8_concat([pseudohdr.getBuffer(), udphdr.getBuffer()])) || 0xffff);
+            ip_output = this.output_ipv4;
+            iphdr = IPV4_HEADER.create({ proto: PROTOCOLS.UDP, payload: udphdr.getBuffer() });
+        } else if (destination instanceof IPV6Address) {
+            let pseudohdr = IPV6_PSEUDO_HEADER.create({
+                saddr: source.address as IPV6Address,
+                daddr: destination,
+                proto: PROTOCOLS.UDP,
+                len: udphdr.get("length")
+            });
+
+            udphdr.set("csum", calculateChecksum(uint8_concat([pseudohdr.getBuffer(), udphdr.getBuffer()])));
+            ip_output = this.output_ipv6;
+            iphdr = IPV6_HEADER.create({ nextHeader: PROTOCOLS.UDP, payload: udphdr.getBuffer() });
+        } else {
+            return { success: false, error: "HOSTUNREACH", message: "destination MUST be an ip address" };
+        }
+
+        data.buffer = iphdr.getBuffer();
+        return ip_output(data, destination, route)
+    }
+
     input_ipv4(iphdr: typeof IPV4_HEADER, data: NetworkData) {
         if (!data.rcvif) { console.warn("rcvif missing"); return }
         console.log(iphdr.getBuffer())
@@ -150,11 +204,7 @@ export class Device2 {
         /** So the thinking is that the user would construct the iphdr */
 
         // Select route
-        if (!route) {
-            route = this.route_resolve(destination);
-        }
-
-        if (!route) return {
+        if (!route && !(route = this.route_resolve(destination))) return {
             success: false,
             error: "HOSTUNREACH",
             message: "No outgoing route found"
@@ -167,7 +217,7 @@ export class Device2 {
             message: "no source address for intreface found"
         }
         //  I'm unsure of how i want to access the outgoing data and if the iphdr has all the requisite data
-
+        if (data.buffer.length < IPV4_HEADER.getMinSize()) return { success: false, error: "ERROR", message: "bad header" };
         let iphdr = IPV4_HEADER.from(data.buffer);
 
         iphdr.set("version", 4);
@@ -223,11 +273,7 @@ export class Device2 {
 
     output_ipv6(data: NetworkData, destination: IPV6Address, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
         // Select route
-        if (!route) {
-            route = this.route_resolve(destination);
-        }
-
-        if (!route) return {
+        if (!route && !(route = this.route_resolve(destination))) return {
             success: false,
             error: "HOSTUNREACH",
             message: "No outgoing route found"
@@ -241,6 +287,7 @@ export class Device2 {
             message: "no source address for intreface found"
         }
 
+        if (data.buffer.length < IPV6_HEADER.getMinSize()) return { success: false, error: "ERROR", message: "bad header" };
         let iphdr = IPV6_HEADER.from(data.buffer);
 
         iphdr.set("version", 6);

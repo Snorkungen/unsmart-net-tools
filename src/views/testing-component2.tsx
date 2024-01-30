@@ -171,25 +171,12 @@ export const TestingComponent2: Component = () => {
     }
     function test_sending_ipv6(device: Device2, destination: IPV6Address) {
         let udphdr = UDP_HEADER.create({
+            sport: 8943,
+            dport: 4332,
+            payload: new Uint8Array([0xff, 0xff, 0xff, 0xff])
         });
 
-        let saddr = new IPV6Address("::");
-        // The actual spec <https://www.rfc-editor.org/rfc/rfc4443#section-2.3>
-        let pseudoHdr = IPV6_PSEUDO_HEADER.create({
-            saddr: saddr,
-            daddr: destination,
-            len: udphdr.size,
-            proto: PROTOCOLS.UDP,
-        })
-
-        let ipHdr = IPV6_HEADER.create({
-            saddr: saddr,
-            daddr: destination,
-            nextHeader: PROTOCOLS.UDP,
-            payload: udphdr.getBuffer()
-        })
-
-        let res = device.output_ipv6({buffer: ipHdr.getBuffer()}, destination)
+        let res = device.output_udp({ buffer: udphdr.getBuffer() }, destination)
         if (!res.success) {
             console.log(res.error, res.message)
         }
