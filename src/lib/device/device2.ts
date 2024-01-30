@@ -13,6 +13,9 @@ import { calculateChecksum } from "../binary/checksum";
 import { ICMPV6_TYPES, ICMP_HEADER, ICMP_NDP_HEADER } from "../header/icmp";
 import { UDP_HEADER } from "../header/udp";
 
+const _UNSET_ADDRESS_IPV4 = new IPV4Address("0.0.0.0"),
+    _UNSET_ADDRESS_IPV6 = new IPV6Address("::'");
+
 export type NeighborEntry<AddressT extends BaseAddress = BaseAddress> = {
     neighbor: AddressT;
     iface: BaseInterface;
@@ -87,6 +90,7 @@ export interface Contact2<AF extends ContactAF = ContactAF, Proto extends Contac
     bind(contact: Contact2<AF, Proto, AT, Addr>, caddr: ContactAddress2<Addr>): DeviceResult<ContactError, typeof caddr>;
 
     send(contact: Contact2<AF, Proto, AT, Addr>, data: NetworkData, destination?: Addr, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
+    sendTo(contact: Contact2<AF, Proto, AT, Addr>, data: NetworkData, caddr?: Partial<ContactAddress2<Addr>>, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
 }
 
 export class Device2 {
@@ -713,7 +717,7 @@ export class Device2 {
     }
 
     /** this is to ensure that contacts get given unique ephemeral ports */
-    private contact_ephemport = (((2_001 + 5) + 8_000) % 0xffff);
+    private contact_ephemport = 4001
     private contacts: (Contact2<ContactAF, ContactProto> | undefined)[] = []
     contact_create<CAF extends ContactAF, CProto extends ContactProto>(addressFamily: CAF, proto: CProto): DeviceResult<ContactError, Contact2<CAF, CProto>> {
         // do some rules checking
@@ -722,12 +726,15 @@ export class Device2 {
         }
 
         // methods for sending and doing stuff
-        let m_send: Contact2["send"];
+        let m_send: Contact2["send"],
+            m_sendTo: Contact2["sendTo"];
 
         if (proto == "RAW") {
             m_send = this.contact_m_send_raw;
+            m_sendTo = this.contact_m_sendTo_raw;
         } else if (proto == "UDP") {
             m_send = this.contact_m_send_udp;
+            m_sendTo = this.contact_m_sendTo_udp;
         } else {
             return { success: false, error: undefined, message: "could not determine methods based on ContactProto: " + proto };
         }
@@ -741,7 +748,8 @@ export class Device2 {
             close: this.contact_close.bind(this),
             bind: this.contact_bind.bind(this),
 
-            send: m_send.bind(this)
+            send: m_send.bind(this),
+            sendTo: m_sendTo.bind(this)
         };
 
         return { success: true, data: this.contacts[i] as Contact2<CAF, CProto> };
@@ -835,7 +843,7 @@ export class Device2 {
         return { success: false, error: undefined, message: "failed to send" }
     }
 
-    private contact_m_send_udp: Contact2["send"] = (contact, data) => {
+    private contact_m_send_udp: Contact2["send"] = (contact, data, _, rtentry) => {
         __contact_throw_if_closed(contact);
         if (contact.addressFamily == "RAW") {
             return { success: false, error: undefined, message: "cannot send incorrect \"address family\": " + contact.addressFamily }
@@ -845,10 +853,58 @@ export class Device2 {
             return { success: false, error: undefined, message: "contact must be bound" };
         }
 
-        // do the actual sending
+        let udphdr = UDP_HEADER.create({
+            sport: contact.address.sport,
+            dport: contact.address.dport,
+            payload: data.buffer
+        });
 
-        throw "not implemented"
+        data.buffer = udphdr.getBuffer();
+        let res = this.output_udp(data, contact.address.daddr, rtentry);
+        return { success: res.success, error: undefined, data: undefined, message: res.message }
+    }
 
+    private contact_m_sendTo_raw: Contact2["sendTo"] = (contact) => {
+        __contact_throw_if_closed(contact);
+        return { success: false, error: undefined, message: "method not supported for protocol, try using \"contact.send\”" }
+    }
+
+    private contact_m_sendTo_udp: Contact2["sendTo"] = (contact, data, caddr, rtentry) => {
+        __contact_throw_if_closed(contact);
+        if (contact.addressFamily == "RAW") {
+            return { success: false, error: undefined, message: "cannot send incorrect \"address family\": " + contact.addressFamily };
+        }
+
+        if (contact.address) {
+            return { success: false, error: undefined, message: "contact is bound, try using \"contact.send\”" };
+        }
+
+        if (!caddr?.daddr) {
+            return { success: false, error: undefined, message: "daddr is missing" };
+        } else if (!caddr?.dport) {
+            return { success: false, error: undefined, message: "dport is missing" }
+        }
+
+        if (!caddr.saddr) {
+            if (contact.addressFamily == "IPv4") {
+                caddr.saddr = _UNSET_ADDRESS_IPV4
+            } else if (contact.addressFamily == "IPv6") {
+                caddr.saddr = _UNSET_ADDRESS_IPV6;
+            } else {
+                throw "unsupported address family"
+            }
+        }
+
+        if (!caddr.sport) {
+            caddr.sport = this.contact_ephemport = Math.max(10_011, ((this.contact_ephemport + 5)) % 0xffff);
+        }
+
+        let bres = this.contact_bind(contact, caddr as ContactAddress2<BaseAddress>);
+        if (!bres.success) {
+            return { success: false, error: bres.error, message: bres.message };
+        }
+
+        return this.contact_m_send_udp(contact, data, undefined, rtentry);
     }
 }
 

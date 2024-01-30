@@ -170,13 +170,15 @@ export const TestingComponent2: Component = () => {
         contact!.close(contact!);
     }
     function test_sending_ipv6(device: Device2, destination: IPV6Address) {
-        let udphdr = UDP_HEADER.create({
-            sport: 8943,
-            dport: 4332,
-            payload: new Uint8Array([0xff, 0xff, 0xff, 0xff])
-        });
+        let cres = newdevice.contact_create("IPv6", "UDP");
+        if (!cres.success) {
+            console.log(cres.error, cres.message)
+            return
+        }
 
-        let res = device.output_udp({ buffer: udphdr.getBuffer() }, destination)
+        let contact = cres.data;
+
+        let res = contact.sendTo(contact, { buffer: new Uint8Array([0xff, 0xff, 0xff, 0xff]) }, { daddr: destination, dport: 4342 })
         if (!res.success) {
             console.log(res.error, res.message)
         }

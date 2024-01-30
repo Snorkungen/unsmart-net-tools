@@ -8,6 +8,8 @@
     - [x] Make device able to send ipv4 data
     - [x] Make device able to send ipv6 data
     - [ ] Integrate Device2 into Contact "Infrastructure"
+      - [x] implement output functionality
+      - [ ] implement listening & reception
   - [ ] Device -> contact
     - [x] UDP protocol support
     - [ ] TCP protocol support
