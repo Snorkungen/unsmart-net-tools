@@ -139,8 +139,6 @@ export const TestingComponent2: Component = () => {
     let firstcontact2 = newdevice.contact_create("IPv6", "UDP").data!;
     firstcontact2.bind(firstcontact2, { daddr: new IPV6Address("fe80::1"),saddr: new IPV6Address("::") ,dport: 80, sport: 0 })
     console.log(firstcontact2)
-    firstcontact2.close(firstcontact2)
-    console.log(firstcontact2.bind(firstcontact2, { daddr: new IPV6Address("fe80::1"),saddr: new IPV6Address("::") ,dport: 80, sport: 0 }))
 
     function sescape(str: string): Uint8Array {
         return uint8_concat([

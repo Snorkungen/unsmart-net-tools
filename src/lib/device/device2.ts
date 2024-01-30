@@ -64,7 +64,16 @@ type ContactAddress2<Addr extends BaseAddress> = {
     saddr: Addr;
     daddr: Addr;
 }
+
+function __contact_throw_if_closed(contact: Contact2) {
+    if (contact.status === "CLOSED") {
+        throw new Error("contact has been closed");
+    }
+}
+
 export interface Contact2<AF extends ContactAF = ContactAF, Proto extends ContactProto = ContactProto, AT extends typeof BaseAddress = typeof BaseAddress, Addr extends BaseAddress = InstanceType<AT>> {
+    status: "OPEN" | "CLOSED";
+
     addressFamily: AF;
     proto: Proto;
 
@@ -668,6 +677,7 @@ export class Device2 {
 
         let i = -1; while (this.contacts[++i]) { continue; }
         this.contacts[i] = {
+            status: "OPEN",
             addressFamily: addressFamily,
             proto: proto,
 
@@ -680,12 +690,15 @@ export class Device2 {
         return { success: true, data: this.contacts[i] as Contact2<CAF, CProto> };
     }
     contact_close(contact: Contact2): DeviceResult<ContactError> {
+        __contact_throw_if_closed(contact);
+
         // have some logic to stop doing other stuff i.e. TCP
 
         let i = this.contacts.indexOf(contact);
-        if (i >= 0) {
+        if (i >= 0 && this.contacts[i]) {
             // !TODO: in future add more logic to the removal of a contact
             // i.e. TCP has a cooldown period etc.
+            this.contacts[i]!.status = "CLOSED"
             delete this.contacts[i];
             return { success: true, data: undefined }
         }
@@ -693,6 +706,7 @@ export class Device2 {
         return { success: false, error: undefined, message: "could not locate contact" }
     }
     contact_bind<Addr extends BaseAddress = BaseAddress>(contact: Contact2, caddr: ContactAddress2<Addr>): DeviceResult<ContactError, ContactAddress2<Addr>> {
+        __contact_throw_if_closed(contact);
         if (contact.addressFamily == "RAW" || contact.proto == "RAW") {
             return { success: false, error: undefined, message: "cannot bind a RAW contact" };
         }
@@ -736,6 +750,7 @@ export class Device2 {
     }
 
     private contact_m_send_raw: Contact2["send"] = (contact, data, rtentry) => {
+        __contact_throw_if_closed(contact);
         let outgoing_iface: BaseInterface;
         if (data.rcvif) {
             outgoing_iface = data.rcvif;
@@ -747,25 +762,21 @@ export class Device2 {
 
         let destination: BaseAddress;
 
-        switch (contact.addressFamily) {
-            case "RAW": {
-                if (rtentry && rtentry.destination) {
-                    destination = rtentry.destination;
-                    break;
-                } else if (outgoing_iface.name != "eth") {
-                    return { success: false, error: undefined, message: "can't send AF:RAW on the interface: " + outgoing_iface.id }
-
-                }
-
-                destination = new BaseAddress(data.buffer.slice(0, ETHERNET_HEADER.getMinSize()));
-                data.buffer = data.buffer.slice(ETHERNET_HEADER.getMinSize());
-            }; break;
-            case "IPv4": {
-                destination = IPV4_HEADER.from(data.buffer).get("daddr");
-            }; break;
-            case "IPv6": {
-                destination = IPV6_HEADER.from(data.buffer).get("daddr");
+        if (rtentry) {
+            destination = rtentry.destination;
+        } else if (contact.addressFamily == "RAW") {
+            if (outgoing_iface.name != "eth") {
+                return { success: false, error: undefined, message: "can't send AF:RAW on the interface: " + outgoing_iface.id }
             }
+
+            destination = new BaseAddress(data.buffer.slice(0, ETHERNET_HEADER.getMinSize()));
+            data.buffer = data.buffer.slice(ETHERNET_HEADER.getMinSize());
+        } else if (contact.addressFamily == "IPv4") {
+            destination = IPV4_HEADER.from(data.buffer).get("daddr");
+        } else if (contact.addressFamily == "IPv6") {
+            destination = IPV6_HEADER.from(data.buffer).get("daddr");
+        } else {
+            return { success: false, error: undefined, message: "cannot send; no destination found" };
         }
 
         let res = outgoing_iface.output(data, destination, rtentry);
@@ -773,6 +784,7 @@ export class Device2 {
     }
 
     private contact_m_send_udp: Contact2["send"] = (contact, data, rtentry) => {
+        __contact_throw_if_closed(contact);
         if (contact.addressFamily == "RAW") {
             return { success: false, error: undefined, message: "cannot send incorrect \"address family\": " + contact.addressFamily }
         }
