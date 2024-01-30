@@ -84,7 +84,7 @@ export interface Contact2<AF extends ContactAF = ContactAF, Proto extends Contac
     close(contact: Contact2<AF, Proto, AT, Addr>): DeviceResult<ContactError>;
     bind(contact: Contact2<AF, Proto, AT, Addr>, caddr: ContactAddress2<Addr>): DeviceResult<ContactError, typeof caddr>;
 
-    send(contact: Contact2<AF, Proto, AT, Addr>, data: NetworkData, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
+    send(contact: Contact2<AF, Proto, AT, Addr>, data: NetworkData, destination?: Addr, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
 }
 
 export class Device2 {
@@ -146,11 +146,14 @@ export class Device2 {
         // then do some checking if this message is for this device
     }
 
-    output_ipv4(iphdr: typeof IPV4_HEADER, destination: IPV4Address, options?: unknown): DeviceResult<"HOSTUNREACH" | "ERROR"> {
+    output_ipv4(data: NetworkData, destination: IPV4Address, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
         /** So the thinking is that the user would construct the iphdr */
 
         // Select route
-        let route: DeviceRoute | undefined = this.route_resolve(destination);
+        if (!route) {
+            route = this.route_resolve(destination);
+        }
+
         if (!route) return {
             success: false,
             error: "HOSTUNREACH",
@@ -163,7 +166,9 @@ export class Device2 {
             error: "HOSTUNREACH",
             message: "no source address for intreface found"
         }
-        //  I'm unsure of how i want to acces the outgoing data and if the iphdr has all the requisite data
+        //  I'm unsure of how i want to access the outgoing data and if the iphdr has all the requisite data
+
+        let iphdr = IPV4_HEADER.from(data.buffer);
 
         iphdr.set("version", 4);
         iphdr.set("ihl", iphdr.get("ihl") || iphdr.getMinSize() >> 2); // the user can set the ihl
@@ -187,13 +192,13 @@ export class Device2 {
         iphdr.set("csum", 0);
         iphdr.set("csum", calculateChecksum(iphdr.getBuffer().slice(0, iphdr.get("ihl") << 2)));
 
+        data.buffer = iphdr.getBuffer()
+
         // put some thinking to if the destination is a broadcast address
         let broadcast = uint8_readUint32BE(not(or(source.netmask.buffer, iphdr.get("daddr").buffer))) === 0;
+        if (broadcast) { data.broadcast = broadcast }
 
-        let res = route.iface.output({
-            buffer: iphdr.getBuffer(),
-            broadcast: broadcast
-        }, destination, route);
+        let res = route.iface.output(data, destination, route);
 
         return {
             success: res.success,
@@ -216,9 +221,12 @@ export class Device2 {
 
     }
 
-    output_ipv6(iphdr: typeof IPV6_HEADER, destination: IPV6Address, options?: unknown): DeviceResult<"HOSTUNREACH" | "ERROR"> {
+    output_ipv6(data: NetworkData, destination: IPV6Address, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
         // Select route
-        let route: DeviceRoute | undefined = this.route_resolve(destination);
+        if (!route) {
+            route = this.route_resolve(destination);
+        }
+
         if (!route) return {
             success: false,
             error: "HOSTUNREACH",
@@ -232,6 +240,8 @@ export class Device2 {
             error: "HOSTUNREACH",
             message: "no source address for intreface found"
         }
+
+        let iphdr = IPV6_HEADER.from(data.buffer);
 
         iphdr.set("version", 6);
         // flow label something maybe i don't know
@@ -251,12 +261,12 @@ export class Device2 {
             }
         }
 
-        let broadcast = destination.isMulticast()
+        data.buffer = iphdr.getBuffer();
 
-        let res = route.iface.output({
-            buffer: iphdr.getBuffer(),
-            broadcast: broadcast
-        }, destination, route);
+        let broadcast = destination.isMulticast();
+        if (broadcast) { data.broadcast = broadcast }
+
+        let res = route.iface.output(data, destination, route);
 
         return {
             success: res.success,
@@ -749,41 +759,36 @@ export class Device2 {
         return { success: true, data: caddr }
     }
 
-    private contact_m_send_raw: Contact2["send"] = (contact, data, rtentry) => {
+    private contact_m_send_raw: Contact2["send"] = (contact, data, destination, rtentry) => {
         __contact_throw_if_closed(contact);
-        let outgoing_iface: BaseInterface;
-        if (data.rcvif) {
-            outgoing_iface = data.rcvif;
-        } else if (rtentry) {
-            outgoing_iface = rtentry.iface;
-        } else {
-            return { success: false, error: undefined, message: "outgoing interface MUST be provided" }
+
+        if (!destination) {
+            return { success: false, error: undefined, message: "destination missing" }
         }
 
-        let destination: BaseAddress;
-
-        if (rtentry) {
-            destination = rtentry.destination;
-        } else if (contact.addressFamily == "RAW") {
-            if (outgoing_iface.name != "eth") {
-                return { success: false, error: undefined, message: "can't send AF:RAW on the interface: " + outgoing_iface.id }
+        if (contact.addressFamily == "RAW") {
+            if (!rtentry) {
+                return { success: false, error: undefined, message: "AF:RAW route missing" };
             }
 
-            destination = new BaseAddress(data.buffer.slice(0, ETHERNET_HEADER.getMinSize()));
-            data.buffer = data.buffer.slice(ETHERNET_HEADER.getMinSize());
-        } else if (contact.addressFamily == "IPv4") {
-            destination = IPV4_HEADER.from(data.buffer).get("daddr");
-        } else if (contact.addressFamily == "IPv6") {
-            destination = IPV6_HEADER.from(data.buffer).get("daddr");
-        } else {
-            return { success: false, error: undefined, message: "cannot send; no destination found" };
+            let res = rtentry.iface.output(data, destination, rtentry);
+            return { success: res.success, error: undefined, data: undefined, message: res.message };
         }
 
-        let res = outgoing_iface.output(data, destination, rtentry);
-        return { success: res.success, error: undefined, data: undefined, message: res.message };
+        if (contact.addressFamily == "IPv4" && destination instanceof IPV4Address) {
+            let res = this.output_ipv4(data, destination, rtentry as undefined | DeviceRoute<typeof IPV4Address>);
+            return { success: res.success, error: undefined, data: undefined, message: res.message };
+        }
+
+        if (contact.addressFamily == "IPv6" && destination instanceof IPV6Address) {
+            let res = this.output_ipv6(data, destination, rtentry as undefined | DeviceRoute<typeof IPV4Address>);
+            return { success: res.success, error: undefined, data: undefined, message: res.message };
+        }
+
+        return { success: false, error: undefined, message: "failed to send" }
     }
 
-    private contact_m_send_udp: Contact2["send"] = (contact, data, rtentry) => {
+    private contact_m_send_udp: Contact2["send"] = (contact, data) => {
         __contact_throw_if_closed(contact);
         if (contact.addressFamily == "RAW") {
             return { success: false, error: undefined, message: "cannot send incorrect \"address family\": " + contact.addressFamily }

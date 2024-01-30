@@ -8,7 +8,7 @@ import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_HELP } from "
 import { DPSignal, DeviceProgramStatus } from "../lib/device/device-program";
 import { formatTable } from "../lib/device/program/helpers";
 import { Device2, EthernetInterface, LoopbackInterface } from "../lib/device/device2";
-import { ICMPV4_TYPES, ICMPV6_TYPES, ICMP_HEADER } from "../lib/header/icmp";
+import { ICMPV4_TYPES, ICMPV6_TYPES, ICMP_HEADER, ICMP_ECHO_HEADER } from "../lib/header/icmp";
 import { IPV4Address } from "../lib/address/ipv4";
 import { calculateChecksum } from "../lib/binary/checksum";
 import { UNSET_IPV4_ADDRESS } from "../lib/device/contact/contacts-handler";
@@ -136,10 +136,6 @@ export const TestingComponent2: Component = () => {
     etherinterface_1.connect(etherinterface_2)
     console.log(newdevice)
 
-    let firstcontact2 = newdevice.contact_create("IPv6", "UDP").data!;
-    firstcontact2.bind(firstcontact2, { daddr: new IPV6Address("fe80::1"),saddr: new IPV6Address("::") ,dport: 80, sport: 0 })
-    console.log(firstcontact2)
-
     function sescape(str: string): Uint8Array {
         return uint8_concat([
             new Uint8Array([ASCIICodes.Escape]),
@@ -148,22 +144,30 @@ export const TestingComponent2: Component = () => {
     }
 
     function test_sending_ipv4(device: Device2, destination: IPV4Address) {
-        let icmpHdr = ICMP_HEADER.create({
+        let identifier = Math.floor(Math.random() * 0xfffe), sequence = 1;
+        let echohdr = ICMP_ECHO_HEADER.create({
+            id: identifier,
+            seq: sequence,
+        }), icmphdr = ICMP_HEADER.create({
             type: ICMPV4_TYPES.ECHO_REQUEST,
-            data: new Uint8Array([0, 0, 0, 1, 1, 1, 1, 1])
+            data: echohdr.getBuffer()
         });
 
-        icmpHdr.set("csum", calculateChecksum(icmpHdr.getBuffer()))
+        icmphdr.set("csum", calculateChecksum(icmphdr.getBuffer()));
 
-        let ipHdr = IPV4_HEADER.create({
+        let contact = device.contact_create("IPv4", "RAW")!.data;
+
+        let iphdr = IPV4_HEADER.create({
             proto: PROTOCOLS.ICMP,
-            payload: icmpHdr.getBuffer()
-        });
+            payload: icmphdr.getBuffer()
+        })
 
-        let res = device.output_ipv4(ipHdr, destination)
+        let res = contact!.send(contact!, { buffer: iphdr.getBuffer() }, destination);
         if (!res.success) {
             console.log(res.error, res.message)
         }
+
+        contact!.close(contact!);
     }
     function test_sending_ipv6(device: Device2, destination: IPV6Address) {
         let udphdr = UDP_HEADER.create({
@@ -185,7 +189,7 @@ export const TestingComponent2: Component = () => {
             payload: udphdr.getBuffer()
         })
 
-        let res = device.output_ipv6(ipHdr, destination)
+        let res = device.output_ipv6({buffer: ipHdr.getBuffer()}, destination)
         if (!res.success) {
             console.log(res.error, res.message)
         }
