@@ -136,6 +136,54 @@ export const TestingComponent2: Component = () => {
     etherinterface_1.connect(etherinterface_2)
     console.log(newdevice)
 
+    let raw_contact_receiver: Parameters<Device2["contact_receive"]>[1] = (contact, data) => {
+        // first test reply to echo request
+        if (!data.rcvif) throw "rcvif is undefinded";
+
+        // ASSUME THAT CHECKSUM WILL NEVER FAIL
+
+        let iphdr = IPV4_HEADER.from(data.buffer);
+        if (iphdr.get("proto") != PROTOCOLS.ICMP) {
+            console.log(data.rcvif!.device.name, data.rcvif?.id(), data.broadcast, data.buffer.length)
+            return;
+        }
+
+        let icmphdr = ICMP_HEADER.from(iphdr.get("payload"));
+
+        if (icmphdr.get("type") == ICMPV4_TYPES.ECHO_REQUEST) {
+            console.log(data.rcvif.device.name, "received an ipv4 echo request")
+
+            let reply_icmphdr = icmphdr;
+
+            reply_icmphdr.set("type", ICMPV4_TYPES.ECHO_REPLY);
+            reply_icmphdr.set("csum", 0);
+            reply_icmphdr.set("csum", calculateChecksum(reply_icmphdr.getBuffer()));
+
+            iphdr.set("payload", reply_icmphdr.getBuffer())
+            iphdr.set("ttl", 0);
+            iphdr.set("csum", 0);
+            let daddr = iphdr.get("saddr");
+            iphdr.set("daddr", daddr)
+            iphdr.set("saddr", iphdr.get("daddr"))
+
+            iphdr.set("csum", calculateChecksum(iphdr.getBuffer().slice(0, iphdr.get("ihl") << 2)));
+            let res = contact.send(contact, { buffer: iphdr.getBuffer() }, daddr);
+            if (!res.success) {
+                console.log(res.error, res.message)
+            }
+        } else if (icmphdr.get("type") == ICMPV4_TYPES.ECHO_REPLY) {
+            console.log(data.rcvif.device.name, "received icmp echo reply")
+        }
+
+
+    }
+    
+    let raw_contact_device1 = newdevice.contact_create("IPv4", "RAW").data!;
+    let raw_contact_device2 = newdevice2.contact_create("IPv4", "RAW").data!;
+    raw_contact_device1.receive(raw_contact_device1, raw_contact_receiver)
+    raw_contact_device2.receive(raw_contact_device2, raw_contact_receiver)
+
+
     function sescape(str: string): Uint8Array {
         return uint8_concat([
             new Uint8Array([ASCIICodes.Escape]),
@@ -144,6 +192,8 @@ export const TestingComponent2: Component = () => {
     }
 
     function test_sending_ipv4(device: Device2, destination: IPV4Address) {
+        console.log("%cSENDING ECHO TO: " + destination, "padding:1em; color:green; background: black;")
+
         let identifier = Math.floor(Math.random() * 0xfffe), sequence = 1;
         let echohdr = ICMP_ECHO_HEADER.create({
             id: identifier,
@@ -170,7 +220,7 @@ export const TestingComponent2: Component = () => {
         contact!.close(contact!);
     }
     function test_sending_ipv6(device: Device2, destination: IPV6Address) {
-        let cres = newdevice.contact_create("IPv6", "UDP");
+        let cres = device.contact_create("IPv6", "UDP");
         if (!cres.success) {
             console.log(cres.error, cres.message)
             return
@@ -195,7 +245,7 @@ export const TestingComponent2: Component = () => {
             <button onClick={() => {
                 test_sending_ipv4(newdevice2, new IPV4Address("192.168.1.255"))
             }}>test device 2 ether broadcast</button>
-            <button onClick={() => { test_sending_ipv6(newdevice, etherinterface_2_ipv6_address) }}>ipv6 send</button>
+            <button onClick={() => { test_sending_ipv6(newdevice2, etherinterface_1_ipv6_address) }}>ipv6 send</button>
             <button onClick={() => {
                 window.setTimeout(() => downloadDevice2PCAP(newdevice), 150)
                 shell.read(sescape("echo hellow orlf looser\nhelp\ntest\necho cool"))

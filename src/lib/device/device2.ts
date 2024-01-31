@@ -13,6 +13,9 @@ import { calculateChecksum } from "../binary/checksum";
 import { ICMPV6_TYPES, ICMP_HEADER, ICMP_NDP_HEADER } from "../header/icmp";
 import { UDP_HEADER } from "../header/udp";
 
+// source <https://stackoverflow.com/a/63029283>
+type DropFirst<T extends unknown[]> = T extends [any, ...infer U] ? U : never;
+
 const _UNSET_ADDRESS_IPV4 = new IPV4Address("0.0.0.0"),
     _UNSET_ADDRESS_IPV6 = new IPV6Address("::'");
 
@@ -59,8 +62,10 @@ export type DeviceRoute<AddrType extends typeof BaseAddress = typeof BaseAddress
     iface: BaseInterface;
 }
 
+
 type ContactAF = "RAW" | "IPv4" | "IPv6";
 type ContactProto = "RAW" | "UDP";
+type ContactReciever = (contact: Contact2, data: NetworkData, caddr?: ContactAddress2<BaseAddress>) => void // !TODO: think about if receiver should get the contact passed in
 type ContactError = unknown; // !TODO: conjure up some type of problems that might occur
 
 type ContactAddress2<Addr extends BaseAddress> = {
@@ -88,9 +93,11 @@ export interface Contact2<AF extends ContactAF = ContactAF, Proto extends Contac
     /* Methods */
     close(contact: Contact2<AF, Proto, AT, Addr>): DeviceResult<ContactError>;
     bind(contact: Contact2<AF, Proto, AT, Addr>, caddr: ContactAddress2<Addr>): DeviceResult<ContactError, typeof caddr>;
+    receive(contact: Contact2, receiver: ContactReciever): DeviceResult<ContactError>;
 
     send(contact: Contact2<AF, Proto, AT, Addr>, data: NetworkData, destination?: Addr, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
     sendTo(contact: Contact2<AF, Proto, AT, Addr>, data: NetworkData, caddr?: Partial<ContactAddress2<Addr>>, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
+
 }
 
 export class Device2 {
@@ -119,7 +126,7 @@ export class Device2 {
         let iface_name = iface.name + iface.unit;
 
         if (type == "RECIEVE") {
-            console.info(`${this.name} - ${iface_name}: recieved a frame from ${frame_info.saddr}`)
+            console.info(`${this.name} - ${iface_name}: received a frame from ${frame_info.saddr}`)
         } else if (type == "SEND") {
             console.info(`${this.name} - ${iface_name}: sent a frame to ${frame_info.daddr}`)
         }
@@ -199,9 +206,11 @@ export class Device2 {
 
     input_ipv4(iphdr: typeof IPV4_HEADER, data: NetworkData) {
         if (!data.rcvif) { console.warn("rcvif missing"); return }
-        console.log(iphdr.getBuffer())
 
         // then do some checking if this message is for this device
+
+        this.contact_input_raw("IPv4", "RAW", { ...data, buffer: iphdr.getBuffer() });
+        this.contact_input_raw("RAW", "RAW", data);
     }
 
     output_ipv4(data: NetworkData, destination: IPV4Address, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
@@ -268,11 +277,13 @@ export class Device2 {
 
 
         if (iphdr.get("nextHeader") === PROTOCOLS.IPV6_ICMP) {
-            this.input_icmp6(iphdr, data)
+            return this.input_icmp6(iphdr, data)
         } else {
-            console.log(iphdr.getBuffer())
+            // console.log(iphdr.getBuffer())
+            this.contact_input_raw("IPv6", "RAW", { ...data, buffer: iphdr.getBuffer() });
         }
 
+        this.contact_input_raw("RAW", "RAW", data);
     }
 
     output_ipv6(data: NetworkData, destination: IPV6Address, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
@@ -338,7 +349,9 @@ export class Device2 {
                 this.input_ndp_advertisment(iphdr, data); break;
             case ICMPV6_TYPES.NEIGHBOR_SOLICITATION:
                 this.input_ndp_solicitation(iphdr, data); break;
-
+            default: {
+                this.contact_input_raw("IPv6", "RAW", { ...data, buffer: iphdr.getBuffer() });
+            }
         }
     }
 
@@ -477,17 +490,19 @@ export class Device2 {
         if (etherframe.get("ethertype") == ETHER_TYPES.IPv4) {
             this.input_ipv4(
                 IPV4_HEADER.from(etherframe.get("payload")),
-                { rcvif: data.rcvif, broadcast: data.broadcast, buffer: etherframe.getBuffer().slice(0, ETHERNET_HEADER.getMinSize()) }
+                { rcvif: data.rcvif, broadcast: data.broadcast, buffer: etherframe.getBuffer() }
             )
         } else if (etherframe.get("ethertype") == ETHER_TYPES.IPv6) {
             this.input_ipv6(
                 IPV6_HEADER.from(etherframe.get("payload")),
-                { rcvif: data.rcvif, broadcast: data.broadcast, buffer: etherframe.getBuffer().slice(0, ETHERNET_HEADER.getMinSize()) }
+                { rcvif: data.rcvif, broadcast: data.broadcast, buffer: etherframe.getBuffer() }
             )
         } else if (etherframe.get("ethertype") == ETHER_TYPES.ARP) {
             this.input_arp(etherframe, { rcvif: data.rcvif, broadcast: data.broadcast, buffer: etherframe.getBuffer().slice(0, ETHERNET_HEADER.getMinSize()) })
         } else if (etherframe.get("ethertype") == ETHER_TYPES.VLAN) {
             throw new Error("not implemented")
+        } else {
+            this.contact_input_raw("RAW", "RAW", data);
         }
 
         // this knows that the data is an ethernet frame
@@ -718,7 +733,8 @@ export class Device2 {
 
     /** this is to ensure that contacts get given unique ephemeral ports */
     private contact_ephemport = 4001
-    private contacts: (Contact2<ContactAF, ContactProto> | undefined)[] = []
+    private contacts: (Contact2<ContactAF, ContactProto> | undefined)[] = [];
+    private contact_receivers: ({ receiver: ContactReciever, contact: Contact2 } | undefined)[] = [];
     contact_create<CAF extends ContactAF, CProto extends ContactProto>(addressFamily: CAF, proto: CProto): DeviceResult<ContactError, Contact2<CAF, CProto>> {
         // do some rules checking
         if (addressFamily === "RAW" && proto !== "RAW") {
@@ -747,6 +763,7 @@ export class Device2 {
 
             close: this.contact_close.bind(this),
             bind: this.contact_bind.bind(this),
+            receive: this.contact_receive.bind(this),
 
             send: m_send.bind(this),
             sendTo: m_sendTo.bind(this)
@@ -758,6 +775,13 @@ export class Device2 {
         __contact_throw_if_closed(contact);
 
         // have some logic to stop doing other stuff i.e. TCP
+
+
+        // remove listeners for contact
+        for (let i = 0; i < this.contact_receivers.length; i++) {
+            if (this.contact_receivers[i]?.contact != contact) { continue; }
+            delete this.contact_receivers[i];
+        }
 
         let i = this.contacts.indexOf(contact);
         if (i >= 0 && this.contacts[i]) {
@@ -812,6 +836,26 @@ export class Device2 {
         // ignored because the logic above should ensure that all values are correct and inplace
         contact.address = caddr;
         return { success: true, data: caddr }
+    }
+    contact_receive: Contact2["receive"] = (contact, receiver) => {
+        let i = -1; while (this.contact_receivers[++i]) { continue; };
+
+        this.contact_receivers[i] = {
+            contact: contact,
+            receiver: receiver
+        };
+
+        return { success: true, data: undefined };
+    }
+
+    private contact_input_raw(af: ContactAF, proto: ContactProto, ...receiver_params: DropFirst<Parameters<ContactReciever>>) {
+        for (let creciver of this.contact_receivers) {
+            if (!creciver || creciver.contact.addressFamily != af || creciver.contact.proto != proto) {
+                continue;
+            }
+
+            creciver.receiver(creciver.contact, ...receiver_params);
+        }
     }
 
     private contact_m_send_raw: Contact2["send"] = (contact, data, destination, rtentry) => {
@@ -925,7 +969,7 @@ class BaseInterface {
 
     /** MAX TRANSMISSION UNIT */
     mtu: number;
-    /** if interface is up and ready to send and recieve */
+    /** if interface is up and ready to send and receive */
     up: boolean;
 
 
@@ -1008,21 +1052,21 @@ export class EthernetInterface extends BaseInterface {
 
         if (uint8_equals(etherheader.get("smac").buffer, etherheader.get("dmac").buffer)) {
             // this was meant for myself
-            window.setTimeout(() => this.recieve(etherheader), 0)
+            window.setTimeout(() => this.receive(etherheader), 0)
             return { success: true, data: undefined }
         }
 
         if (etherheader.get("dmac").isBroadcast()) {
             // here i should send to the interface itself but i don't want that
-            // window.setTimeout(() => this.recieve(etherheader), 0)
+            // window.setTimeout(() => this.receive(etherheader), 0)
         }
 
         // somehow put on wire
-        window.setTimeout(() => this.target && this.target.recieve.bind(this.target)(etherheader), 0)
+        window.setTimeout(() => this.target && this.target.receive.bind(this.target)(etherheader), 0)
         return { success: true, data: undefined }
     }
 
-    private recieve(etherheader: typeof ETHERNET_HEADER): boolean {
+    private receive(etherheader: typeof ETHERNET_HEADER): boolean {
         this.device.log({
             type: "DATA",
             buffer: etherheader.getBuffer(),
@@ -1080,8 +1124,6 @@ export class LoopbackInterface extends BaseInterface {
         data.rcvif = this;
 
         let ethertype: EtherType;
-
-
         if (destination instanceof IPV4Address) {
             ethertype = ETHER_TYPES.IPv4;
         } else if (destination instanceof IPV6Address) {
@@ -1104,12 +1146,11 @@ export class LoopbackInterface extends BaseInterface {
         this.device.log(log_data, "SEND", false)
         this.device.log(log_data, "RECIEVE", true) // Duplicate recording is probably superflous
 
-        let ndata: NetworkData = { rcvif: this, buffer: new Uint8Array() }
         window.setTimeout(() => {
             if (ethertype == ETHER_TYPES.IPv4) {
-                this.device.input_ipv4(IPV4_HEADER.from(data.buffer), ndata)
+                this.device.input_ipv4(IPV4_HEADER.from(data.buffer), data)
             } else if (ethertype == ETHER_TYPES.IPv6) {
-                this.device.input_ipv6(IPV6_HEADER.from(data.buffer), ndata)
+                this.device.input_ipv6(IPV6_HEADER.from(data.buffer), data)
             }
         }, 0)
 
