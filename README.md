@@ -4,12 +4,11 @@
 
 - Develop on device logic
   - [ ] Overhaul Device
-    - [x] Make the DeviceInterface an actual interface
-    - [x] Make device able to send ipv4 data
-    - [x] Make device able to send ipv6 data
-    - [ ] Integrate Device2 into Contact "Infrastructure"
-      - [x] implement output functionality
-      - [ ] implement listening & reception
+    - [x] Integrate Device2 into Contact "Infrastructure"
+    - [ ] flesh out the functionality
+      - [ ] output_ip check that the destination is not source then loopback etc.
+      - [ ] input_ip verify that daddr is for the device
+    - [ ] create Process system
   - [ ] Device -> contact
     - [x] UDP protocol support
     - [ ] TCP protocol support

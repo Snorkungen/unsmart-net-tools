@@ -65,7 +65,7 @@ export type DeviceRoute<AddrType extends typeof BaseAddress = typeof BaseAddress
 
 type ContactAF = "RAW" | "IPv4" | "IPv6";
 type ContactProto = "RAW" | "UDP";
-type ContactReciever = (contact: Contact2, data: NetworkData, caddr?: ContactAddress2<BaseAddress>) => void // !TODO: think about if receiver should get the contact passed in
+type ContactReciever = (contact: Contact2, data: NetworkData, caddr?: ContactAddress2<BaseAddress>) => void;
 type ContactError = unknown; // !TODO: conjure up some type of problems that might occur
 
 type ContactAddress2<Addr extends BaseAddress> = {
@@ -139,7 +139,9 @@ export interface Contact2<AF extends ContactAF = ContactAF, Proto extends Contac
     /* Methods */
     close(contact: Contact2<AF, Proto, AT, Addr>): DeviceResult<ContactError>;
     bind(contact: Contact2<AF, Proto, AT, Addr>, caddr: ContactAddress2<Addr>): DeviceResult<ContactError, typeof caddr>;
+
     receive(contact: Contact2, receiver: ContactReciever): DeviceResult<ContactError>;
+    receiveFrom(contact: Contact2, receiver: ContactReciever, caddr: Partial<ContactAddress2<Addr>>): DeviceResult<ContactError>;
 
     send(contact: Contact2<AF, Proto, AT, Addr>, data: NetworkData, destination?: Addr, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
     sendTo(contact: Contact2<AF, Proto, AT, Addr>, data: NetworkData, caddr?: Partial<ContactAddress2<Addr>>, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
@@ -251,8 +253,14 @@ export class Device2 {
         if (!data.rcvif) { console.warn("rcvif missing"); return }
         if (calculateChecksum(iphdr.getBuffer().slice(0, iphdr.get("ihl") << 2)) != 0) {
             // checksum failed
-            console.warn("input_ipv4 - [bad checksum]")
+            console.warn("input_ipv4: [bad checksum]")
             return;
+        }
+
+        this.contact_input_raw("RAW", data);
+
+        if ((iphdr.get("flags") & (1 << 2)) < 0) {
+            throw "ipv4 fragments not supported"
         }
 
         // !TODO: verify that daddr is for this device
@@ -264,7 +272,7 @@ export class Device2 {
             this.contact_input_raw("IPv4", { ...data, buffer: iphdr.getBuffer() });
         }
 
-        this.contact_input_raw("RAW", data);
+
     }
 
     output_ipv4(data: NetworkData, destination: IPV4Address, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
@@ -327,7 +335,19 @@ export class Device2 {
     input_udp4(iphdr: typeof IPV4_HEADER, data: NetworkData) {
         let udphdr = UDP_HEADER.from(iphdr.get("payload"));
 
-        // !TODO: verify checksum
+        if (udphdr.get("csum") > 0) {
+            let pseudohdr = IPV4_PSEUDO_HEADER.create({
+                saddr: iphdr.get("saddr"),
+                daddr: iphdr.get("daddr"),
+                proto: PROTOCOLS.UDP,
+                len: udphdr.get("length")
+            });
+
+            if (calculateChecksum(uint8_concat([pseudohdr.getBuffer(), udphdr.getBuffer()])) !== 0) {
+                console.warn("input_udp4: [bad checksum]")
+                return;
+            }
+        }
 
         this.contact_input_udp("IPv4", { ...data, buffer: udphdr.get("payload") }, {
             saddr: iphdr.get("daddr"),
@@ -339,8 +359,17 @@ export class Device2 {
 
     input_udp6(iphdr: typeof IPV6_HEADER, data: NetworkData) {
         let udphdr = UDP_HEADER.from(iphdr.get("payload"));
+        let pseudohdr = IPV6_PSEUDO_HEADER.create({
+            saddr: iphdr.get("saddr"),
+            daddr: iphdr.get("daddr"),
+            proto: PROTOCOLS.UDP,
+            len: udphdr.get("length")
+        });
 
-        // !TODO: verify checksum
+        if (calculateChecksum(uint8_concat([pseudohdr.getBuffer(), udphdr.getBuffer()])) !== 0) {
+            console.warn("input_udp6: [bad checksum]")
+            return;
+        }
 
         this.contact_input_udp("IPv6", { ...data, buffer: udphdr.get("payload") }, {
             saddr: iphdr.get("daddr"),
@@ -594,7 +623,7 @@ export class Device2 {
 
     arp_sendqueue = new Map<string, (Parameters<BaseInterface["output"]> | null)[]>();
     arp_cache = new Map<string, NeighborEntry<BaseAddress>>();
-    arp_resolve(data: NetworkData, destination: BaseAddress, rtentry: DeviceRoute): MACAddress | null { // !TODO: i could  have this return a DeviceError<unknown, MACAddress | null>
+    arp_resolve(data: NetworkData, destination: BaseAddress, rtentry: DeviceRoute): MACAddress | null {
         if (data.broadcast) {
             // destination is meant to be broad casted
             return new MACAddress("ff:ff:ff:ff:ff:ff")
@@ -748,6 +777,10 @@ export class Device2 {
     }
 
     interfaces: BaseInterface[] = [];
+    // interface_add and interface_remove defined so that if further devices have som type extra configuration they want to do
+    interface_add(iface: BaseInterface) { this.interfaces.push(iface) };
+    interface_remove(iface: BaseInterface) { this.interfaces = this.interfaces.filter(f => f != iface) };
+
     interface_set_address<AT extends typeof BaseAddress>(iface: BaseInterface, address: InstanceType<AT>, netmask: AddressMask<AT>): DeviceResult { // !TODO: result could include the created route or address entry on iface idk
         // this functions maintains the information about the routes for the network that is just now configured
 
@@ -825,14 +858,17 @@ export class Device2 {
 
         // methods for sending and doing stuff
         let m_send: Contact2["send"],
-            m_sendTo: Contact2["sendTo"];
+            m_sendTo: Contact2["sendTo"],
+            m_receiveFrom: Contact2["receiveFrom"];
 
         if (proto == "RAW") {
             m_send = this.contact_m_send_raw;
-            m_sendTo = this.contact_m_sendTo_raw;
+            m_sendTo = this.contact_method_not_supported;
+            m_receiveFrom = this.contact_method_not_supported;
         } else if (proto == "UDP") {
             m_send = this.contact_m_send_udp;
             m_sendTo = this.contact_m_sendTo_udp;
+            m_receiveFrom = this.contact_m_receiveFrom_udp;
         } else {
             return { success: false, error: undefined, message: "could not determine methods based on ContactProto: " + proto };
         }
@@ -845,7 +881,9 @@ export class Device2 {
 
             close: this.contact_close.bind(this),
             bind: this.contact_bind.bind(this),
+
             receive: this.contact_receive.bind(this),
+            receiveFrom: m_receiveFrom.bind(this),
 
             send: m_send.bind(this),
             sendTo: m_sendTo.bind(this)
@@ -882,7 +920,7 @@ export class Device2 {
             return { success: false, error: undefined, message: "cannot bind a RAW contact" };
         }
 
-        if (false && contact.address) { // !TODO: can the contact be rebound?
+        if (contact.address) {
             return { success: false, error: undefined, message: "contact already bound" };
         }
 
@@ -935,7 +973,6 @@ export class Device2 {
             if (!creciver || creciver.contact.addressFamily != af || creciver.contact.proto != "RAW") {
                 continue;
             }
-
             creciver.receiver(creciver.contact, ...receiver_params);
         }
     }
@@ -945,6 +982,11 @@ export class Device2 {
         let best = __find_best_caddr_match(af, input_caddr, this.contact_receivers);
         if (!best) return;
         best.receiver(best.contact, ...receiver_params);
+    }
+
+    private contact_method_not_supported = (contact: Contact2): DeviceResult<ContactError> => {
+        __contact_throw_if_closed(contact);
+        return { success: false, error: undefined, message: "method not supported for protocol" }
     }
 
     private contact_m_send_raw: Contact2["send"] = (contact, data, destination, rtentry) => {
@@ -997,11 +1039,6 @@ export class Device2 {
         return { success: res.success, error: undefined, data: undefined, message: res.message }
     }
 
-    private contact_m_sendTo_raw: Contact2["sendTo"] = (contact) => {
-        __contact_throw_if_closed(contact);
-        return { success: false, error: undefined, message: "method not supported for protocol, try using \"contact.send\”" }
-    }
-
     private contact_m_sendTo_udp: Contact2["sendTo"] = (contact, data, caddr, rtentry) => {
         __contact_throw_if_closed(contact);
         if (contact.addressFamily == "RAW") {
@@ -1038,6 +1075,18 @@ export class Device2 {
         }
 
         return this.contact_m_send_udp(contact, data, undefined, rtentry);
+    }
+
+    private contact_m_receiveFrom_udp: Contact2["receiveFrom"] = (contact, receiver, caddr) => {
+        let bres = this.contact_bind(contact, {
+            saddr: contact.addressFamily == "IPv4" ? _UNSET_ADDRESS_IPV4 : _UNSET_ADDRESS_IPV6,
+            daddr: contact.addressFamily == "IPv4" ? _UNSET_ADDRESS_IPV4 : _UNSET_ADDRESS_IPV6,
+            dport: 0,
+            sport: 0,
+            ...caddr
+        });
+        if (!bres.success) return bres as ReturnType<Contact2["receiveFrom"]>;
+        return this.contact_receive(contact, receiver);
     }
 }
 

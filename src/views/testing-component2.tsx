@@ -116,10 +116,10 @@ export const TestingComponent2: Component = () => {
     newdevice2.name = "HFDAN"
     let loopbackiface = new LoopbackInterface(newdevice);
     loopbackiface.start()
-    newdevice.interfaces.push(loopbackiface)
+    newdevice.interface_add(loopbackiface)
 
     let etherinterface_1 = new EthernetInterface(newdevice, new MACAddress("fa-ff-0f-00-00-0c"));
-    newdevice.interfaces.push(etherinterface_1);
+    newdevice.interface_add(etherinterface_1);
     // testing of adding an address to an interface
     let etherinterface_1_ipv4_address = new IPV4Address("192.168.1.10")
     let etherinterface_1_ipv6_address = new IPV6Address("fe80::faff:0f00:000c:ba00")
@@ -127,7 +127,7 @@ export const TestingComponent2: Component = () => {
     newdevice.interface_set_address(etherinterface_1, etherinterface_1_ipv6_address, createMask(IPV6Address, 8));
 
     let etherinterface_2 = new EthernetInterface(newdevice2, new MACAddress("fa-ff-0f-00-00-0d"));
-    newdevice2.interfaces.push(etherinterface_2)
+    newdevice2.interface_add(etherinterface_2)
     let etherinterface_2_ipv4_address = new IPV4Address("192.168.1.20")
     let etherinterface_2_ipv6_address = new IPV6Address("fe80::faff:0f00:000d:b778")
     newdevice2.interface_set_address(etherinterface_2, etherinterface_2_ipv4_address, createMask(IPV4Address, 24));
