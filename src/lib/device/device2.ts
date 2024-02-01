@@ -87,6 +87,46 @@ function __address_is_unset(address: BaseAddress): boolean {
     return sum === 0;
 }
 
+export function __find_best_caddr_match<CR extends ({ contact: Contact2 } | undefined)>(af: ContactAF, input_caddr: ContactAddress2<BaseAddress>, creceivers: CR[]): CR | undefined {
+    let best: CR | undefined = undefined;
+    for (let creceiver of creceivers) {
+        if (!creceiver || creceiver.contact.addressFamily != af || creceiver.contact.proto != "UDP") {
+            continue;
+        }
+
+        if (!creceiver.contact.address) {
+            continue;
+        }
+
+        let caddr = creceiver.contact.address;
+        if (caddr.dport != 0 && caddr.dport != input_caddr.dport) {
+            continue
+        } else if (caddr.sport != 0 && caddr.sport != input_caddr.sport) {
+            continue
+        }
+
+        if (!__address_is_unset(caddr.daddr) && !uint8_equals(caddr.daddr.buffer, input_caddr.daddr.buffer)) {
+            continue;
+        } else if (!__address_is_unset(caddr.saddr) && !uint8_equals(caddr.saddr.buffer, input_caddr.saddr.buffer)) {
+            continue;
+        }
+        if (!best) {
+            best = creceiver;
+        } else {
+            if ((caddr.dport == 0 && best.contact.address?.dport != 0) ||
+                (caddr.sport == 0 && best.contact.address?.sport != 0) ||
+                (__address_is_unset(caddr.daddr) && !__address_is_unset(best.contact.address!.daddr)) ||
+                (__address_is_unset(caddr.saddr) && !__address_is_unset(best.contact.address!.saddr))
+            ) {
+                continue;
+            }
+            best = creceiver;
+        }
+    }
+
+    return best;
+}
+
 export interface Contact2<AF extends ContactAF = ContactAF, Proto extends ContactProto = ContactProto, AT extends typeof BaseAddress = typeof BaseAddress, Addr extends BaseAddress = InstanceType<AT>> {
     status: "OPEN" | "CLOSED";
 
@@ -146,9 +186,6 @@ export class Device2 {
             buffer: data.buffer,
             iface
         })
-
-        // throw new Error("Logging complicated so not currently implemented")
-
     }
 
     log_select_records(iface_id?: string): Device2["log_records"] {
@@ -903,49 +940,11 @@ export class Device2 {
         }
     }
     private contact_input_udp(af: ContactAF, ...receiver_params: DropFirst<Parameters<ContactReciever>>) {
-        console.log(af)
-        let best: Device2["contact_receivers"][number] = undefined;
         let input_caddr = receiver_params[1];
-        if (!input_caddr) {
-            return
-        }
-        for (let creceiver of this.contact_receivers) {
-            if (!creceiver || creceiver.contact.addressFamily != af || creceiver.contact.proto != "UDP") {
-                continue;
-            }
-
-            if (!creceiver.contact.address) {
-                continue;
-            }
-
-            let caddr = creceiver.contact.address;
-            if (caddr.dport != 0 && caddr.dport != input_caddr.dport) {
-                continue
-            } else if (caddr.sport != 0 && caddr.sport != input_caddr.sport) {
-                continue
-            }
-
-            if (!__address_is_unset(caddr.daddr) && !uint8_equals(caddr.daddr.buffer, input_caddr.daddr.buffer)) {
-                continue;
-            } else if (!__address_is_unset(caddr.saddr) && !uint8_equals(caddr.saddr.buffer, input_caddr.saddr.buffer)) {
-                continue;
-            }
-            if (!best) {
-                best = creceiver;
-            } else {
-                if ((caddr.dport == 0 && best.contact.address?.dport != 0) ||
-                    (caddr.sport == 0 && best.contact.address?.sport != 0) ||
-                    (__address_is_unset(caddr.daddr) && !__address_is_unset(best.contact.address!.daddr)) ||
-                    (__address_is_unset(caddr.saddr) && !__address_is_unset(best.contact.address!.saddr))
-                ) {
-                    continue;
-                }
-                best = creceiver;
-            }
-        }
-        if (best) {
-            best.receiver(best.contact, ...receiver_params);
-        }
+        if (!input_caddr) return;
+        let best = __find_best_caddr_match(af, input_caddr, this.contact_receivers);
+        if (!best) return;
+        best.receiver(best.contact, ...receiver_params);
     }
 
     private contact_m_send_raw: Contact2["send"] = (contact, data, destination, rtentry) => {

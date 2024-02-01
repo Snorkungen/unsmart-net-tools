@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { Device2, LoopbackInterface } from "../../lib/device/device2";
+import { Contact2, Device2, LoopbackInterface, __find_best_caddr_match } from "../../lib/device/device2";
 import { IPV4Address } from "../../lib/address/ipv4";
 import { createMask } from "../../lib/address/mask";
 import { IPV6Address } from "../../lib/address/ipv6";
@@ -116,13 +116,13 @@ describe("Device2 contact_bind", () => {
     let contact = device.contact_create("IPv4", "UDP").data!;
 
     test("successful bind", () => {
-        let caddr =  {
+        let caddr = {
             daddr: lb_address4,
             saddr: lb_address4,
             dport: 2000,
             sport: 2000
         };
-        let result = device.contact_bind(contact,caddr);
+        let result = device.contact_bind(contact, caddr);
 
         expect(result.success, result.message).true;
         expect(caddr === result.data).true;
@@ -148,9 +148,9 @@ describe("Device2 contact_bind", () => {
         let r = device.contact_bind(contact, {
             saddr: new IPV4Address("0.0.0.0"), daddr: lb_address4, sport: 6000, dport: 80
         })
-        
+
         expect(r.success, r.message).true;
-        
+
         contact = device.contact_create("IPv4", "UDP").data!;
         r = device.contact_bind(contact, {
             saddr: new IPV4Address("0.0.0.0"), daddr: lb_address4, sport: 6000, dport: 80
@@ -160,3 +160,88 @@ describe("Device2 contact_bind", () => {
     })
 });
 
+describe("Devic2 __find_best_caddr_match", () => {
+
+    let dev = new Device2();
+    let unset = new IPV4Address("0.0.0.0"), default_caddr = {
+        saddr: unset,
+        daddr: unset,
+        sport: 0,
+        dport: 0
+    }
+    dev.contact_create("IPv4", "UDP").data!;
+
+    let crecivers: { contact: Contact2, idx: number }[] = [{
+        contact: {
+            ...dev.contact_create("IPv4", "UDP").data!, address: default_caddr
+        }, idx: 1_000_000_000
+    }, {
+        contact: {
+            ...dev.contact_create("IPv4", "UDP").data!, address: {
+                ...default_caddr,
+                sport: 10,
+            }
+        }, idx: 10
+    }, {
+        contact: {
+            ...dev.contact_create("IPv4", "UDP").data!, address: {
+                ...default_caddr,
+                sport: 10,
+                dport: 20,
+            }
+        }, idx: 20
+    }, {
+        contact: {
+            ...dev.contact_create("IPv4", "UDP").data!, address: {
+                ...default_caddr,
+                sport: 10,
+                dport: 20,
+                saddr: lb_address4
+            }
+        }, idx: 2_000
+    }, {
+        contact: {
+            ...dev.contact_create("IPv4", "UDP").data!, address: {
+                sport: 10,
+                dport: 20,
+                saddr: lb_address4,
+                daddr: lb_address4
+            }
+        }, idx: 3_000
+    }].sort(() => Math.random() -0.5)
+
+    test("default", () => expect(__find_best_caddr_match("IPv4", {
+        saddr: new IPV4Address("255.255.255.255"),
+        daddr: unset,
+        sport: 0xff1f,
+        dport: 1000
+    }, crecivers)?.idx).eq(1_000_000_000))
+
+    test("sport", () => expect(__find_best_caddr_match("IPv4", {
+        saddr: new IPV4Address("255.255.255.255"),
+        daddr: unset,
+        sport: 10,
+        dport: 1000
+    }, crecivers)?.idx).eq(10))
+
+    test("dport", () => expect(__find_best_caddr_match("IPv4", {
+        saddr: new IPV4Address("255.255.255.255"),
+        daddr: unset,
+        sport: 10,
+        dport: 20
+    }, crecivers)?.idx).eq(20))
+
+    test("saddr", () => expect(__find_best_caddr_match("IPv4", {
+        daddr: new IPV4Address("255.255.255.255"),
+        saddr: lb_address4,
+        sport: 10,
+        dport: 20
+    }, crecivers)?.idx).eq(2_000))
+
+    test("dport", () => expect(__find_best_caddr_match("IPv4", {
+        saddr: lb_address4,
+        daddr: lb_address4,
+        sport: 10,
+        dport: 20
+    }, crecivers)?.idx).eq(3_000))
+})
