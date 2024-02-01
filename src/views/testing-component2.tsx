@@ -177,12 +177,37 @@ export const TestingComponent2: Component = () => {
 
 
     }
-    
+
     let raw_contact_device1 = newdevice.contact_create("IPv4", "RAW").data!;
     let raw_contact_device2 = newdevice2.contact_create("IPv4", "RAW").data!;
     raw_contact_device1.receive(raw_contact_device1, raw_contact_receiver)
     raw_contact_device2.receive(raw_contact_device2, raw_contact_receiver)
 
+    let raw6_contact_device1 = newdevice.contact_create("IPv6", "RAW").data!;
+    raw6_contact_device1.receive(raw6_contact_device1, (_, data) => {
+        console.log(data)
+    })
+
+    let udp_contact_device1 = newdevice.contact_create("IPv4", "UDP").data!;
+    udp_contact_device1.bind(udp_contact_device1, { daddr: new IPV4Address("0.0.0.0"), saddr: new IPV4Address("127.0.0.1"), sport: 0xff00, dport: 0 })
+    udp_contact_device1.receive(udp_contact_device1, (_, data, caddr) => {
+        if (!data.rcvif || !caddr) {
+            console.log("something is missing, ipv4:udp")
+            return;
+        }
+
+        console.log(data, caddr)
+    })
+    let udp6_contact_device1 = newdevice.contact_create("IPv6", "UDP").data!;
+    udp6_contact_device1.bind(udp6_contact_device1, { daddr: new IPV6Address("::"), saddr: new IPV6Address("::"), sport: 0xff00, dport: 0 })
+    udp6_contact_device1.receive(udp6_contact_device1, (_, data, caddr) => {
+        if (!data.rcvif || !caddr) {
+            console.log("something is missing, ipv6:udp")
+            return;
+        }
+
+        console.log(data, caddr)
+    })
 
     function sescape(str: string): Uint8Array {
         return uint8_concat([
@@ -219,19 +244,74 @@ export const TestingComponent2: Component = () => {
 
         contact!.close(contact!);
     }
+    function test_sending_ipv4_udp(device: Device2, destination: IPV4Address) {
+        console.log("%cSENDING UDP MESSAGE TO: " + destination, "padding:1em; color:green; background: black;")
+
+        let contact = device.contact_create("IPv4", "UDP").data!;
+
+        let res = contact!.sendTo(contact!, { buffer: new Uint8Array([0xde, 0xad, 0xca, 0x7f, 0x00, 0xd]) }, { daddr: destination, dport: 0xff00 });
+        if (!res.success) {
+            console.log(res.error, res.message)
+        }
+
+        contact!.close(contact!);
+    }
+    function test_sending_ipv6_udp(device: Device2, destination: IPV6Address) {
+        console.log("%cSENDING UDP MESSAGE TO: " + destination, "padding:1em; color:green; background: black;")
+
+        let contact = device.contact_create("IPv6", "UDP").data!;
+
+        let res = contact!.sendTo(contact!, { buffer: new Uint8Array([0xde, 0xad, 0xca, 0x7f, 0x00, 0xd]) }, { daddr: destination, dport: 0xff00 });
+        if (!res.success) {
+            console.log(res.error, res.message)
+        }
+
+        contact!.close(contact!);
+    }
+
     function test_sending_ipv6(device: Device2, destination: IPV6Address) {
-        let cres = device.contact_create("IPv6", "UDP");
+        let cres = device.contact_create("IPv6", "RAW");
         if (!cres.success) {
             console.log(cres.error, cres.message)
             return
         }
 
+
+        let identifier = Math.floor(Math.random() * 0xfffe), sequence = 1;
+        let echohdr = ICMP_ECHO_HEADER.create({
+            id: identifier,
+            seq: sequence,
+        }), icmphdr = ICMP_HEADER.create({
+            type: ICMPV6_TYPES.ECHO_REQUEST,
+            data: echohdr.getBuffer(),
+            csum: 0,
+        });
+
+        let route = device.route_resolve(destination);
+        if (!route) return;
+        let source = route.iface.addresses.find((v) => v.address.constructor == destination.constructor);
+        if (!source) return;
+
+        let pseudoHdr = IPV6_PSEUDO_HEADER.create({
+            saddr: source.address as IPV6Address,
+            daddr: destination,
+            len: icmphdr.size,
+            proto: PROTOCOLS.IPV6_ICMP,
+        })
+
+        icmphdr.set("csum", calculateChecksum(uint8_concat([
+            pseudoHdr.getBuffer(),
+            icmphdr.getBuffer()
+        ])));
+
+        let iphdr = IPV6_HEADER.create({ nextHeader: PROTOCOLS.IPV6_ICMP, payload: icmphdr.getBuffer() })
         let contact = cres.data;
 
-        let res = contact.sendTo(contact, { buffer: new Uint8Array([0xff, 0xff, 0xff, 0xff]) }, { daddr: destination, dport: 4342 })
+        let res = contact.send(contact, { buffer: iphdr.getBuffer() }, destination, route);
         if (!res.success) {
             console.log(res.error, res.message)
         }
+        contact.close(contact)
     }
 
     return (
@@ -245,6 +325,8 @@ export const TestingComponent2: Component = () => {
             <button onClick={() => {
                 test_sending_ipv4(newdevice2, new IPV4Address("192.168.1.255"))
             }}>test device 2 ether broadcast</button>
+            <button onClick={() => { test_sending_ipv4_udp(newdevice, new IPV4Address("127.0.0.1")) }}>ipv4 send udp</button>
+            <button onClick={() => { test_sending_ipv6_udp(newdevice, new IPV6Address("::1")) }}>ipv6 send udp</button>
             <button onClick={() => { test_sending_ipv6(newdevice2, etherinterface_1_ipv6_address) }}>ipv6 send</button>
             <button onClick={() => {
                 window.setTimeout(() => downloadDevice2PCAP(newdevice), 150)

@@ -80,6 +80,12 @@ function __contact_throw_if_closed(contact: Contact2) {
         throw new Error("contact has been closed");
     }
 }
+function __address_is_unset(address: BaseAddress): boolean {
+    let sum = 0, i = 0; while (i < address.buffer.byteLength) {
+        sum += address.buffer[i++];
+    }
+    return sum === 0;
+}
 
 export interface Contact2<AF extends ContactAF = ContactAF, Proto extends ContactProto = ContactProto, AT extends typeof BaseAddress = typeof BaseAddress, Addr extends BaseAddress = InstanceType<AT>> {
     status: "OPEN" | "CLOSED";
@@ -206,11 +212,22 @@ export class Device2 {
 
     input_ipv4(iphdr: typeof IPV4_HEADER, data: NetworkData) {
         if (!data.rcvif) { console.warn("rcvif missing"); return }
+        if (calculateChecksum(iphdr.getBuffer().slice(0, iphdr.get("ihl") << 2)) != 0) {
+            // checksum failed
+            console.warn("input_ipv4 - [bad checksum]")
+            return;
+        }
 
-        // then do some checking if this message is for this device
+        // !TODO: verify that daddr is for this device
+        // !TODO: maybe support routing somehow idk
 
-        this.contact_input_raw("IPv4", "RAW", { ...data, buffer: iphdr.getBuffer() });
-        this.contact_input_raw("RAW", "RAW", data);
+        if (iphdr.get("proto") == PROTOCOLS.UDP) {
+            this.input_udp4(iphdr, data)
+        } else {
+            this.contact_input_raw("IPv4", { ...data, buffer: iphdr.getBuffer() });
+        }
+
+        this.contact_input_raw("RAW", data);
     }
 
     output_ipv4(data: NetworkData, destination: IPV4Address, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
@@ -270,6 +287,32 @@ export class Device2 {
         }
     }
 
+    input_udp4(iphdr: typeof IPV4_HEADER, data: NetworkData) {
+        let udphdr = UDP_HEADER.from(iphdr.get("payload"));
+
+        // !TODO: verify checksum
+
+        this.contact_input_udp("IPv4", { ...data, buffer: udphdr.get("payload") }, {
+            saddr: iphdr.get("daddr"),
+            daddr: iphdr.get("saddr"),
+            sport: udphdr.get("dport"),
+            dport: udphdr.get("sport")
+        });
+    }
+
+    input_udp6(iphdr: typeof IPV6_HEADER, data: NetworkData) {
+        let udphdr = UDP_HEADER.from(iphdr.get("payload"));
+
+        // !TODO: verify checksum
+
+        this.contact_input_udp("IPv6", { ...data, buffer: udphdr.get("payload") }, {
+            saddr: iphdr.get("daddr"),
+            daddr: iphdr.get("saddr"),
+            sport: udphdr.get("dport"),
+            dport: udphdr.get("sport")
+        });
+    }
+
     input_ipv6(iphdr: typeof IPV6_HEADER, data: NetworkData) {
         if (!data.rcvif) { console.warn("rcvif missing"); return }
         // demultiplex data
@@ -277,13 +320,15 @@ export class Device2 {
 
 
         if (iphdr.get("nextHeader") === PROTOCOLS.IPV6_ICMP) {
-            return this.input_icmp6(iphdr, data)
+            return this.input_icmp6(iphdr, data);
+        } else if (iphdr.get("nextHeader") === PROTOCOLS.UDP) {
+            return this.input_udp6(iphdr, data);
         } else {
             // console.log(iphdr.getBuffer())
-            this.contact_input_raw("IPv6", "RAW", { ...data, buffer: iphdr.getBuffer() });
+            this.contact_input_raw("IPv6", { ...data, buffer: iphdr.getBuffer() });
         }
 
-        this.contact_input_raw("RAW", "RAW", data);
+        this.contact_input_raw("RAW", data);
     }
 
     output_ipv6(data: NetworkData, destination: IPV6Address, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
@@ -350,7 +395,7 @@ export class Device2 {
             case ICMPV6_TYPES.NEIGHBOR_SOLICITATION:
                 this.input_ndp_solicitation(iphdr, data); break;
             default: {
-                this.contact_input_raw("IPv6", "RAW", { ...data, buffer: iphdr.getBuffer() });
+                this.contact_input_raw("IPv6", { ...data, buffer: iphdr.getBuffer() });
             }
         }
     }
@@ -502,7 +547,7 @@ export class Device2 {
         } else if (etherframe.get("ethertype") == ETHER_TYPES.VLAN) {
             throw new Error("not implemented")
         } else {
-            this.contact_input_raw("RAW", "RAW", data);
+            this.contact_input_raw("RAW", data);
         }
 
         // this knows that the data is an ethernet frame
@@ -848,13 +893,58 @@ export class Device2 {
         return { success: true, data: undefined };
     }
 
-    private contact_input_raw(af: ContactAF, proto: ContactProto, ...receiver_params: DropFirst<Parameters<ContactReciever>>) {
+    private contact_input_raw(af: ContactAF, ...receiver_params: DropFirst<Parameters<ContactReciever>>) {
         for (let creciver of this.contact_receivers) {
-            if (!creciver || creciver.contact.addressFamily != af || creciver.contact.proto != proto) {
+            if (!creciver || creciver.contact.addressFamily != af || creciver.contact.proto != "RAW") {
                 continue;
             }
 
             creciver.receiver(creciver.contact, ...receiver_params);
+        }
+    }
+    private contact_input_udp(af: ContactAF, ...receiver_params: DropFirst<Parameters<ContactReciever>>) {
+        console.log(af)
+        let best: Device2["contact_receivers"][number] = undefined;
+        let input_caddr = receiver_params[1];
+        if (!input_caddr) {
+            return
+        }
+        for (let creceiver of this.contact_receivers) {
+            if (!creceiver || creceiver.contact.addressFamily != af || creceiver.contact.proto != "UDP") {
+                continue;
+            }
+
+            if (!creceiver.contact.address) {
+                continue;
+            }
+
+            let caddr = creceiver.contact.address;
+            if (caddr.dport != 0 && caddr.dport != input_caddr.dport) {
+                continue
+            } else if (caddr.sport != 0 && caddr.sport != input_caddr.sport) {
+                continue
+            }
+
+            if (!__address_is_unset(caddr.daddr) && !uint8_equals(caddr.daddr.buffer, input_caddr.daddr.buffer)) {
+                continue;
+            } else if (!__address_is_unset(caddr.saddr) && !uint8_equals(caddr.saddr.buffer, input_caddr.saddr.buffer)) {
+                continue;
+            }
+            if (!best) {
+                best = creceiver;
+            } else {
+                if ((caddr.dport == 0 && best.contact.address?.dport != 0) ||
+                    (caddr.sport == 0 && best.contact.address?.sport != 0) ||
+                    (__address_is_unset(caddr.daddr) && !__address_is_unset(best.contact.address!.daddr)) ||
+                    (__address_is_unset(caddr.saddr) && !__address_is_unset(best.contact.address!.saddr))
+                ) {
+                    continue;
+                }
+                best = creceiver;
+            }
+        }
+        if (best) {
+            best.receiver(best.contact, ...receiver_params);
         }
     }
 
