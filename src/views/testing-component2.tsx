@@ -7,7 +7,7 @@ import { ASCIICodes, CSI } from "../lib/terminal/shared";
 import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_HELP } from "../lib/device/program/program";
 import { DPSignal, DeviceProgramStatus } from "../lib/device/device-program";
 import { formatTable } from "../lib/device/program/helpers";
-import { Device2, EthernetInterface, LoopbackInterface, Program } from "../lib/device/device2";
+import { Device2, EthernetInterface, LoopbackInterface, ProcessSignal, Program } from "../lib/device/device2";
 import { ICMPV4_TYPES, ICMPV6_TYPES, ICMP_HEADER, ICMP_ECHO_HEADER } from "../lib/header/icmp";
 import { IPV4Address } from "../lib/address/ipv4";
 import { calculateChecksum } from "../lib/binary/checksum";
@@ -16,6 +16,7 @@ import { MACAddress } from "../lib/address/mac";
 import { createMask } from "../lib/address/mask";
 import { PCAP_GLOBAL_HEADER, PCAP_MAGIC_NUMBER, PCAP_RECORD_HEADER } from "../lib/header/pcap";
 import { IPV6Address } from "../lib/address/ipv6";
+import { DAEMON_SHELL } from "../lib/device/program/shell2";
 
 function downloadDevice2PCAP(device: Device2) {
     let records = device.log_select_records();
@@ -57,48 +58,42 @@ function downloadDevice2PCAP(device: Device2) {
 
 export const TestingComponent2: Component = () => {
     let terminal: Terminal;
-    // device.registerProgram({
-    //     name: "test",
-    //     run: function (args: string, { terminal, signal }): Promise<DeviceProgramStatus> {
-    //         return new Promise<DeviceProgramStatus>((resolve) => {
-    //             signal.on(DPSignal.TERMINATE, () => {
-    //                 terminal.write(uint8_fromString("Cancelled"))
-    //                 resolve(DeviceProgramStatus.OK);
-    //             })
 
-    //             let table = [
-    //                 ["Hello, World.", "I'm so sad i'm trying to get this to work. Am i being over-written?", "-0-"],
-    //                 ["Something", "Foo, Bar", "-1-"],
-    //                 ["Something", "Foo, Bar", "-3-"],
-    //                 ["Something", "Foo, Bar", "-4-"]
-    //             ]
+    let test_program: Program = {
+        name: "test",
+        init(proc, args) {
+            proc.handle(proc, () => {
+                proc.term_write(uint8_fromString("Cancelled"));
+                proc.close(proc, ProcessSignal.EXIT);
+            });
 
-    //             terminal.write(formatTable(table))
+            let table = [
+                ["Hello, World.", "I'm so sad i'm trying to get this to work. Am i being over-written?", "-0-"],
+                ["Something", "Foo, Bar", "-1-"],
+                ["Something", "Foo, Bar", "-3-"],
+                ["Something", "Foo, Bar", "-4-"]
+            ]
 
-    //             setTimeout(() => {
-    //                 terminal.write(sescape("Hello world Looser"))
-    //                 resolve(DeviceProgramStatus.OK)
-    //             }, 1000)
-    //         })
-    //     },
-    //     sub: [
-    //         {
-    //             name: "TEst Sub",
-    //             run(args, options) {
-    //                 options.terminal.write(new Uint8Array([65, 65, 66, 66, 67, 67.68]))
-    //                 return new Promise(r => r(DeviceProgramStatus.ERROR))
-    //             },
+            proc.term_write(formatTable(table));
 
-    //         }
-    //     ]
-    // })
+            setTimeout(() => {
+                proc.term_write(uint8_fromString("Hello world Looser"));
+                proc.close(proc, ProcessSignal.EXIT)
+            }, 1000)
+
+            return ProcessSignal.__EXPLICIT__;
+        },
+    }
 
     createEffect(() => {
         newdevice.terminal_attach(terminal);
+        newdevice.process_start(DAEMON_SHELL, []);
+
     })
 
 
     let newdevice = new Device2();
+    newdevice.programs.push(test_program)
     newdevice.name = "FIRETTE"
     let newdevice2 = new Device2();
     newdevice2.name = "HFDAN"
@@ -122,17 +117,16 @@ export const TestingComponent2: Component = () => {
     newdevice2.interface_set_address(etherinterface_2, etherinterface_2_ipv6_address, createMask(IPV4Address, 8));
 
     let first_program: Program = {
-        name: "device2test",
+        name: "problem",
         init(proc, args) {
-
-            proc.term_read(proc, (proc, bytes) => {
-                proc.term_write(bytes)
-            })
-
-            proc.close(proc, 0);
+            proc.term_write(sescape(args.join(" ")))
+            return ProcessSignal.EXIT;
         }
     }
+
+    newdevice.programs.push(first_program)
     let first_proc = newdevice.process_start(first_program, [])
+    console.log(first_proc)
 
     etherinterface_1.connect(etherinterface_2)
     console.log(newdevice)

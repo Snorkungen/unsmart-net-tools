@@ -102,20 +102,24 @@ export type Program = {
     content?: string;
     // sub?: Program<unknown>[];
 
-    init(proc: Process, args: string[]): void;
+    init(proc: Process, args: string[]): ProcessSignal;
 }
 
-type ProcessSignal = unknown;
-type ProcessID = string; // number[] !TODO: it could be an array of numbers becouse then it would make things easier in coding
-type ProcessHandler = (proc: Process, status: ProcessSignal) => void;
-type ProcessTerminalReadFunc = (proc: Process, bytes: Uint8Array) => void | true;
-type Process = {
-    status: "UNINIT" | "MARKED_CLOSED" | "RUNNING"
+export enum ProcessSignal {
+    EXIT, INTERRUPT,
+    /** Explicit means that the user is in charge of closing the process */
+    __EXPLICIT__
+};
+export type ProcessID = string; // number[] !TODO: it could be an array of numbers becouse then it would make things easier in coding
+export type ProcessHandler = (proc: Process, signal: ProcessSignal) => void;
+export type ProcessTerminalReadFunc = (proc: Process, bytes: Uint8Array) => void | true;
+export type Process<DT = any> = {
+    status: "UNINIT" | "MARKED_CLOSED" | "CLOSED" | "RUNNING"
 
     id: ProcessID;
     device: Device2;
     program: Program;
-    data: any;
+    data: DT;
 
 
     close(proc: Process, status: ProcessSignal): void;
@@ -190,9 +194,7 @@ export function __find_best_caddr_match<CR extends ({ contact: Contact2 } | unde
 export class Device2 {
     name = Math.floor(Math.random() * 10_000).toString() + "B2";
 
-    constructor() {
-
-    }
+    constructor() { }
 
     /** this approach is different in such a way that it allows to select for a specific interfac if that something i would like to do */
     private log_records: { time: number, buffer: Uint8Array, iface: BaseInterface }[] = []
@@ -278,25 +280,19 @@ export class Device2 {
             term_flush: this.process_term_flush.bind(this),
         };
 
-        if (!this.processes[i]) {
-            throw "fhsdljh"
-        }
-
-        program.init(this.processes[i]!, args);
-
-        if (this.processes[i]?.status === "MARKED_CLOSED" && !proc) {
-            this.process_close(this.processes[i]!, 0);
-        } else if (!proc) {
-            this.processes[i]!.status = "RUNNING";
-        }
-
+        let init_sig = program.init(this.processes[i]!, args);
+        if (init_sig !== ProcessSignal.__EXPLICIT__) {
+            this.process_close(this.processes[i]!, init_sig)
+            return undefined;
+        };
         return this.processes[i];
     }
 
-    process_close(proc: Process, status: ProcessSignal) {
-        if (proc.status === "UNINIT") {
-            proc.status = "MARKED_CLOSED";
-            return;
+    process_close(proc: Process, signal: ProcessSignal) {
+        if (proc.status === "CLOSED") {
+            return; // to prevent loops 
+        } else {
+            proc.status = "CLOSED"
         }
 
         let i = this.processes.indexOf(proc);
@@ -310,10 +306,9 @@ export class Device2 {
             if (!h || !h.id.startsWith(h.proc.id)) {
                 continue;
             }
-
             // if process has a owner call handle_close if it exists
-            if (h.proc.id != h.id && h.id == proc.id) {
-                h.handler(proc, status)
+            if ((h.proc.id === proc.id && signal != ProcessSignal.EXIT) || h.proc.id != h.id && h.id == proc.id) {
+                h.handler(h.proc, signal);
             }
 
             delete this.process_handlers[hj];
@@ -322,13 +317,14 @@ export class Device2 {
         // close spawned processes, abuse the id
         for (let sproc of this.processes) {
             if (sproc && sproc.id.startsWith(proc.id) + this.PROCESS_ID_SEPARATOR && sproc.id.length > proc.id.length) {
-                this.process_close(sproc, status);
+                this.process_close(sproc, signal);
             }
         }
 
         // remove terminal readers
         this.terminal_readers = this.terminal_readers.filter((tr) => tr.proc != proc);
-
+        proc.term_write = this.process_term_writeblackhole;
+        proc.term_flush = this.process_term_flushblackhole;
         delete this.processes[i];
     }
 
@@ -337,17 +333,12 @@ export class Device2 {
         let spawned_proc: Process | undefined = this.process_start(program, args, proc);
 
         if (!spawned_proc) {
-            return;
+            handle_close && handle_close(proc, ProcessSignal.EXIT);
+            return undefined;
         }
 
         if (handle_close) {
             this.process_handle(proc, handle_close, spawned_proc.id);
-        }
-
-        if (spawned_proc.status == "MARKED_CLOSED") {
-            this.process_close(spawned_proc, 0);
-        } else {
-            spawned_proc.status = "RUNNING"
         }
 
         return spawned_proc;
@@ -392,12 +383,10 @@ export class Device2 {
     private process_term_read(proc: Process, reader_func: ProcessTerminalReadFunc) {
         this.terminal_readers.unshift({ proc: proc, reader: reader_func });
     }
-    private process_term_write(bytes: Uint8Array) {
-        if (this.terminal) this.terminal.write(bytes);
-    }
-    private process_term_flush() {
-        if (this.terminal) this.terminal.flush();
-    }
+    private process_term_write(bytes: Uint8Array) { (this.terminal) && this.terminal.write(bytes); }
+    private process_term_writeblackhole(_: Uint8Array) { }
+    private process_term_flush() { (this.terminal) && this.terminal.flush(); }
+    private process_term_flushblackhole() { }
 
 
     output_udp(data: NetworkData, destination: BaseAddress, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
