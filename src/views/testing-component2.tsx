@@ -164,8 +164,8 @@ export const TestingComponent2: Component = () => {
             iphdr.set("ttl", 0);
             iphdr.set("csum", 0);
             let daddr = iphdr.get("saddr");
-            iphdr.set("daddr", daddr)
             iphdr.set("saddr", iphdr.get("daddr"))
+            iphdr.set("daddr", daddr)
 
             iphdr.set("csum", calculateChecksum(iphdr.getBuffer().slice(0, iphdr.get("ihl") << 2)));
             let res = contact.send(contact, { buffer: iphdr.getBuffer() }, daddr);
