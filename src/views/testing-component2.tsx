@@ -56,54 +56,45 @@ function downloadDevice2PCAP(device: Device2) {
 }
 
 export const TestingComponent2: Component = () => {
-
     let terminal: Terminal;
-    let device = new Device()
-    device.name = "DEVICE-1"
+    // device.registerProgram({
+    //     name: "test",
+    //     run: function (args: string, { terminal, signal }): Promise<DeviceProgramStatus> {
+    //         return new Promise<DeviceProgramStatus>((resolve) => {
+    //             signal.on(DPSignal.TERMINATE, () => {
+    //                 terminal.write(uint8_fromString("Cancelled"))
+    //                 resolve(DeviceProgramStatus.OK);
+    //             })
 
-    device.registerProgram(DEVICE_PROGRAM_CLEAR)
-    device.registerProgram(DEVICE_PROGRAM_ECHO)
-    device.registerProgram(DEVICE_PROGRAM_HELP)
-    device.registerProgram({
-        name: "test",
-        run: function (args: string, { terminal, signal }): Promise<DeviceProgramStatus> {
-            return new Promise<DeviceProgramStatus>((resolve) => {
-                signal.on(DPSignal.TERMINATE, () => {
-                    terminal.write(uint8_fromString("Cancelled"))
-                    resolve(DeviceProgramStatus.OK);
-                })
+    //             let table = [
+    //                 ["Hello, World.", "I'm so sad i'm trying to get this to work. Am i being over-written?", "-0-"],
+    //                 ["Something", "Foo, Bar", "-1-"],
+    //                 ["Something", "Foo, Bar", "-3-"],
+    //                 ["Something", "Foo, Bar", "-4-"]
+    //             ]
 
-                let table = [
-                    ["Hello, World.", "I'm so sad i'm trying to get this to work. Am i being over-written?", "-0-"],
-                    ["Something", "Foo, Bar", "-1-"],
-                    ["Something", "Foo, Bar", "-3-"],
-                    ["Something", "Foo, Bar", "-4-"]
-                ]
+    //             terminal.write(formatTable(table))
 
-                terminal.write(formatTable(table))
+    //             setTimeout(() => {
+    //                 terminal.write(sescape("Hello world Looser"))
+    //                 resolve(DeviceProgramStatus.OK)
+    //             }, 1000)
+    //         })
+    //     },
+    //     sub: [
+    //         {
+    //             name: "TEst Sub",
+    //             run(args, options) {
+    //                 options.terminal.write(new Uint8Array([65, 65, 66, 66, 67, 67.68]))
+    //                 return new Promise(r => r(DeviceProgramStatus.ERROR))
+    //             },
 
-                setTimeout(() => {
-                    terminal.write(sescape("Hello world Looser"))
-                    resolve(DeviceProgramStatus.OK)
-                }, 1000)
-            })
-        },
-        sub: [
-            {
-                name: "TEst Sub",
-                run(args, options) {
-                    options.terminal.write(new Uint8Array([65, 65, 66, 66, 67, 67.68]))
-                    return new Promise(r => r(DeviceProgramStatus.ERROR))
-                },
-
-            }
-        ]
-    })
-
-    let shell = new Shell(device);
+    //         }
+    //     ]
+    // })
 
     createEffect(() => {
-        shell.configureTerminal(terminal);
+        newdevice.terminal_attach(terminal);
     })
 
 
@@ -133,15 +124,15 @@ export const TestingComponent2: Component = () => {
     let first_program: Program = {
         name: "device2test",
         init(proc, args) {
-            console.log("Hello world the first process is running" ,proc.id)
-            if (args.length === 0) {
-                proc.spawn(proc, first_program, [""], () => console.log("spawned process closed"));
-            }
-            proc.close(proc, 1)
+
+            proc.term_read(proc, (proc, bytes) => {
+                proc.term_write(bytes)
+            })
+
+            proc.close(proc, 0);
         }
     }
     let first_proc = newdevice.process_start(first_program, [])
-    // first_proc!.close(first_proc!, 1)
 
     etherinterface_1.connect(etherinterface_2)
     console.log(newdevice)
@@ -293,7 +284,7 @@ export const TestingComponent2: Component = () => {
             <button onClick={() => { test_sending_ipv6(newdevice2, etherinterface_1_ipv6_address) }}>ipv6 send</button>
             <button onClick={() => {
                 window.setTimeout(() => downloadDevice2PCAP(newdevice), 150)
-                shell.read(sescape("echo hellow orlf looser\nhelp\ntest\necho cool"))
+                // shell.read(sescape("echo hellow orlf looser\nhelp\ntest\necho cool"))
                 // shell.read(CSI(...sescape("1;5H Hello World")))
             }}>dump commands</button>
             <div ref={(el) => {

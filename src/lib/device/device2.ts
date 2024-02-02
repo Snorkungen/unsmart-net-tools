@@ -108,6 +108,7 @@ export type Program = {
 type ProcessSignal = unknown;
 type ProcessID = string; // number[] !TODO: it could be an array of numbers becouse then it would make things easier in coding
 type ProcessHandler = (proc: Process, status: ProcessSignal) => void;
+type ProcessTerminalReadFunc = (proc: Process, bytes: Uint8Array) => void | true;
 type Process = {
     status: "UNINIT" | "MARKED_CLOSED" | "RUNNING"
 
@@ -121,9 +122,17 @@ type Process = {
     spawn(proc: Process, program: Program, args: string[], handle_close?: ProcessHandler): Process | undefined;
     handle(proc: Process, signal_handler: (proc: Process, signal: ProcessSignal) => void): void
 
-    // term_write(data: Uint8Array): void;
-    // term_flush(): void;
-    // read(read_func: (proc: Process<DataType>, data: Uint8Array) => void): void
+    term_read(proc: Process, read_func: ProcessTerminalReadFunc): void
+    term_write(data: Uint8Array): void;
+    term_flush(): void;
+
+    // !TODO: for now it is the users responsibility to close contacts
+}
+
+type DeviceTerminal = {
+    read?: (bytes: Uint8Array) => void;
+    write(bytes: Uint8Array): void;
+    flush(): void;
 }
 
 function __contact_throw_if_closed(contact: Contact2) {
@@ -177,8 +186,6 @@ export function __find_best_caddr_match<CR extends ({ contact: Contact2 } | unde
 
     return best;
 }
-
-
 
 export class Device2 {
     name = Math.floor(Math.random() * 10_000).toString() + "B2";
@@ -265,6 +272,10 @@ export class Device2 {
             close: this.process_close.bind(this),
             spawn: this.process_spawn.bind(this),
             handle: this.process_handle.bind(this),
+
+            term_read: this.process_term_read.bind(this),
+            term_write: this.process_term_write.bind(this),
+            term_flush: this.process_term_flush.bind(this),
         };
 
         if (!this.processes[i]) {
@@ -315,6 +326,9 @@ export class Device2 {
             }
         }
 
+        // remove terminal readers
+        this.terminal_readers = this.terminal_readers.filter((tr) => tr.proc != proc);
+
         delete this.processes[i];
     }
 
@@ -347,6 +361,44 @@ export class Device2 {
             id: id ? id : proc.id
         }
     }
+
+    private terminal?: DeviceTerminal;
+    /** NOTE this has to stay ordered for certain logic to work */
+    private terminal_readers: { proc: Process, reader: ProcessTerminalReadFunc }[] = [];
+    terminal_attach(term: DeviceTerminal) {
+        if (this.terminal) {
+            this.terminal_detach();
+        }
+        this.terminal = term;
+        this.terminal.read = this.terminal_read.bind(this);
+    }
+
+    terminal_detach() {
+        if (!this.terminal) {
+            return;
+        }
+        delete this.terminal.read;
+        delete this.terminal;
+    }
+
+    private terminal_read(bytes: Uint8Array) {
+        for (let tr of this.terminal_readers) {
+            if (tr.reader(tr.proc, bytes)) {
+                break;
+            }
+        }
+    }
+
+    private process_term_read(proc: Process, reader_func: ProcessTerminalReadFunc) {
+        this.terminal_readers.unshift({ proc: proc, reader: reader_func });
+    }
+    private process_term_write(bytes: Uint8Array) {
+        if (this.terminal) this.terminal.write(bytes);
+    }
+    private process_term_flush() {
+        if (this.terminal) this.terminal.flush();
+    }
+
 
     output_udp(data: NetworkData, destination: BaseAddress, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
         if (!route && !(route = this.route_resolve(destination))) return {

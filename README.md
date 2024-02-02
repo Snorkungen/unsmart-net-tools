@@ -9,7 +9,7 @@
     - [ ] flesh out the functionality
       - [ ] output_ip check that the destination is not source then loopback etc.
       - [ ] input_ip verify that daddr is for the device
-    - [ ] create Process system
+    - [x] create Process system
   - [ ] Device -> contact
     - [x] UDP protocol support
     - [ ] TCP protocol support
