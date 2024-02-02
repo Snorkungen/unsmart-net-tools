@@ -4,6 +4,7 @@
 
 - Develop on device logic
   - [ ] Overhaul Device
+    - [ ] add teardown method for `BaseInterface`
     - [x] Integrate Device2 into Contact "Infrastructure"
     - [ ] flesh out the functionality
       - [ ] output_ip check that the destination is not source then loopback etc.

@@ -75,6 +75,57 @@ type ContactAddress2<Addr extends BaseAddress> = {
     daddr: Addr;
 }
 
+export interface Contact2<AF extends ContactAF = ContactAF, Proto extends ContactProto = ContactProto, AT extends typeof BaseAddress = typeof BaseAddress, Addr extends BaseAddress = InstanceType<AT>> {
+    status: "OPEN" | "CLOSED";
+
+    addressFamily: AF;
+    proto: Proto;
+
+    /** address naming is just a placeholder */
+    address?: ContactAddress2<Addr>;
+
+    /* Methods */
+    close(contact: Contact2<AF, Proto, AT, Addr>): DeviceResult<ContactError>;
+    bind(contact: Contact2<AF, Proto, AT, Addr>, caddr: ContactAddress2<Addr>): DeviceResult<ContactError, typeof caddr>;
+
+    receive(contact: Contact2, receiver: ContactReciever): DeviceResult<ContactError>;
+    receiveFrom(contact: Contact2, receiver: ContactReciever, caddr: Partial<ContactAddress2<Addr>>): DeviceResult<ContactError>;
+
+    send(contact: Contact2<AF, Proto, AT, Addr>, data: NetworkData, destination?: Addr, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
+    sendTo(contact: Contact2<AF, Proto, AT, Addr>, data: NetworkData, caddr?: Partial<ContactAddress2<Addr>>, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
+
+}
+
+export type Program = {
+    name: string;
+    descriptions?: string;
+    content?: string;
+    // sub?: Program<unknown>[];
+
+    init(proc: Process, args: string[]): void;
+}
+
+type ProcessSignal = unknown;
+type ProcessID = string; // number[] !TODO: it could be an array of numbers becouse then it would make things easier in coding
+type ProcessHandler = (proc: Process, status: ProcessSignal) => void;
+type Process = {
+    status: "UNINIT" | "MARKED_CLOSED" | "RUNNING"
+
+    id: ProcessID;
+    device: Device2;
+    program: Program;
+    data: any;
+
+
+    close(proc: Process, status: ProcessSignal): void;
+    spawn(proc: Process, program: Program, args: string[], handle_close?: ProcessHandler): Process | undefined;
+    handle(proc: Process, signal_handler: (proc: Process, signal: ProcessSignal) => void): void
+
+    // term_write(data: Uint8Array): void;
+    // term_flush(): void;
+    // read(read_func: (proc: Process<DataType>, data: Uint8Array) => void): void
+}
+
 function __contact_throw_if_closed(contact: Contact2) {
     if (contact.status === "CLOSED") {
         throw new Error("contact has been closed");
@@ -127,29 +178,14 @@ export function __find_best_caddr_match<CR extends ({ contact: Contact2 } | unde
     return best;
 }
 
-export interface Contact2<AF extends ContactAF = ContactAF, Proto extends ContactProto = ContactProto, AT extends typeof BaseAddress = typeof BaseAddress, Addr extends BaseAddress = InstanceType<AT>> {
-    status: "OPEN" | "CLOSED";
 
-    addressFamily: AF;
-    proto: Proto;
-
-    /** address naming is just a placeholder */
-    address?: ContactAddress2<Addr>;
-
-    /* Methods */
-    close(contact: Contact2<AF, Proto, AT, Addr>): DeviceResult<ContactError>;
-    bind(contact: Contact2<AF, Proto, AT, Addr>, caddr: ContactAddress2<Addr>): DeviceResult<ContactError, typeof caddr>;
-
-    receive(contact: Contact2, receiver: ContactReciever): DeviceResult<ContactError>;
-    receiveFrom(contact: Contact2, receiver: ContactReciever, caddr: Partial<ContactAddress2<Addr>>): DeviceResult<ContactError>;
-
-    send(contact: Contact2<AF, Proto, AT, Addr>, data: NetworkData, destination?: Addr, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
-    sendTo(contact: Contact2<AF, Proto, AT, Addr>, data: NetworkData, caddr?: Partial<ContactAddress2<Addr>>, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
-
-}
 
 export class Device2 {
     name = Math.floor(Math.random() * 10_000).toString() + "B2";
+
+    constructor() {
+
+    }
 
     /** this approach is different in such a way that it allows to select for a specific interfac if that something i would like to do */
     private log_records: { time: number, buffer: Uint8Array, iface: BaseInterface }[] = []
@@ -195,6 +231,121 @@ export class Device2 {
             return this.log_records
         }
         return this.log_records.filter((record) => record.iface.name + record.iface.unit == iface_id)
+    }
+
+    /*
+    THIS IS RESERVED SPACE FOR PROCESS LOGIC
+    
+    */
+    programs: Program[] = [];
+    private processes: (Process | undefined)[] = [];
+    private process_handlers: ({ proc: Process, handler: ProcessHandler, id: ProcessID } | undefined)[] = [];
+    private PROCESS_ID_SEPARATOR = ":";
+    process_start(program: Program, args: string[], proc?: Process): Process | undefined {
+        let i = -1; while (this.processes[++i]) { continue; };
+
+        let id: ProcessID = "";
+        if (proc) {
+            id = proc.id + this.PROCESS_ID_SEPARATOR;
+        }
+
+        if (id.length > 100) {
+            console.warn("id length too long; this might be caused by a spawn loop");
+            return;
+        }
+
+        this.processes[i] = {
+            status: "UNINIT",
+
+            id: id + program.name + i,
+            device: this,
+            program: program,
+            data: undefined,
+
+            close: this.process_close.bind(this),
+            spawn: this.process_spawn.bind(this),
+            handle: this.process_handle.bind(this),
+        };
+
+        if (!this.processes[i]) {
+            throw "fhsdljh"
+        }
+
+        program.init(this.processes[i]!, args);
+
+        if (this.processes[i]?.status === "MARKED_CLOSED" && !proc) {
+            this.process_close(this.processes[i]!, 0);
+        } else if (!proc) {
+            this.processes[i]!.status = "RUNNING";
+        }
+
+        return this.processes[i];
+    }
+
+    process_close(proc: Process, status: ProcessSignal) {
+        if (proc.status === "UNINIT") {
+            proc.status = "MARKED_CLOSED";
+            return;
+        }
+
+        let i = this.processes.indexOf(proc);
+        if (i < 0 || !this.processes[i]) {
+            return;
+        }
+
+        // first remove handlers
+        for (let hj = 0; hj < this.process_handlers.length; hj++) {
+            let h = this.process_handlers[hj]
+            if (!h || !h.id.startsWith(h.proc.id)) {
+                continue;
+            }
+
+            // if process has a owner call handle_close if it exists
+            if (h.proc.id != h.id && h.id == proc.id) {
+                h.handler(proc, status)
+            }
+
+            delete this.process_handlers[hj];
+        }
+
+        // close spawned processes, abuse the id
+        for (let sproc of this.processes) {
+            if (sproc && sproc.id.startsWith(proc.id) + this.PROCESS_ID_SEPARATOR && sproc.id.length > proc.id.length) {
+                this.process_close(sproc, status);
+            }
+        }
+
+        delete this.processes[i];
+    }
+
+    process_spawn: Process["spawn"] = (proc, program, args, handle_close) => {
+        // !TODO: add thing that is bound to handle close
+        let spawned_proc: Process | undefined = this.process_start(program, args, proc);
+
+        if (!spawned_proc) {
+            return;
+        }
+
+        if (handle_close) {
+            this.process_handle(proc, handle_close, spawned_proc.id);
+        }
+
+        if (spawned_proc.status == "MARKED_CLOSED") {
+            this.process_close(spawned_proc, 0);
+        } else {
+            spawned_proc.status = "RUNNING"
+        }
+
+        return spawned_proc;
+    }
+
+    process_handle(proc: Process, handler: ProcessHandler, id?: ProcessID) {
+        let i = -1; while (this.process_handlers[++i]) { continue; };
+        this.process_handlers[i] = {
+            proc: proc,
+            handler: handler,
+            id: id ? id : proc.id
+        }
     }
 
     output_udp(data: NetworkData, destination: BaseAddress, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {

@@ -7,18 +7,15 @@ import { ASCIICodes, CSI } from "../lib/terminal/shared";
 import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_HELP } from "../lib/device/program/program";
 import { DPSignal, DeviceProgramStatus } from "../lib/device/device-program";
 import { formatTable } from "../lib/device/program/helpers";
-import { Device2, EthernetInterface, LoopbackInterface } from "../lib/device/device2";
+import { Device2, EthernetInterface, LoopbackInterface, Program } from "../lib/device/device2";
 import { ICMPV4_TYPES, ICMPV6_TYPES, ICMP_HEADER, ICMP_ECHO_HEADER } from "../lib/header/icmp";
 import { IPV4Address } from "../lib/address/ipv4";
 import { calculateChecksum } from "../lib/binary/checksum";
-import { UNSET_IPV4_ADDRESS } from "../lib/device/contact/contacts-handler";
 import { createIPV4Header, IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../lib/header/ip";
 import { MACAddress } from "../lib/address/mac";
 import { createMask } from "../lib/address/mask";
 import { PCAP_GLOBAL_HEADER, PCAP_MAGIC_NUMBER, PCAP_RECORD_HEADER } from "../lib/header/pcap";
-import { BaseAddress } from "../lib/address/base";
 import { IPV6Address } from "../lib/address/ipv6";
-import { UDP_HEADER } from "../lib/header/udp";
 
 function downloadDevice2PCAP(device: Device2) {
     let records = device.log_select_records();
@@ -133,6 +130,19 @@ export const TestingComponent2: Component = () => {
     newdevice2.interface_set_address(etherinterface_2, etherinterface_2_ipv4_address, createMask(IPV4Address, 24));
     newdevice2.interface_set_address(etherinterface_2, etherinterface_2_ipv6_address, createMask(IPV4Address, 8));
 
+    let first_program: Program = {
+        name: "device2test",
+        init(proc, args) {
+            console.log("Hello world the first process is running" ,proc.id)
+            if (args.length === 0) {
+                proc.spawn(proc, first_program, [""], () => console.log("spawned process closed"));
+            }
+            proc.close(proc, 1)
+        }
+    }
+    let first_proc = newdevice.process_start(first_program, [])
+    // first_proc!.close(first_proc!, 1)
+
     etherinterface_1.connect(etherinterface_2)
     console.log(newdevice)
 
@@ -188,27 +198,6 @@ export const TestingComponent2: Component = () => {
         console.log(data)
     })
 
-    let udp_contact_device1 = newdevice.contact_create("IPv4", "UDP").data!;
-    udp_contact_device1.bind(udp_contact_device1, { daddr: new IPV4Address("0.0.0.0"), saddr: new IPV4Address("127.0.0.1"), sport: 0xff00, dport: 0 })
-    udp_contact_device1.receive(udp_contact_device1, (_, data, caddr) => {
-        if (!data.rcvif || !caddr) {
-            console.log("something is missing, ipv4:udp")
-            return;
-        }
-
-        console.log(data, caddr)
-    })
-    let udp6_contact_device1 = newdevice.contact_create("IPv6", "UDP").data!;
-    udp6_contact_device1.bind(udp6_contact_device1, { daddr: new IPV6Address("::"), saddr: new IPV6Address("::"), sport: 0xff00, dport: 0 })
-    udp6_contact_device1.receive(udp6_contact_device1, (_, data, caddr) => {
-        if (!data.rcvif || !caddr) {
-            console.log("something is missing, ipv6:udp")
-            return;
-        }
-
-        console.log(data, caddr)
-    })
-
     function sescape(str: string): Uint8Array {
         return uint8_concat([
             new Uint8Array([ASCIICodes.Escape]),
@@ -244,30 +233,6 @@ export const TestingComponent2: Component = () => {
 
         contact!.close(contact!);
     }
-    function test_sending_ipv4_udp(device: Device2, destination: IPV4Address) {
-        console.log("%cSENDING UDP MESSAGE TO: " + destination, "padding:1em; color:green; background: black;")
-
-        let contact = device.contact_create("IPv4", "UDP").data!;
-
-        let res = contact!.sendTo(contact!, { buffer: new Uint8Array([0xde, 0xad, 0xca, 0x7f, 0x00, 0xd]) }, { daddr: destination, dport: 0xff00 });
-        if (!res.success) {
-            console.log(res.error, res.message)
-        }
-
-        contact!.close(contact!);
-    }
-    function test_sending_ipv6_udp(device: Device2, destination: IPV6Address) {
-        console.log("%cSENDING UDP MESSAGE TO: " + destination, "padding:1em; color:green; background: black;")
-
-        let contact = device.contact_create("IPv6", "UDP").data!;
-
-        let res = contact!.sendTo(contact!, { buffer: new Uint8Array([0xde, 0xad, 0xca, 0x7f, 0x00, 0xd]) }, { daddr: destination, dport: 0xff00 });
-        if (!res.success) {
-            console.log(res.error, res.message)
-        }
-
-        contact!.close(contact!);
-    }
 
     function test_sending_ipv6(device: Device2, destination: IPV6Address) {
         let cres = device.contact_create("IPv6", "RAW");
@@ -275,7 +240,7 @@ export const TestingComponent2: Component = () => {
             console.log(cres.error, cres.message)
             return
         }
-
+        console.log("%cSENDING ECHO TO: " + destination, "padding:1em; color:green; background: black;")
 
         let identifier = Math.floor(Math.random() * 0xfffe), sequence = 1;
         let echohdr = ICMP_ECHO_HEADER.create({
@@ -325,8 +290,6 @@ export const TestingComponent2: Component = () => {
             <button onClick={() => {
                 test_sending_ipv4(newdevice2, new IPV4Address("192.168.1.255"))
             }}>test device 2 ether broadcast</button>
-            <button onClick={() => { test_sending_ipv4_udp(newdevice, new IPV4Address("127.0.0.1")) }}>ipv4 send udp</button>
-            <button onClick={() => { test_sending_ipv6_udp(newdevice, new IPV6Address("::1")) }}>ipv6 send udp</button>
             <button onClick={() => { test_sending_ipv6(newdevice2, etherinterface_1_ipv6_address) }}>ipv6 send</button>
             <button onClick={() => {
                 window.setTimeout(() => downloadDevice2PCAP(newdevice), 150)
