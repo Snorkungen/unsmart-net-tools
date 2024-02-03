@@ -199,7 +199,7 @@ export class Device2 {
     /** this approach is different in such a way that it allows to select for a specific interfac if that something i would like to do */
     private log_records: { time: number, buffer: Uint8Array, iface: BaseInterface }[] = []
     /** This thing is only to be called by interfaces that know the magic sauce  */
-    log(data: NetworkData, type: "SEND" | "RECIEVE", record = true) {
+    log(data: NetworkData, type: "SEND" | "RECEIVE", record = true) {
         // data.buffer is a complete ethernet frame
 
         let iface = data.rcvif;
@@ -218,7 +218,7 @@ export class Device2 {
 
         let iface_name = iface.name + iface.unit;
 
-        if (type == "RECIEVE") {
+        if (type == "RECEIVE") {
             console.info(`${this.name} - ${iface_name}: received a frame from ${frame_info.saddr}`)
         } else if (type == "SEND") {
             console.info(`${this.name} - ${iface_name}: sent a frame to ${frame_info.daddr}`)
@@ -1280,6 +1280,14 @@ export class Device2 {
         if (!bres.success) return bres as ReturnType<Contact2["receiveFrom"]>;
         return this.contact_receive(contact, receiver);
     }
+
+    schedule_default_delay = 0;
+    schedule<F extends () => void>(f: F, delay: number = this.schedule_default_delay) {
+        if (delay < 0) { delay = this.schedule_default_delay; }
+
+        // in future, create my own runtime because why not complexity is fun.
+        window.setTimeout(f, delay)
+    }
 }
 
 type DeviceAddress<AT extends typeof BaseAddress = typeof BaseAddress> = {
@@ -1382,30 +1390,32 @@ export class EthernetInterface extends BaseInterface {
 
         if (uint8_equals(etherheader.get("smac").buffer, etherheader.get("dmac").buffer)) {
             // this was meant for myself
-            window.setTimeout(() => this.receive(etherheader), 0)
+            this.device.schedule(() => this.receive(etherheader))
             return { success: true, data: undefined }
         }
 
         if (etherheader.get("dmac").isBroadcast()) {
-            // here i should send to the interface itself but i don't want that
-            // window.setTimeout(() => this.receive(etherheader), 0)
+            // here i should send to the interface to itself but i don't want that
+            // this.device.schedule(() => this.receive(etherheader))
         }
 
         // somehow put on wire
-        window.setTimeout(() => this.target && this.target.receive.bind(this.target)(etherheader), 0)
+        this.device.schedule(() => this.target && this.target.receive.call(this.target, etherheader), undefined);
         return { success: true, data: undefined }
     }
 
-    private receive(etherheader: typeof ETHERNET_HEADER): boolean {
-        this.device.log({
-            type: "DATA",
-            buffer: etherheader.getBuffer(),
-            rcvif: this
-        }, "RECIEVE")
+    receive_delay = undefined;
+    private receive(etherheader: typeof ETHERNET_HEADER) {
+        this.device.schedule(() => {
+            this.device.log({
+                type: "DATA",
+                buffer: etherheader.getBuffer(),
+                rcvif: this
+            }, "RECEIVE");
 
-        this.device.input_ether(etherheader, { rcvif: this, buffer: etherheader.getBuffer(), broadcast: etherheader.get("dmac").isBroadcast() });
-
-        return true;
+            this.device.input_ether(etherheader,
+                { rcvif: this, buffer: etherheader.getBuffer(), broadcast: etherheader.get("dmac").isBroadcast() });
+        }, this.receive_delay)
     }
 
     onDisconnect?: (iface: EthernetInterface) => void;
@@ -1474,15 +1484,16 @@ export class LoopbackInterface extends BaseInterface {
         }
 
         this.device.log(log_data, "SEND", false)
-        this.device.log(log_data, "RECIEVE", true) // Duplicate recording is probably superflous
 
-        window.setTimeout(() => {
+        this.device.schedule(() => {
             if (ethertype == ETHER_TYPES.IPv4) {
                 this.device.input_ipv4(IPV4_HEADER.from(data.buffer), data)
             } else if (ethertype == ETHER_TYPES.IPv6) {
                 this.device.input_ipv6(IPV6_HEADER.from(data.buffer), data)
             }
-        }, 0)
+
+            this.device.log(log_data, "RECEIVE", true) // Duplicate recording is probably superflous
+        })
 
         return { success: true, data: undefined };
     }
