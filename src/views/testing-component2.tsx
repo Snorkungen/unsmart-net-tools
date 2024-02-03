@@ -17,6 +17,7 @@ import { createMask } from "../lib/address/mask";
 import { PCAP_GLOBAL_HEADER, PCAP_MAGIC_NUMBER, PCAP_RECORD_HEADER } from "../lib/header/pcap";
 import { IPV6Address } from "../lib/address/ipv6";
 import { DAEMON_SHELL } from "../lib/device/program/shell2";
+import { DEVICE_PROGRAM_PING } from "../lib/device/program/ping2";
 
 function downloadDevice2PCAP(device: Device2) {
     let records = device.log_select_records();
@@ -124,7 +125,7 @@ export const TestingComponent2: Component = () => {
         }
     }
 
-    newdevice.programs.push(first_program)
+    newdevice.programs.push(first_program, DEVICE_PROGRAM_PING)
     let first_proc = newdevice.process_start(first_program, [])
     console.log(first_proc)
 
@@ -178,10 +179,49 @@ export const TestingComponent2: Component = () => {
     raw_contact_device1.receive(raw_contact_device1, raw_contact_receiver)
     raw_contact_device2.receive(raw_contact_device2, raw_contact_receiver)
 
+    let raw6_contact_receiver: Parameters<Device2["contact_receive"]>[1] = (contact, data) => {
+        if (!data.rcvif) throw "rcvif is undefinded";
+        let iphdr = IPV6_HEADER.from(data.buffer);
+        if (iphdr.get("nextHeader") != PROTOCOLS.IPV6_ICMP) {
+            console.log(data.rcvif!.device.name, data.rcvif?.id(), data.broadcast, data.buffer.length)
+            return;
+        }
+
+        let icmphdr = ICMP_HEADER.from(iphdr.get("payload"));
+
+        if (icmphdr.get("type") == ICMPV6_TYPES.ECHO_REQUEST) {
+            console.log(data.rcvif.device.name, "received an ipv6 echo request")
+
+            let reply_icmphdr = icmphdr;
+            let pseudoHdr = IPV6_PSEUDO_HEADER.create({
+                saddr: iphdr.get("daddr"),
+                daddr: iphdr.get("saddr"),
+                len: icmphdr.size,
+                proto: PROTOCOLS.IPV6_ICMP,
+            })
+            reply_icmphdr.set("type", ICMPV6_TYPES.ECHO_REPLY);
+            reply_icmphdr.set("csum", 0);
+
+            icmphdr.set("csum", calculateChecksum(uint8_concat([
+                pseudoHdr.getBuffer(),
+                icmphdr.getBuffer()
+            ])));
+            iphdr.set("payload", reply_icmphdr.getBuffer())
+            let daddr = iphdr.get("saddr");
+            iphdr.set("saddr", iphdr.get("daddr"))
+            iphdr.set("daddr", daddr)
+
+
+            let res = contact.send(contact, { buffer: iphdr.getBuffer() }, iphdr.get("daddr"));
+            if (!res.success) {
+                console.log(res.error, res.message)
+            }
+        }
+    }
     let raw6_contact_device1 = newdevice.contact_create("IPv6", "RAW").data!;
-    raw6_contact_device1.receive(raw6_contact_device1, (_, data) => {
-        console.log(data)
-    })
+    let raw6_contact_device2 = newdevice2.contact_create("IPv6", "RAW").data!;
+    raw6_contact_device1.receive(raw6_contact_device1, raw6_contact_receiver)
+    raw6_contact_device2.receive(raw6_contact_device2, raw6_contact_receiver)
 
     function sescape(str: string): Uint8Array {
         return uint8_concat([

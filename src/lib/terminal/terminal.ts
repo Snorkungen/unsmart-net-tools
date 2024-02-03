@@ -121,11 +121,11 @@ export default class Terminal {
         })
 
         // render to screen ?
-        const render = () => {
-            this.renderer.render.bind(this.renderer)();
-            requestAnimationFrame(render)
-        }
-        window.requestAnimationFrame(render);
+        // const render = () => {
+        //     this.renderer.render.bind(this.renderer)();
+        //     requestAnimationFrame(render)
+        // }
+        // window.requestAnimationFrame(render);
     }
 
     read?: (bytes: Uint8Array) => void;
@@ -134,6 +134,7 @@ export default class Terminal {
     write(bytes: Uint8Array) {
         // this is the issue
         this.renderer.buffer = uint8_concat([this.renderer.buffer, bytes]); // this copies to much theres no need for ram
+        this.renderer.render();
     }
 
     flush() {
