@@ -5,9 +5,7 @@ import { calculateChecksum } from "../../binary/checksum";
 import { uint8_concat, uint8_equals, uint8_fromString } from "../../binary/uint8-array";
 import { ICMP_ECHO_HEADER, ICMP_HEADER, ICMPV4_TYPES, ICMPV6_TYPES } from "../../header/icmp";
 import { IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
-import { DPSignal, DeviceProgram, DeviceProgramStatus } from "../device-program";
 import { Contact2, DeviceRoute, NetworkData, Process, ProcessSignal, Program } from "../device2";
-import { parseArgs } from "./helpers";
 
 type PingData = {
     contact: Contact2;
@@ -18,21 +16,31 @@ type PingData = {
     route: DeviceRoute;
     send: (proc: Process<PingData>) => void;
     timestamps: Map<number, number>;
+    stats: Map<number, number>
 }
 
 function handleExternalExit(proc: Process<PingData>) {
     proc.data.contact.close(proc.data.contact);
 
-    // maybe print out stats i guess
+    let count = 0;
+    let sum = 0;
+    for (let [, time] of proc.data.stats) {
+        sum += time;
+        count += 1;
+    }
+    if (count == 0) return;
+    let avg = (sum / count);
+
+    proc.term_write(uint8_fromString(
+        `\n${count} replies received, with an average time of ${avg.toFixed(1)} ms`
+    ))
 }
 
 function canSend(proc: Process<PingData>): boolean {
     if (proc.data.sequence < proc.data.maxSendCount) {
         return true;
     }
-
     proc.close(proc, ProcessSignal.INTERRUPT);
-
     return false;
 }
 
@@ -106,6 +114,8 @@ function handlereply(proc: Process<PingData>, source: BaseAddress, bytes: number
         return; // wait for the correct sequence number to be replied
     }
 
+    proc.data.stats.set(proc.data.sequence, time);
+
     proc.data.sequence += 1;
     proc.data.send(proc);
 }
@@ -134,7 +144,7 @@ function receivev4(proc: Process<PingData>) { // !TODO: rewrite everything again
 }
 
 function receivev6(proc: Process<PingData>) {
-    return function (contact: Contact2, data: NetworkData) {
+    return function (_: Contact2, data: NetworkData) {
         let iphdr = IPV6_HEADER.from(data.buffer);
         if (!(uint8_equals(iphdr.get("saddr").buffer, proc.data.destination.buffer))) {
             return; // HMM
@@ -159,6 +169,10 @@ function receivev6(proc: Process<PingData>) {
 const DEFAULT_MAX_SENDCOUNT = 10;
 export const DEVICE_PROGRAM_PING: Program = {
     name: "ping",
+    description: "Sends icmp echo requests to target",
+    content: `<ping [destination] ?[sendCount]>
+<ping 192.168.1.1>
+<ping ::1 4>`,
     init(proc, argv) {
         let [, target, sendCount] = argv
         let destination: IPV4Address | IPV6Address;
@@ -208,6 +222,7 @@ export const DEVICE_PROGRAM_PING: Program = {
             route: route,
             maxSendCount: maxSendCount,
             timestamps: new Map(),
+            stats: new Map(),
 
             send: sender,
         }

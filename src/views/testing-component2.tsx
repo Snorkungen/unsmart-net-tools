@@ -1,61 +1,20 @@
 import { Component, createEffect } from "solid-js";
 import Terminal, { TerminalRenderer } from "../lib/terminal/terminal";
 import { uint8_concat, uint8_fromNumber, uint8_fromString, uint8_mutateSet, uint8_readUint32BE } from "../lib/binary/uint8-array";
-import { Device } from "../lib/device/device";
-import Shell from "../lib/terminal/shell";
 import { ASCIICodes, CSI } from "../lib/terminal/shared";
-import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_HELP } from "../lib/device/program/program";
-import { DPSignal, DeviceProgramStatus } from "../lib/device/device-program";
 import { formatTable } from "../lib/device/program/helpers";
 import { Device2, EthernetInterface, LoopbackInterface, ProcessSignal, Program } from "../lib/device/device2";
 import { ICMPV4_TYPES, ICMPV6_TYPES, ICMP_HEADER, ICMP_ECHO_HEADER } from "../lib/header/icmp";
 import { IPV4Address } from "../lib/address/ipv4";
 import { calculateChecksum } from "../lib/binary/checksum";
-import { createIPV4Header, IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../lib/header/ip";
+import { IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../lib/header/ip";
 import { MACAddress } from "../lib/address/mac";
 import { createMask } from "../lib/address/mask";
-import { PCAP_GLOBAL_HEADER, PCAP_MAGIC_NUMBER, PCAP_RECORD_HEADER } from "../lib/header/pcap";
 import { IPV6Address } from "../lib/address/ipv6";
 import { DAEMON_SHELL } from "../lib/device/program/shell2";
 import { DEVICE_PROGRAM_PING } from "../lib/device/program/ping2";
-
-function downloadDevice2PCAP(device: Device2) {
-    let records = device.log_select_records();
-    let buffer = [PCAP_GLOBAL_HEADER.create({
-        "magicNumber": PCAP_MAGIC_NUMBER,
-        "versionMajor": 2,
-        "versionMinor": 4,
-        "thiszone": 2,
-        "sigfigs": 0,
-        "snaplen": 2 ** 32 - 2,
-        "network": 1
-    }).getBuffer()]
-
-    for (let record of records) {
-        buffer.push(
-            PCAP_RECORD_HEADER.create({
-                inclLen: record.buffer.length,
-                origLen: record.buffer.length,
-                tsSec: Math.floor(record.time / 1000),
-                tsUsec: (record.time % 1000) * 1000
-            }).getBuffer(),
-            record.buffer
-        )
-
-    }
-
-    let file = new File(buffer, `${device.name}-${new Date().getTime()}.cap`, {
-        "type": "application/cap",
-    })
-
-    let anchor = document.createElement("a");
-    anchor.href = URL.createObjectURL(file);
-    anchor.download = file.name;
-
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove()
-}
+import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_HELP, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_ECHO } from "../lib/device/program/program2";
+import { DEVICE_PROGRAM_IFINFO } from "../lib/device/program/ifinfo2";
 
 export const TestingComponent2: Component = () => {
     let terminal: Terminal;
@@ -89,12 +48,14 @@ export const TestingComponent2: Component = () => {
     createEffect(() => {
         newdevice.terminal_attach(terminal);
         newdevice.process_start(DAEMON_SHELL, []);
-
-    })
-
+    });
 
     let newdevice = new Device2();
-    newdevice.programs.push(test_program)
+    // add all my programs to the device
+    newdevice.programs.push(
+        test_program, DEVICE_PROGRAM_PING, DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_HELP,
+        DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_IFINFO
+    )
     newdevice.name = "FIRETTE"
     let newdevice2 = new Device2();
     newdevice2.name = "HFDAN"
@@ -125,7 +86,7 @@ export const TestingComponent2: Component = () => {
         }
     }
 
-    newdevice.programs.push(first_program, DEVICE_PROGRAM_PING)
+    newdevice.programs.push(first_program)
     let first_proc = newdevice.process_start(first_program, [])
     console.log(first_proc)
 
@@ -316,11 +277,6 @@ export const TestingComponent2: Component = () => {
                 test_sending_ipv4(newdevice2, new IPV4Address("192.168.1.255"))
             }}>test device 2 ether broadcast</button>
             <button onClick={() => { test_sending_ipv6(newdevice2, etherinterface_1_ipv6_address) }}>ipv6 send</button>
-            <button onClick={() => {
-                window.setTimeout(() => downloadDevice2PCAP(newdevice), 150)
-                // shell.read(sescape("echo hellow orlf looser\nhelp\ntest\necho cool"))
-                // shell.read(CSI(...sescape("1;5H Hello World")))
-            }}>dump commands</button>
             <div ref={(el) => {
                 terminal = new Terminal(el)
             }}></div>

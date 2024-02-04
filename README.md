@@ -10,10 +10,12 @@
       - [ ] output_ip check that the destination is not source then loopback etc.
       - [ ] input_ip verify that daddr is for the device
     - [x] create Process system
+    - [ ] migrate all previous programs and services to Device2 system
   - [ ] Device -> contact
     - [x] UDP protocol support
     - [ ] TCP protocol support
 - [ ] Terminal & Shell
+  - [ ] batch rendering for more effecient rendering
   - [ ] *Auto resize `TerminaleRenderer` View* haven't decided on what this means
   - [ ] Feature parity with previous "tty"
     - [ ] Tab completion

@@ -139,7 +139,7 @@ function read(proc: Process<ShellData>, bytes: Uint8Array) {
                 while (argv.length > 0 && program) {
                     name = argv.shift();
                     let tmp = program;
-                    // program = program?.sub?.find((p) => name == p.name)
+                    program = program?.sub?.find((p) => name == p.name)
                     if (!program) {
                         program = tmp;
                         break;

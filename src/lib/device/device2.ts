@@ -98,15 +98,18 @@ export interface Contact2<AF extends ContactAF = ContactAF, Proto extends Contac
 
 export type Program = {
     name: string;
-    descriptions?: string;
+    description?: string;
     content?: string;
     // sub?: Program<unknown>[];
 
     init(proc: Process, args: string[]): ProcessSignal;
+
+    /** this is just extra complexity for no specific reason */
+    sub?: Program[];
 }
 
 export enum ProcessSignal {
-    EXIT, INTERRUPT,
+    EXIT, INTERRUPT, ERROR = ProcessSignal.EXIT,
     /** Explicit means that the user is in charge of closing the process */
     __EXPLICIT__
 };
