@@ -95,12 +95,12 @@ const PCAP_FILE_EXTENSION = ".cap";
 export const DEVICE_PROGRAM_DOWNLOAD: Program = {
     name: "download",
     description: "Download the devices packet-capture.",
-    content: "<download>\n<download> [name]",
+    content: "<download>\n<download> [ifid]",
     init(proc, args) {
-        let [, name, ifid] = args;
-
-        if (name && name.substring(name.length - PCAP_FILE_EXTENSION.length) != PCAP_FILE_EXTENSION) {
-            name += PCAP_FILE_EXTENSION
+        let [, ifid] = args;
+        let name = proc.device.name;
+        if (ifid) {
+            name = ifid;
         }
 
         let records = proc.device.log_select_records(ifid);
@@ -126,7 +126,7 @@ export const DEVICE_PROGRAM_DOWNLOAD: Program = {
             )
         }
 
-        let file = new File(buffer, `${name}-${new Date().getTime()}.cap`, {
+        let file = new File(buffer, `${name || proc.device.name}-${new Date().getTime()}${PCAP_FILE_EXTENSION}`, {
             "type": "application/cap",
         });
 

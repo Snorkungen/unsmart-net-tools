@@ -250,7 +250,7 @@ export class Device2 {
     
     */
     programs: Program[] = [];
-    private processes: (Process | undefined)[] = [];
+    processes: (Process | undefined)[] = [];
     private process_handlers: ({ proc: Process, handler: ProcessHandler, id: ProcessID } | undefined)[] = [];
     private PROCESS_ID_SEPARATOR = ":";
     process_start(program: Program, args: string[], proc?: Process): Process | undefined {
