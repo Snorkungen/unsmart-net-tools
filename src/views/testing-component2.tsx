@@ -22,9 +22,9 @@ import { DAEMON_DHCP_SERVER } from "../lib/device/program/dhcp-server";
 export const TestingComponent2: Component = () => {
     let terminal: Terminal;
 
-    let test_program: Program = {
+    let test_program: Program<number> = {
         name: "test",
-        init(proc, args) {
+        init(proc, _, d) {
             proc.handle(proc, () => {
                 proc.term_write(uint8_fromString("Cancelled"));
                 proc.close(proc, ProcessSignal.EXIT);
@@ -42,7 +42,7 @@ export const TestingComponent2: Component = () => {
             setTimeout(() => {
                 proc.term_write(uint8_fromString("Hello world Looser"));
                 proc.close(proc, ProcessSignal.EXIT)
-            }, 1000)
+            }, d || 1000)
 
             return ProcessSignal.__EXPLICIT__;
         },

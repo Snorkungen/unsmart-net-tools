@@ -77,7 +77,7 @@ export const DAEMON_ECHO_REPLIER: Program = {
         if (proc.device.processes.find(p => p?.id.includes(this.name) && proc != p)) {
             return ProcessSignal.EXIT;
         }
-        
+
         let contact4 = proc.device.contact_create("IPv4", "RAW").data!;
         contact4.receive(contact4, receive4);
 
@@ -90,5 +90,7 @@ export const DAEMON_ECHO_REPLIER: Program = {
         });
 
         return ProcessSignal.__EXPLICIT__;
-    }
+    },
+
+    __NODATA__: true,
 }

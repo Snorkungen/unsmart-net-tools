@@ -9,7 +9,6 @@
     - [ ] flesh out the functionality
       - [ ] output_ip check that the destination is not source then loopback etc.
       - [ ] input_ip verify that daddr is for the device
-    - [ ] add a way to prepopulate "proc" data
     - [x] migrate all previous programs and services to Device2 system
     - [ ] move views to exlusively use Device2
   - [ ] Device -> contact

@@ -154,7 +154,7 @@ function read(proc: Process<ShellData>, bytes: Uint8Array) {
                     proc.term_write(new Uint8Array([ASCIICodes.NewLine]));
                     proc.data.state = ShellState.RUNNING_PROGRAM;
 
-                    proc.data.runningProc = proc.spawn(proc, program, parseArgs(proc.data.promptBuffer), (_, status) => {
+                    proc.data.runningProc = proc.spawn(proc, program, parseArgs(proc.data.promptBuffer), undefined, (_, status) => {
                         (<ShellData>proc.data).state = ShellState.RUNNING_PROGRAM;
                         (<ShellData>proc.data).promptBuffer = "";
 

@@ -96,16 +96,18 @@ export interface Contact2<AF extends ContactAF = ContactAF, Proto extends Contac
 
 }
 
-export type Program = {
+export type Program<DT = any> = {
     name: string;
     description?: string;
     content?: string;
     // sub?: Program<unknown>[];
 
-    init(proc: Process, args: string[]): ProcessSignal;
+    init(proc: Process<DT>, args: string[], data?: Partial<DT>): ProcessSignal;
 
     /** this is just extra complexity for no specific reason */
     sub?: Program[];
+
+    __NODATA__?: true;
 }
 
 export enum ProcessSignal {
@@ -126,7 +128,7 @@ export type Process<DT = any> = {
 
 
     close(proc: Process, status: ProcessSignal): void;
-    spawn(proc: Process, program: Program, args: string[], handle_close?: ProcessHandler): Process | undefined;
+    spawn<SDT extends any>(proc: Process, program: Program<SDT>, args?: string[], data?: Partial<SDT>, handle_close?: ProcessHandler): Process | undefined;
     handle(proc: Process, signal_handler: (proc: Process, signal: ProcessSignal) => void): void
 
     term_read(proc: Process, read_func: ProcessTerminalReadFunc): void
@@ -253,7 +255,7 @@ export class Device2 {
     processes: (Process | undefined)[] = [];
     private process_handlers: ({ proc: Process, handler: ProcessHandler, id: ProcessID } | undefined)[] = [];
     private PROCESS_ID_SEPARATOR = ":";
-    process_start(program: Program, args: string[], proc?: Process): Process | undefined {
+    process_start<DT extends any>(program: Program<DT>, args?: string[], data?: Partial<DT>, proc?: Process): Process | undefined {
         let i = -1; while (this.processes[++i]) { continue; };
 
         let id: ProcessID = "";
@@ -283,11 +285,14 @@ export class Device2 {
             term_flush: this.process_term_flush.bind(this),
         };
 
-        let init_sig = program.init(this.processes[i]!, args);
+        let init_sig = program.init(this.processes[i]!, args || [], data);
         if (init_sig !== ProcessSignal.__EXPLICIT__) {
             this.process_close(this.processes[i]!, init_sig)
             return undefined;
-        };
+        } else if (!this.processes[i]?.data && !program.__NODATA__) {
+            // check that data is defined but there needs to be away to silence the message if program does not use data.
+            console.warn(program.name, "data not defined! to silence warning set __NODATA__ ")
+        }
         return this.processes[i];
     }
 
@@ -319,7 +324,7 @@ export class Device2 {
 
         // close spawned processes, abuse the id
         for (let sproc of this.processes) {
-            if (sproc && sproc.id.startsWith(proc.id + this.PROCESS_ID_SEPARATOR)  && sproc.id.length > proc.id.length) {
+            if (sproc && sproc.id.startsWith(proc.id + this.PROCESS_ID_SEPARATOR) && sproc.id.length > proc.id.length) {
                 this.process_close(sproc, signal);
             }
         }
@@ -331,9 +336,8 @@ export class Device2 {
         delete this.processes[i];
     }
 
-    process_spawn: Process["spawn"] = (proc, program, args, handle_close) => {
-        // !TODO: add thing that is bound to handle close
-        let spawned_proc: Process | undefined = this.process_start(program, args, proc);
+    process_spawn: Process["spawn"] = (proc, program, args, data, handle_close) => {
+        let spawned_proc: Process | undefined = this.process_start(program, args, data, proc);
 
         if (!spawned_proc) {
             handle_close && handle_close(proc, ProcessSignal.EXIT);
