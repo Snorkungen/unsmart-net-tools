@@ -319,7 +319,7 @@ export class Device2 {
 
         // close spawned processes, abuse the id
         for (let sproc of this.processes) {
-            if (sproc && sproc.id.startsWith(proc.id) + this.PROCESS_ID_SEPARATOR && sproc.id.length > proc.id.length) {
+            if (sproc && sproc.id.startsWith(proc.id + this.PROCESS_ID_SEPARATOR)  && sproc.id.length > proc.id.length) {
                 this.process_close(sproc, signal);
             }
         }

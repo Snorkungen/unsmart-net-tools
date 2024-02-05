@@ -17,6 +17,7 @@ import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_HELP, DEVICE_PROGRAM_DOWNLOAD, DEV
 import { DEVICE_PROGRAM_IFINFO } from "../lib/device/program/ifinfo2";
 import { DAEMON_ECHO_REPLIER } from "../lib/device/program/echo-replier";
 import { DEVICE_PROGRAM_DHCP_CLIENT } from "../lib/device/program/dhcp-client";
+import { DAEMON_DHCP_SERVER } from "../lib/device/program/dhcp-server";
 
 export const TestingComponent2: Component = () => {
     let terminal: Terminal;
@@ -82,7 +83,7 @@ export const TestingComponent2: Component = () => {
     let etherinterface_2_ipv6_address = new IPV6Address("fe80::faff:0f00:000d:b778")
     newdevice2.interface_set_address(etherinterface_2, etherinterface_2_ipv4_address, createMask(IPV4Address, 24));
     newdevice2.interface_set_address(etherinterface_2, etherinterface_2_ipv6_address, createMask(IPV4Address, 8));
-    let etherinterface_4 = new EthernetInterface(newdevice, new MACAddress("fa-ff-0f-00-44-ee"));
+    let etherinterface_4 = new EthernetInterface(newdevice2, new MACAddress("fa-ff-0f-00-44-ee"));
     newdevice2.interface_add(etherinterface_4);
 
     etherinterface_1.connect(etherinterface_2);
@@ -91,6 +92,10 @@ export const TestingComponent2: Component = () => {
     // ADD ECHO REPLIER TO DEVICES
     newdevice.process_start(DAEMON_ECHO_REPLIER, [])
     newdevice2.process_start(DAEMON_ECHO_REPLIER, [])
+
+    // DHCP Server
+    newdevice2.interface_set_address(etherinterface_4, new IPV4Address("192.168.1.1"), createMask(IPV4Address, 24))
+    newdevice2.process_start(DAEMON_DHCP_SERVER, ["", etherinterface_4.id()])
 
     function test_sending_ipv4(device: Device2, destination: IPV4Address) {
         console.log("%cSENDING ECHO TO: " + destination, "padding:1em; color:green; background: black;")
@@ -178,7 +183,11 @@ export const TestingComponent2: Component = () => {
                 test_sending_ipv4(newdevice2, new IPV4Address("192.168.1.255"))
             }}>test device 2 ether broadcast</button>
             <button onClick={() => { test_sending_ipv6(newdevice2, etherinterface_1_ipv6_address) }}>ipv6 send</button>
-            <button onClick={() => { newdevice.process_start(DEVICE_PROGRAM_DHCP_CLIENT, ["", etherinterface_3.id()]) }}>dhcp</button>
+            <button onClick={() => {
+                // just for testing purposes change the client id by changing the macaddress
+                etherinterface_3.macAddress.buffer[5] += 1
+                newdevice.process_start(DEVICE_PROGRAM_DHCP_CLIENT, ["", etherinterface_3.id()]);
+            }}>dhcp</button>
             <div ref={(el) => {
                 terminal = new Terminal(el)
             }}></div>

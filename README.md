@@ -9,8 +9,9 @@
     - [ ] flesh out the functionality
       - [ ] output_ip check that the destination is not source then loopback etc.
       - [ ] input_ip verify that daddr is for the device
-    - [x] create Process system
-    - [ ] migrate all previous programs and services to Device2 system
+    - [ ] add a way to prepopulate "proc" data
+    - [x] migrate all previous programs and services to Device2 system
+    - [ ] move views to exlusively use Device2
   - [ ] Device -> contact
     - [x] UDP protocol support
     - [ ] TCP protocol support
@@ -19,8 +20,6 @@
   - [ ] *Auto resize `TerminaleRenderer` View* haven't decided on what this means
   - [ ] Feature parity with previous "tty"
     - [ ] Tab completion
-    - [ ] Intercept keystrokes, For `DPSignal` Purposes
-    - [x] Implement features of previous "programs"
   - [ ] Enviroment Variables & Variable expansion `Shell.promptBuffer`
 - [x] Remove `Buffer` from client build
   - [x] Remove `buffer` polyfill

@@ -218,7 +218,7 @@ function receive(proc: Process<DHCPClientData>) {
                 return;
             } else if (messageType == DHCP_MESSGAGE_TYPES.DHCPACK) {
                 // commit configuration
-                console.info("COMMITTING DHCP", proc.data);
+                console.info("COMMITTING DHCP");
 
                 if (proc.data.address4 && proc.data.netmask4) {
                     proc.device.interface_set_address(proc.data.iface, proc.data.address4, proc.data.netmask4);
@@ -230,13 +230,16 @@ function receive(proc: Process<DHCPClientData>) {
                             destination: UNSET_IPV4_ADDRESS,
                             netmask: createMask(IPV4Address, 0),
                             gateway: gateway,
-                            iface: proc.data.iface
+                            iface: proc.data.iface,
+                            f_gateway: true
                         })
                     }
                 }
 
-                // !TODO: set timeout to revalidate with least time
                 proc.data.state = DHCPClientState.BOUND;
+                // !TODO: set timeout to revalidate with least time
+                // for now just exit
+                proc.close(proc, ProcessSignal.INTERRUPT); // interrupt is to call the cleanup "handle" function
             }
         }
     }

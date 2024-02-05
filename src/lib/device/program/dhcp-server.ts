@@ -434,7 +434,7 @@ function receive(proc: Process<DHCPServerData>) {
     }
 }
 
-export const DAEMON_ECHO_REPLIER: Program = {
+export const DAEMON_DHCP_SERVER: Program = {
     name: "daemon_dhcp_server",
     init(proc, [, ifid]) {
         // check that program is not running
@@ -471,7 +471,6 @@ export const DAEMON_ECHO_REPLIER: Program = {
         proc.handle(proc, () => {
             contact.close(contact);
         })
-
         contact.receive(contact, receive(proc));
 
         return ProcessSignal.__EXPLICIT__;
