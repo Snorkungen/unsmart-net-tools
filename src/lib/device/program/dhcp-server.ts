@@ -1,7 +1,7 @@
 import { BaseAddress } from "../../address/base";
 import { IPV4Address } from "../../address/ipv4";
 import { AddressMask, createMask } from "../../address/mask";
-import { and, mutateNot, mutateAnd, mutateOr } from "../../binary";
+import { and, mutateNot, mutateAnd, mutateOr, not, or } from "../../binary";
 import { calculateChecksum } from "../../binary/checksum";
 import { uint8_concat, uint8_equals, uint8_fromNumber, uint8_readUint32BE } from "../../binary/uint8-array";
 import { DCHP_OP, DCHP_PORT_CLIENT, DCHP_PORT_SERVER, DHCP_END_OPTION, DHCP_HEADER, DHCP_MAGIC_COOKIE, DHCP_OPTION } from "../../header/dhcp/dhcp";
@@ -434,15 +434,15 @@ function receive(proc: Process<DHCPServerData>) {
     }
 }
 
-export const DAEMON_DHCP_SERVER: Program = {
+export const DAEMON_DHCP_SERVER: Program<DHCPServerData> = {
     name: "daemon_dhcp_server",
-    init(proc, [, ifid]) {
+    init(proc, [, ifid], data) {
         // check that program is not running
         if (proc.device.processes.find(p => p?.id.includes(this.name) && proc != p && proc.data.iface.id() == ifid)) {
             return ProcessSignal.EXIT;
         }
 
-        let iface = proc.device.interfaces.find(f => f.id() == ifid);
+        let iface = data?.iface || proc.device.interfaces.find(f => f.id() == ifid);
         if (!iface || !(iface instanceof EthernetInterface)) {
             // no iface found
             return ProcessSignal.ERROR;
@@ -450,20 +450,27 @@ export const DAEMON_DHCP_SERVER: Program = {
 
         console.warn(this.name + " is a bad implementation")
 
-        let contact = proc.device.contact_create("RAW", "RAW").data!;
-
         let source = iface.addresses.find(a => a.address instanceof IPV4Address);
         if (!source) {
             return ProcessSignal.ERROR;
         }
 
+        let addressRange4 = data?.addressRange4;
+        if (!addressRange4) { // this is cursed, does not feel right
+            let start = new IPV4Address(source.address); incrementAddress(start, source.netmask as AddressMask<typeof IPV4Address>);
+            let end = new IPV4Address(or(start.buffer, not(source.netmask.buffer))); end.buffer[3] = end.buffer[3] ^ 1;
+            addressRange4 = [start, end];
+        }
+
+        let contact = proc.device.contact_create("RAW", "RAW").data!;
+
         (<DHCPServerData>proc.data) = {
-            sid: source.address.buffer,
+            sid: data?.sid || source.address.buffer,
             contact: contact,
             iface: iface,
-            addressRange4: [new IPV4Address("192.168.1.140"), new IPV4Address("192.168.1.240")],// hardcoded because why not
-            netmask4: createMask(IPV4Address, 24),
-            gateways4: [new IPV4Address("192.168.1.1")],
+            addressRange4: addressRange4,
+            netmask4: source.netmask as AddressMask<typeof IPV4Address>,
+            gateways4: data?.gateways4,
 
             repo: new Map()
         }

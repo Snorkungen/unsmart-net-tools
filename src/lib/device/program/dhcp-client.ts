@@ -218,7 +218,7 @@ function receive(proc: Process<DHCPClientData>) {
                 return;
             } else if (messageType == DHCP_MESSGAGE_TYPES.DHCPACK) {
                 // commit configuration
-                console.info("COMMITTING DHCP");
+                console.info("COMMITTING DHCP " + proc.data.address4);
 
                 if (proc.data.address4 && proc.data.netmask4) {
                     proc.device.interface_set_address(proc.data.iface, proc.data.address4, proc.data.netmask4);
@@ -245,11 +245,11 @@ function receive(proc: Process<DHCPClientData>) {
     }
 }
 
-export const DEVICE_PROGRAM_DHCP_CLIENT: Program = {
+export const DEVICE_PROGRAM_DHCP_CLIENT: Program<DHCPClientData> = {
     name: "dhcp_client",
-    init(proc, [, ifid]) {
+    init(proc, [, ifid], data) {
         // second argument is the ifid
-        let iface = proc.device.interfaces.find(f => f.id() == ifid);
+        let iface = data?.iface || proc.device.interfaces.find(f => f.id() == ifid);
         if (!iface || !(iface instanceof EthernetInterface)) {
             // no iface found
             return ProcessSignal.ERROR;
@@ -263,6 +263,7 @@ export const DEVICE_PROGRAM_DHCP_CLIENT: Program = {
             contact: contact,
             iface: iface,
 
+            // TODO: make this smart enough to take extenal paramReqList
             parameterReqList: createOptionBuffer(DHCP_TAGS.PARAMETER_REQUEST_LIST, new Uint8Array([ // DHCP PARAMETER REQUEST LIST
                 DHCP_TAGS.SUBNET_MASK,
                 DHCP_TAGS.ROUTER,

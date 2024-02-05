@@ -1,11 +1,11 @@
-import { xor, not } from "../../binary/buffer-bitwise";
+import { or, not } from "../../binary/buffer-bitwise";
 import { IPV4Address } from "../ipv4";
 import { AddressMask } from "../mask";
 
 export function calculateSubnetIPV4<Address extends typeof IPV4Address>(address: InstanceType<Address>, aMask: AddressMask<Address>) {
     let networkAddress = aMask.mask(address),
         broadcastAddress = new IPV4Address(
-            xor(networkAddress.buffer, not(aMask.buffer))
+            or(networkAddress.buffer, not(aMask.buffer))
         );
 
     let minHostAddress = new IPV4Address(
