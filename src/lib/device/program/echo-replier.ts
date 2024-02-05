@@ -17,7 +17,7 @@ function receive4(contact: Contact2, data: NetworkData) {
     if (icmphdr.get("type") != ICMPV4_TYPES.ECHO_REQUEST) {
         return;
     }
-    console.log("HELLO")
+
     let reply_icmphdr = icmphdr;
     reply_icmphdr.set("type", ICMPV4_TYPES.ECHO_REPLY);
     reply_icmphdr.set("csum", 0);

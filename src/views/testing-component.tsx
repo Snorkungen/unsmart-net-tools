@@ -1,17 +1,14 @@
-import { Component, JSX } from "solid-js";
-import { Device } from "../lib/device/device";
-import { AddressMask, createMask } from "../lib/address/mask";
+import { Component } from "solid-js";
+import { createMask } from "../lib/address/mask";
 import { IPV4Address } from "../lib/address/ipv4";
 import { IPV6Address } from "../lib/address/ipv6";
-import { ContactAddrFamily, ContactProto } from "../lib/device/contact/contact";
-import { UNSET_IPV4_ADDRESS } from "../lib/device/contact/contacts-handler";
 import { uint8_concat, uint8_fromNumber, uint8_readUint16BE } from "../lib/binary/uint8-array";
 import { ICMPV4_TYPES, ICMPV6_TYPES, ICMP_ECHO_HEADER, ICMP_HEADER } from "../lib/header/icmp";
 import { calculateChecksum } from "../lib/binary/checksum";
 import { IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS, createIPV4Header } from "../lib/header/ip";
-import { Interface } from "../lib/device/interface";
-import { DeviceRoute, DeviceRouteFlag } from "../lib/device/routing-table";
-import { and, or } from "../lib/binary";
+import { Device2, EthernetInterface, createMacAddress } from "../lib/device/device2";
+import { DEVICE_PROGRAM_DOWNLOAD } from "../lib/device/program/program2";
+import { DAEMON_ECHO_REPLIER } from "../lib/device/program/echo-replier";
 const selectContents = (ev: MouseEvent) => {
     if (!(ev.currentTarget instanceof HTMLElement)) return;
     let range = document.createRange();
@@ -19,131 +16,85 @@ const selectContents = (ev: MouseEvent) => {
     window.getSelection()?.addRange(range);
 }
 
-const DeviceComponent: Component<{ device: Device }> = ({ device }) => {
+const DeviceComponent: Component<{ device: Device2 }> = ({ device }) => {
+    // HACKY BS
+    device.process_start(DAEMON_ECHO_REPLIER);
 
     return <div>
         <div style={{ display: "flex", "justify-content": "space-between" }}>
             <h1>{device.name}</h1>
             <a href="" onClick={ev => {
-                let f = device.createCaptureFile();
-                if (!f) return alert("No content to dowload"), ev.preventDefault()
-                ev.currentTarget.download = f.name;
-                ev.currentTarget.href = URL.createObjectURL(f);
+                device.process_start(DEVICE_PROGRAM_DOWNLOAD);
+                ev.preventDefault()
             }}>Download</a>
         </div>
         <div>
             {device.interfaces.map((iface) => (
                 <div>
-                    <h5>{iface.ifID}</h5>
-                    <p>MAC address: <span onClick={selectContents}>{iface.macAddress.toString()}</span></p>
-                    {iface.ipv4Address && iface.ipv4SubnetMask && (
-                        <p>IPv4 address: <span onClick={selectContents}>{iface.ipv4Address.toString()}</span>/<span>{iface.ipv4SubnetMask.length}</span></p>
-                    )}
-                    {iface.ipv6Address && iface.prefixLength && (
-                        <p>IPv6 address: <span onClick={selectContents}>{iface.ipv6Address.toString(4)}</span>/<span>{iface.prefixLength}</span></p>
-                    )}
-                    <p>is connected: {iface.isConnected + ""}</p>
+                    <h5>{iface.id()}</h5>
+                    {iface instanceof EthernetInterface && <p>MAC address: <span onClick={selectContents}>{iface.macAddress.toString()}</span></p>}
+                    {(() => {
+                        let source4 = iface.addresses.find(a => a.address instanceof IPV4Address), source6 = iface.addresses.find(a => a.address instanceof IPV6Address);
+                        return (<>
+                            {source4 && <p>IPv4 address: <span onClick={selectContents}>{source4.address.toString()}</span>/<span>{source4.netmask.length}</span></p>}
+                            {source6 && <p>IPv6 address: <span onClick={selectContents}>{source6.address.toString()}</span>/<span>{source6.netmask.length}</span></p>}
+                        </>)
+                    })()}
+                    <p>is connected: {iface.up + ""}</p>
                 </div>
             ))}
         </div>
     </div>
 }
 
-let pc1_routes: DeviceRoute[] = [],
-    pc2_routes: DeviceRoute[] = []
-
-function setIP4Address(routes: DeviceRoute[], iface: Interface, address: IPV4Address, netmask: AddressMask<typeof IPV4Address>) {
-    // there would be logic for removing routes that would no longer work
-
-    iface.ipv4Address = address;
-    iface.ipv4SubnetMask = netmask;
-
-    // add net id to routes
-    let destination = new IPV4Address(and(address.buffer, netmask.buffer));
-    let gateway = new IPV4Address("0.0.0.0");
-
-    let flags: DeviceRouteFlag[] = [];
-
-    if (iface.isConnected) {
-        flags.push(DeviceRouteFlag.UP)
-    }
-
-    let ridx = routes.push({ destination, netmask, gateway, flags, iface }) - 1;
-
-    iface.onConnect = () => {
-        routes[ridx].flags.push(DeviceRouteFlag.UP)
-    }
-
-    iface.onDisconnect = () => {
-        routes[ridx].flags = routes[ridx].flags.filter((v) => v != DeviceRouteFlag.UP);
-    }
-
-    return ridx;
-}
-
-let pc1 = new Device();
-let pc2 = new Device();
+let pc1 = new Device2();
+let pc2 = new Device2();
 pc1.name = "PC1"
 pc2.name = "PC2"
 
-let iface_pc1 = pc1.createInterface();
-let iface_pc2 = pc2.createInterface();
+let iface_pc1 = new EthernetInterface(pc1, createMacAddress()); pc1.interface_add(iface_pc1)
+let iface_pc2 = new EthernetInterface(pc2, createMacAddress()); pc2.interface_add(iface_pc2)
 
-setIP4Address(
-    pc1_routes,
-    iface_pc1,
-    new IPV4Address("192.168.1.10"),
-    createMask(IPV4Address, 24)
-)
-
-setIP4Address(
-    pc2_routes,
-    iface_pc2,
-    new IPV4Address("192.168.1.20"),
-    createMask(IPV4Address, 24)
-)
+pc1.interface_set_address(iface_pc1, new IPV4Address("192.168.1.10"), createMask(IPV4Address, 24));
+pc2.interface_set_address(iface_pc2, new IPV4Address("192.168.1.20"), createMask(IPV4Address, 24));
 
 iface_pc1.connect(iface_pc2);
 
-console.log(pc1_routes, pc2_routes)
+function screamToEchoUDPServer(pc: Device2) {
+    let contact = pc.contact_create("IPv4", "UDP").data!;
 
-function screamToEchoUDPServer(pc: Device) {
-    let contact = pc.contactsHandler.createContact(ContactAddrFamily.IPv4, ContactProto.UDP);
+    let destination = new IPV4Address("192.168.1.10"); // iface_pc1 ipv4 address
 
-    contact.recieveFrom = (_, data) => {
-        console.log(new IPV4Address(data.subarray(0, 4)).toString())
-        contact.close();
-    }
+    // THIS IS WHY IT IS IMPORTANT THAT THE DEVICE INTERFACES OUTPUT ARE ASYNCHRONUS
+    let r = contact.sendTo(contact, { buffer: uint8_fromNumber(0xdeadf00d, 10) }, { daddr: destination, dport: SERVER_PORT })
+    contact.receive(contact, (_, data) => {
+        console.log(new IPV4Address(data.buffer.subarray(0, 4)).toString(), uint8_readUint16BE(data.buffer.subarray(4)));
+        contact.close(contact)
+    })
 
-    let s = contact.sendTo({
-        address: iface_pc1.ipv4Address!,
-        port: SERVER_PORT,
-        proto: ContactProto.UDP,
-        addrFamily: ContactAddrFamily.IPv4
-    }, uint8_fromNumber(0xdeadf00d));
 
-    if (!s) {
-        contact.close();
+    if (!r.success) {
+        contact.close(contact);
         console.log("failed to send")
     }
 }
 
 // UDP server respond with address and port
 const SERVER_PORT = 3640; // ECHO
-let serverContact = pc1.contactsHandler.createContact(ContactAddrFamily.IPv4, ContactProto.UDP);
-if (!serverContact.bind({
-    address: UNSET_IPV4_ADDRESS,
-    port: SERVER_PORT,
-})) {
-    throw "failed to bind"
-}
-
-serverContact.recieveFrom = (caddr, _) => {
+let serverContact = pc1.contact_create("IPv4", "UDP").data!;
+if (!serverContact.receiveFrom(serverContact, (contact, _, caddr) => {
     console.info("[UDP_ECHO_SERVER] recieved request ... responding")
-    serverContact.sendTo(caddr, uint8_concat([
-        caddr.address.buffer,
-        uint8_fromNumber(caddr.port, 2)
-    ]))
+    let replyContact = pc1.contact_create(contact.addressFamily, contact.proto).data!;
+    let r = replyContact.sendTo(replyContact, {
+        buffer: uint8_concat([
+            caddr!.daddr.buffer,
+            uint8_fromNumber(caddr!.sport, 2)
+        ])
+    }, caddr);
+    console.log(caddr)
+    replyContact.close(replyContact);
+}, { sport: SERVER_PORT }).success) {
+    throw "failed to bind"
 }
 
 // TESTING END
@@ -177,11 +128,11 @@ export const TestingComponent: Component = () => {
                         })
 
                         if (IPV4Address.validate(ip)) {
-                            let contact = device.contactsHandler.createContact(ContactAddrFamily.IPv4, ContactProto.RAW);
-                            contact.recieve = () => {
-                                contact.close();
+                            let contact = device.contact_create("IPv4", "RAW").data!;
+                            contact.receive(contact, () => {
+                                contact.close(contact);
                                 success()
-                            };
+                            })
 
                             let icmpHdr = ICMP_HEADER.create({
                                 type: ICMPV4_TYPES.ECHO_REQUEST,
@@ -191,29 +142,35 @@ export const TestingComponent: Component = () => {
                             icmpHdr.set("csum", calculateChecksum(icmpHdr.getBuffer()));
 
                             let ipHdr = createIPV4Header({
-                                saddr: UNSET_IPV4_ADDRESS,
+                                saddr: new IPV4Address("0.0.0.0"),
                                 daddr: new IPV4Address(ip),
                                 proto: PROTOCOLS.ICMP,
                                 payload: icmpHdr.getBuffer()
                             })
 
-                            contact.send(ipHdr.getBuffer());
-
+                            contact.send(contact, { buffer: ipHdr.getBuffer() }, ipHdr.get("daddr"));
                         } else if (/* IPV6Address.validate(ip) */ true) {
-                            let contact = device.contactsHandler.createContact(ContactAddrFamily.IPv6, ContactProto.RAW);
-                            contact.recieve = () => {
-                                contact.close();
+                            let contact = device.contact_create("IPv6", "RAW").data!;
+                            contact.receive(contact, () => {
+                                contact.close(contact);
                                 success()
-                            };
+                            })
+
+                            let destination = new IPV6Address(ip)
 
                             let icmpHdr = ICMP_HEADER.create({
                                 type: ICMPV6_TYPES.ECHO_REQUEST,
                                 data: echoHdr.getBuffer()
                             });
 
+                            let route = device.route_resolve(destination);
+                            if (!route) return;
+                            let source = route.iface.addresses.find(a => a.address.constructor == destination.constructor);
+                            if (!source) return;
+
                             let pseudoHdr = IPV6_PSEUDO_HEADER.create({
-                                saddr: device.interfaces[0].ipv6Address!,
-                                daddr: new IPV6Address(ip),
+                                saddr: source?.address as IPV6Address,
+                                daddr: destination,
                                 len: icmpHdr.size,
                                 proto: PROTOCOLS.IPV6_ICMP,
                             })
@@ -221,13 +178,13 @@ export const TestingComponent: Component = () => {
                             icmpHdr.set("csum", calculateChecksum(uint8_concat([pseudoHdr.getBuffer(), icmpHdr.getBuffer()])));
 
                             let ipHdr = IPV6_HEADER.create({
-                                saddr: device.interfaces[0].ipv6Address!,
-                                daddr: new IPV6Address(ip),
+                                saddr: source.address as IPV6Address,
+                                daddr: destination,
                                 nextHeader: PROTOCOLS.IPV6_ICMP,
                                 payload: icmpHdr.getBuffer()
                             })
 
-                            contact.send(ipHdr.getBuffer());
+                            contact.send(contact, { buffer: ipHdr.getBuffer() }, destination, route);
                         }
 
 

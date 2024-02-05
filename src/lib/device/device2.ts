@@ -4,7 +4,7 @@ import { ALL_LINK_LOCAL_NODES_ADDRESSV6, IPV6Address } from "../address/ipv6";
 import { MACAddress } from "../address/mac";
 import { AddressMask, createMask } from "../address/mask";
 import { and, not, or } from "../binary";
-import { uint8_concat, uint8_equals, uint8_matchLength, uint8_readUint32BE } from "../binary/uint8-array";
+import { uint8_concat, uint8_equals, uint8_fromNumber, uint8_matchLength, uint8_readUint32BE } from "../binary/uint8-array";
 import { ETHERNET_HEADER, ETHER_TYPES, EtherType } from "../header/ethernet";
 import { IPV4_HEADER, IPV4_PSEUDO_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../header/ip";
 import { ARP_HEADER, ARP_OPCODES, createARPHeader } from "../header/arp";
@@ -1346,6 +1346,12 @@ class BaseInterface {
     }
 }
 
+let macAddressCount = 0;
+let startBuf = new Uint8Array([0xfa, 0xff, 0x0f, 0])
+export function createMacAddress(): MACAddress {
+    let buf = uint8_fromNumber(macAddressCount++, 2)
+    return new MACAddress(uint8_concat([startBuf, buf]))
+}
 export class EthernetInterface extends BaseInterface {
     private target: EthernetInterface | undefined;
     macAddress: MACAddress
