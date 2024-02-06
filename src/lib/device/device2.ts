@@ -227,11 +227,11 @@ export class Device2 {
         let frame_info = reader.readEthernet(data.buffer, data.buffer.length)
 
         let iface_name = iface.name + iface.unit;
-
+frame_info.protocol
         if (type == "RECEIVE") {
-            console.info(`${this.name} - ${iface_name}: received a frame from ${frame_info.saddr}`)
+            console.info(`${this.name} - ${iface_name}: received a frame from ${frame_info.saddr} - ${frame_info.protocol}`)
         } else if (type == "SEND") {
-            console.info(`${this.name} - ${iface_name}: sent a frame to ${frame_info.daddr}`)
+            console.info(`${this.name} - ${iface_name}: sent a frame to ${frame_info.daddr} - ${frame_info.protocol}`)
         }
 
         if (!record) {
@@ -812,7 +812,7 @@ export class Device2 {
             )
         } else if (etherframe.get("ethertype") == ETHER_TYPES.ARP) {
             this.input_arp(etherframe, { rcvif: data.rcvif, broadcast: data.broadcast, buffer: etherframe.getBuffer().slice(0, ETHERNET_HEADER.getMinSize()) })
-        } 
+        }
 
         // this knows that the data is an ethernet frame
 
@@ -1386,6 +1386,7 @@ export class EthernetInterface extends BaseInterface {
         this.vlan = { type: type, vids: vids };
     }
 
+    onSend?: () => void;
     output(data: NetworkData, destination: BaseAddress, rtentry?: DeviceRoute<typeof BaseAddress>): DeviceResult<"UDUMB"> {
         if (!this.up || !this.target) {
             return { success: false, error: "UDUMB", message: "interface is eiter not up or a route entry is missing" };
@@ -1472,14 +1473,17 @@ export class EthernetInterface extends BaseInterface {
             // this.device.schedule(() => this.receive(etherheader))
         }
 
+        this.onSend && this.onSend();
         // somehow put on wire
         this.device.schedule(() => this.target && this.target.receive.call(this.target, etherheader), undefined);
         return { success: true, data: undefined }
     }
 
-    receive_delay = undefined;
+    onRecv?: () => void;
+    receive_delay: number | undefined = undefined;
     private receive(etherheader: typeof ETHERNET_HEADER) {
         // on recieive
+        this.onRecv && this.onRecv();
 
         vlan_handler: if (this.vlan) {
             // !TODO: vlan input processing

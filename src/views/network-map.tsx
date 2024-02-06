@@ -1,34 +1,17 @@
-import { Accessor, Component, For, Show, createEffect, createSignal } from "solid-js";
 import { JSX } from "solid-js/jsx-runtime";
 import { IPV4Address } from "../lib/address/ipv4";
 import { createMask } from "../lib/address/mask";
-import { Device } from "../lib/device/device";
-import { NetworkSwitch } from "../lib/device/network-switch";
-import { Interface } from "../lib/device/interface";
-import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_HELP } from "../lib/device/program/program";
-import Shell from "../lib/terminal/shell";
+import { NetworkSwitch2 } from "../lib/device/network-switch";
 import Terminal from "../lib/terminal/terminal";
-import { DEVICE_PROGRAM_IFINFO } from "../lib/device/program/ifinfo";
-import { DEVICE_PROGRAM_PING } from "../lib/device/program/ping";
-
-let shell = new Shell(new Device);
-function setShellDevice(device: Device) {
-
-    device.programs = [
-        DEVICE_PROGRAM_CLEAR,
-        DEVICE_PROGRAM_ECHO,
-        DEVICE_PROGRAM_HELP,
-        DEVICE_PROGRAM_DOWNLOAD,
-        DEVICE_PROGRAM_IFINFO,
-        DEVICE_PROGRAM_PING
-    ]
-
-    shell.configureDevice(device)
-}
-
+import { Device2, EthernetInterface } from "../lib/device/device2";
+import { DAEMON_SHELL } from "../lib/device/program/shell2";
+import { DAEMON_ECHO_REPLIER } from "../lib/device/program/echo-replier";
+import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_HELP } from "../lib/device/program/program2";
+import { DEVICE_PROGRAM_PING } from "../lib/device/program/ping2";
+import { DEVICE_PROGRAM_IFINFO } from "../lib/device/program/ifinfo2";
 
 class NetworkMapInterface {
-    iface: Interface;
+    iface: EthernetInterface;
     nmDevice: NetworkMapDevice;
 
     i: number;
@@ -40,7 +23,7 @@ class NetworkMapInterface {
     connectorStrokeHighlight = "#cc2e12"
 
 
-    constructor(nmDevice: NetworkMapDevice, iface: Interface, i: number) {
+    constructor(nmDevice: NetworkMapDevice, iface: EthernetInterface, i: number) {
         this.nmDevice = nmDevice;
         this.iface = iface;
         this.i = i;
@@ -51,19 +34,19 @@ class NetworkMapInterface {
 
         iface.onRecv = this.onRecv.bind(this)
         iface.onSend = this.onSend.bind(this)
-        iface.recvWait = INTERFACE_ANIM_DELAY;
+        iface.receive_delay = INTERFACE_ANIM_DELAY;
     }
 
     onSend() {
         this.element.setAttribute("fill", "orange");
         setTimeout(() => {
-            this.element.setAttribute("fill", this.iface.isConnected ? "green" : "red")
+            this.element.setAttribute("fill", this.iface.up ? "green" : "red")
         }, INTERFACE_ANIM_DELAY)
     }
     onRecv() {
         this.element.setAttribute("fill", "purple");
         setTimeout(() => {
-            this.element.setAttribute("fill", this.iface.isConnected ? "green" : "red")
+            this.element.setAttribute("fill", this.iface.up ? "green" : "red")
         }, INTERFACE_ANIM_DELAY)
     }
 
@@ -79,7 +62,7 @@ class NetworkMapInterface {
         this.element.setAttribute("y", this.y + "")
         this.element.setAttribute("width", width + "")
         this.element.setAttribute("height", height + "")
-        this.element.setAttribute("fill", this.iface.isConnected ? "green" : "red")
+        this.element.setAttribute("fill", this.iface.up ? "green" : "red")
     }
 
     render() {
@@ -92,16 +75,16 @@ class NetworkMapDevice {
     y: number;
     width: number;
     height: number;
-    device: Device;
+    device: Device2;
     nmInterfaces: Array<NetworkMapInterface>
-    constructor(x: number, y: number, device: Device) {
+    constructor(x: number, y: number, device: Device2) {
         this.x = x;
         this.y = y;
         this.width = 50;
         this.height = this.width;
         this.device = device;
 
-        this.nmInterfaces = this.device.interfaces.map((iface, i) => new NetworkMapInterface(this, iface, i));
+        this.nmInterfaces = this.device.interfaces.filter(iface => iface instanceof EthernetInterface).map((iface, i) => (new NetworkMapInterface(this, iface as EthernetInterface, i)));
     }
 
     mouseIsDown = false;
@@ -109,7 +92,7 @@ class NetworkMapDevice {
 
     map?: NetworkMap;
     update() {
-        if (this.device instanceof NetworkSwitch) {
+        if (this.device instanceof NetworkSwitch2) {
             this.width = 75;
             this.height = 25
         }
@@ -157,7 +140,12 @@ class NetworkMapDevice {
             onMouseUp={() => this.mouseIsDown = false}
             onMouseLeave={() => this.mouseIsDown = false}
 
-            onClick={() => setShellDevice(this.device)}
+            onClick={() => {
+                terminalOwner.terminal_detach()
+                terminalOwner = this.device;
+                terminalOwner.terminal_attach(terminal);
+                terminalOwner.process_start(DAEMON_SHELL);
+            }}
         >
             {this.rect}
             {this.text}
@@ -195,7 +183,7 @@ class NetworkMap {
     }
 
     private findTarget(iface: NetworkMapInterface): NetworkMapInterface | null {
-        if (!iface.iface.isConnected) return null;
+        if (!iface.iface.up) return null;
 
         for (let nmd of this.devices) {
             if (nmd == iface.nmDevice) continue;
@@ -244,7 +232,7 @@ class NetworkMap {
 
         for (let device of this.devices) {
             for (let iface of device.nmInterfaces) {
-                if (!iface.iface.isConnected) continue;
+                if (!iface.iface.up) continue;
                 let target = this.findTarget(iface);
 
                 if (!target) continue;
@@ -310,31 +298,40 @@ class NetworkMap {
 
 const INTERFACE_ANIM_DELAY = 900;
 
-let networkSwitch = new NetworkSwitch();
-let networkSwitch2 = new NetworkSwitch();
+function init_programs (device: Device2) {
+    device.process_start(DAEMON_ECHO_REPLIER);
+    device.programs = [
+        DEVICE_PROGRAM_ECHO,
+        DEVICE_PROGRAM_IFINFO,
+        DEVICE_PROGRAM_HELP,
+        DEVICE_PROGRAM_CLEAR,
+        DEVICE_PROGRAM_PING,
+    ]
+}
+
+let networkSwitch = new NetworkSwitch2();
+let networkSwitch2 = new NetworkSwitch2();
 networkSwitch.name = "SW1"
 networkSwitch2.name = "SW2"
 
-let swIface_trunk = networkSwitch.createInterface();
-let swIface2_trunk = networkSwitch2.createInterface();
+let swIface_trunk = networkSwitch.interface_add(new EthernetInterface(networkSwitch));
+let swIface2_trunk = networkSwitch2.interface_add(new EthernetInterface(networkSwitch));
 swIface_trunk.connect(swIface2_trunk);
 
-let swIface_pc1 = networkSwitch.createInterface();
-let swIface_pc2 = networkSwitch.createInterface();
-let swIface_pc3 = networkSwitch.createInterface();
-let swIface_pc4 = networkSwitch.createInterface();
+let swIface_pc1 = networkSwitch.interface_add(new EthernetInterface(networkSwitch));
+let swIface_pc2 = networkSwitch.interface_add(new EthernetInterface(networkSwitch));
+let swIface_pc3 = networkSwitch.interface_add(new EthernetInterface(networkSwitch));
+let swIface_pc4 = networkSwitch.interface_add(new EthernetInterface(networkSwitch));
 
+let swIface2_pc5 = networkSwitch2.interface_add(new EthernetInterface(networkSwitch));
 
-let swIface2_pc5 = networkSwitch2.createInterface();
-
-
-let vlan10: Interface["vlan"] = {
+let vlan10: EthernetInterface["vlan"] = {
     type: "access",
     vids: [10]
-}, vlan20: Interface["vlan"] = {
+}, vlan20: EthernetInterface["vlan"] = {
     type: "access",
     vids: [20]
-}, vlanTrunk: Interface["vlan"] = {
+}, vlanTrunk: EthernetInterface["vlan"] = {
     type: "trunk",
     vids: [1, /*10,*/ 20]
 }
@@ -350,39 +347,27 @@ swIface2_pc5.vlan = vlan20;
 swIface_trunk.vlan = vlanTrunk;
 swIface2_trunk.vlan = vlanTrunk;
 
-const createHost = (name: string) => {
-    let host = new Device();
-    host.name = name;
-    host.neighborTable.timeout = host.neighborTable.timeout * INTERFACE_ANIM_DELAY;
-    return host;
-}
-
-let pc1 = createHost("PC1")
-let pc2 = createHost("PC2")
-let pc3 = createHost("PC3")
+let pc1 = new Device2(); pc1.name = "PC1";
+let pc2 = new Device2(); pc2.name = "PC2";
+let pc3 = new Device2(); pc3.name = "PC3";
 
 // vlan test
-let pc4 = createHost("PC4")
-let pc5 = createHost("PC5")
+let pc4 = new Device2(); pc4.name = "PC4";
+let pc5 = new Device2(); pc5.name = "PC5";
 
-let iface_pc1 = pc1.createInterface();
-let iface_pc2 = pc2.createInterface();
-let iface_pc3 = pc3.createInterface();
+let iface_pc1 = pc1.interface_add(new EthernetInterface(pc1));
+let iface_pc2 = pc2.interface_add(new EthernetInterface(pc2));
+let iface_pc3 = pc3.interface_add(new EthernetInterface(pc3));
 
 // vlan test
-let iface_pc4 = pc4.createInterface();
-let iface_pc5 = pc5.createInterface();
+let iface_pc4 = pc4.interface_add(new EthernetInterface(pc4));
+let iface_pc5 = pc5.interface_add(new EthernetInterface(pc5));
 
-iface_pc1.ipv4Address = new IPV4Address("192.168.1.10")
-iface_pc1.ipv4SubnetMask = createMask(IPV4Address, 24);
-iface_pc2.ipv4Address = new IPV4Address("192.168.1.20")
-iface_pc2.ipv4SubnetMask = createMask(IPV4Address, 24);
+pc1.interface_set_address(iface_pc1, new IPV4Address("192.168.1.10"), createMask(IPV4Address, 24))
+pc2.interface_set_address(iface_pc2, new IPV4Address("192.168.1.20"), createMask(IPV4Address, 24))
 
-
-iface_pc4.ipv4Address = new IPV4Address("172.16.0.40")
-iface_pc4.ipv4SubnetMask = createMask(IPV4Address, 24);
-iface_pc5.ipv4Address = new IPV4Address("172.16.0.50")
-iface_pc5.ipv4SubnetMask = createMask(IPV4Address, 24);
+pc4.interface_set_address(iface_pc4, new IPV4Address("172.16.0.40"), createMask(IPV4Address, 24))
+pc5.interface_set_address(iface_pc5, new IPV4Address("172.16.0.50"), createMask(IPV4Address, 24))
 
 swIface_pc1.connect(iface_pc1);
 swIface_pc2.connect(iface_pc2);
@@ -390,6 +375,14 @@ swIface_pc3.connect(iface_pc3);
 swIface_pc4.connect(iface_pc4);
 
 swIface2_pc5.connect(iface_pc5)
+
+init_programs(networkSwitch)
+init_programs(networkSwitch2)
+init_programs(pc1)
+init_programs(pc2)
+init_programs(pc3)
+init_programs(pc4)
+init_programs(pc5)
 
 let nmDevice_sw = new NetworkMapDevice(50, 50, networkSwitch);
 let nmDevice_pc1 = new NetworkMapDevice(150, 50, pc1);
@@ -400,6 +393,8 @@ let nmDevice_pc4 = new NetworkMapDevice(400, 50, pc4);
 let nmDevice_pc5 = new NetworkMapDevice(400, 350, pc5);
 let nmDevice_sw2 = new NetworkMapDevice(100, 350, networkSwitch2);
 
+let terminalOwner = pc1;
+let terminal: Terminal;
 
 export default function NetworkMapViewer(): JSX.Element {
     let nmap = new NetworkMap();
@@ -413,33 +408,16 @@ export default function NetworkMapViewer(): JSX.Element {
     nmap.addDevice(nmDevice_pc5)
     nmap.addDevice(nmDevice_sw2)
 
-
-    let terminal: Terminal;
-
-    function ping(pc2: Device, arg1: IPV4Address) {
-        throw new Error("Function not implemented.");
-    }
-
     return <div style={{ width: "100%" }} >
 
         <svg width={"100%"} height={500} >
             <g ref={(el => { nmap.container = el; nmap.update() })}></g>
         </svg>
-        <button
-            onClick={() => {
-                ping(pc2, iface_pc1.ipv4Address!)
-            }}
-        >Ping IPV4 pc2 =&gt pc1</button>
-        <button
-            onClick={() => {
-                ping(pc4, iface_pc5.ipv4Address!)
-            }}
-        >Ping IPV4 pc4 =&gt pc5</button>
 
         <div ref={(el) => {
-            setShellDevice(pc1)
             terminal = new Terminal(el);
-            shell.configureTerminal(terminal)
+            terminalOwner.terminal_attach(terminal);
+            terminalOwner.process_start(DAEMON_SHELL);
         }}></div>
     </div>
 };
