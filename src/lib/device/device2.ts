@@ -1039,6 +1039,16 @@ export class Device2 {
             })
         }
 
+        // 6th: if iface is an etheriface, add an arp entry
+        if (iface instanceof EthernetInterface) {
+            this.arp_cache_entry(address, {
+                neighbor: address,
+                iface: iface,
+                macAddress: iface.macAddress,
+                createdAt: -1 // trick to make this not get deleted, if i were to check time by subtracting from now with createdAt
+            })
+        }
+
         return {
             success: true,
             data: undefined
