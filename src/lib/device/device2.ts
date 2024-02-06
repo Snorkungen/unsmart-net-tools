@@ -5,7 +5,7 @@ import { MACAddress } from "../address/mac";
 import { AddressMask, createMask } from "../address/mask";
 import { and, not, or } from "../binary";
 import { uint8_concat, uint8_equals, uint8_fromNumber, uint8_matchLength, uint8_readUint32BE } from "../binary/uint8-array";
-import { ETHERNET_HEADER, ETHER_TYPES, EtherType } from "../header/ethernet";
+import { ETHERNET_DOT1Q_HEADER, ETHERNET_HEADER, ETHER_TYPES, EtherType } from "../header/ethernet";
 import { IPV4_HEADER, IPV4_PSEUDO_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../header/ip";
 import { ARP_HEADER, ARP_OPCODES, createARPHeader } from "../header/arp";
 import { PacketCaptureHFormat, PacketCaptureNFormat, PacketCaptureRecordReader } from "../packet-capture/reader";
@@ -812,9 +812,7 @@ export class Device2 {
             )
         } else if (etherframe.get("ethertype") == ETHER_TYPES.ARP) {
             this.input_arp(etherframe, { rcvif: data.rcvif, broadcast: data.broadcast, buffer: etherframe.getBuffer().slice(0, ETHERNET_HEADER.getMinSize()) })
-        } else if (etherframe.get("ethertype") == ETHER_TYPES.VLAN) {
-            throw new Error("not implemented")
-        }
+        } 
 
         // this knows that the data is an ethernet frame
 
@@ -1365,7 +1363,7 @@ export function createMacAddress(): MACAddress {
 }
 export class EthernetInterface extends BaseInterface {
     private target: EthernetInterface | undefined;
-    macAddress: MACAddress
+    macAddress: MACAddress;
 
     constructor(device: Device2, macAddress: MACAddress = createMacAddress()) {
         super(device, "eth",
@@ -1373,6 +1371,19 @@ export class EthernetInterface extends BaseInterface {
             1500
         )
         this.macAddress = macAddress;
+    }
+
+    /** this logic might need to be hoisted to {@link Device2} */
+    vlan?: {
+        // first id default
+        vids: number[];
+        type: "access" | "trunk"
+    }
+    vlan_set(type: "access" | "trunk", ...vids: number[]) {
+        if (vids.length < 1) {
+            vids.push(1); // default id;
+        }
+        this.vlan = { type: type, vids: vids };
     }
 
     output(data: NetworkData, destination: BaseAddress, rtentry?: DeviceRoute<typeof BaseAddress>): DeviceResult<"UDUMB"> {
@@ -1423,6 +1434,39 @@ export class EthernetInterface extends BaseInterface {
             return { success: true, data: undefined }
         }
 
+        // !TODO: mode to enable user to skip over vlan handling
+        vlan_handler: if (this.vlan) {
+            if (this.vlan.type === "access") {
+                if (etherheader.get("ethertype") != ETHER_TYPES.VLAN) {
+                    break vlan_handler; // if untagged pass through
+                }
+
+                let vlanhdr = ETHERNET_DOT1Q_HEADER.from(etherheader.get("payload"));
+                if (!this.vlan.vids.includes(vlanhdr.get("vid"))) {
+                    return {
+                        success: false, error: "UDUMB",
+                        message: "vlan id: " + vlanhdr.get("vid") + " is not in vlan id list"
+                    }
+                }
+
+                // untag frame
+                etherheader.set("ethertype", vlanhdr.get("ethertype"));
+                etherheader.set("payload", vlanhdr.get("payload"));
+            } else if (this.vlan.type == "trunk") {
+                if (etherheader.get("ethertype") != ETHER_TYPES.VLAN) {
+                    return { success: false, error: "UDUMB", message: "frame must have a vlan tag for trunk interface" }
+                }
+
+                let vlanhdr = ETHERNET_DOT1Q_HEADER.from(etherheader.get("payload"));
+                if (!this.vlan.vids.includes(vlanhdr.get("vid"))) {
+                    return {
+                        success: false, error: "UDUMB",
+                        message: "vlan id: " + vlanhdr.get("vid") + " is not in vlan id list"
+                    }
+                }
+            }
+        }
+
         if (etherheader.get("dmac").isBroadcast()) {
             // here i should send to the interface to itself but i don't want that
             // this.device.schedule(() => this.receive(etherheader))
@@ -1435,6 +1479,43 @@ export class EthernetInterface extends BaseInterface {
 
     receive_delay = undefined;
     private receive(etherheader: typeof ETHERNET_HEADER) {
+        // on recieive
+
+        vlan_handler: if (this.vlan) {
+            // !TODO: vlan input processing
+            if (this.vlan.type == "access") {
+                if (etherheader.get("ethertype") != ETHER_TYPES.VLAN) {
+                    // tag frame
+                    let vid = this.vlan.vids[0] || 0; // default to 0 to insinuate that there is a problem
+
+                    let vlanhdr = ETHERNET_DOT1Q_HEADER.create({
+                        vid: vid,
+                        ethertype: etherheader.get("ethertype"),
+                        payload: etherheader.get("payload")
+                    });
+
+                    etherheader.set("ethertype", ETHER_TYPES.VLAN);
+                    etherheader.set("payload", vlanhdr.getBuffer());
+
+                    break vlan_handler;
+                }
+
+                let vlanhdr = ETHERNET_DOT1Q_HEADER.from(etherheader.get("payload"));
+                if (!this.vlan.vids.includes(vlanhdr.get("vid"))) {
+                    return; // discard
+                }
+            } else if (this.vlan.type == "trunk") {
+                if (etherheader.get("ethertype") != ETHER_TYPES.VLAN) {
+                    return; // discard
+                }
+
+                let vlanhdr = ETHERNET_DOT1Q_HEADER.from(etherheader.get("payload"));
+                if (!this.vlan.vids.includes(vlanhdr.get("vid"))) {
+                    return; // discard
+                }
+            }
+        }
+
         this.device.schedule(() => {
             this.device.log({
                 type: "DATA",

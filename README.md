@@ -10,7 +10,7 @@
       - [ ] output_ip check that the destination is not source then loopback etc.
       - [ ] input_ip verify that daddr is for the device
     - [x] migrate all previous programs and services to Device2 system
-    - [ ] implement vlan aware switch
+    - [x] implement vlan aware switch
     - [ ] move views to exlusively use Device2
   - [ ] Device -> contact
     - [x] UDP protocol support

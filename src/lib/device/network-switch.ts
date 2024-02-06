@@ -1,6 +1,5 @@
 import { BaseAddress } from "../address/base";
-import { createMask } from "../address/mask";
-import { ETHERNET_DOT1Q_HEADER, ETHERNET_HEADER, ETHER_TYPES } from "../header/ethernet";
+import { ETHERNET_HEADER } from "../header/ethernet";
 import { Device } from "./device";
 import { BaseInterface, Device2, DeviceRoute, EthernetInterface, NetworkData, Process, ProcessSignal, Program } from "./device2";
 import { Interface } from "./interface";
@@ -56,6 +55,14 @@ export class NetworkSwitch2 extends Device2 {
         super();
         this.process_start(testing_switch_stuff);
     }
+
+    interface_add<F extends BaseInterface>(iface: F): F {
+        if (iface instanceof EthernetInterface) {
+            iface.vlan_set("access", 1); // initialize vlans so that they all get a vlan
+        }
+
+        return super.interface_add(iface);
+    }
 }
 
 const testing_switch_stuff: Program = {
@@ -68,12 +75,12 @@ const testing_switch_stuff: Program = {
             if (!(data.rcvif instanceof EthernetInterface)) return;
             let etherheader = ETHERNET_HEADER.from(data.buffer);
 
-            function forward (iface: BaseInterface) {
+            function forward(iface: BaseInterface) {
                 iface.output({
                     ...data,
                     buffer: etherheader.get("payload"),
                     mode_raw: true
-                }, new BaseAddress(etherheader.getBuffer()))
+                }, new BaseAddress(etherheader.getBuffer().subarray(0, ETHERNET_HEADER.getMinSize())))
             }
 
             function flood() {
@@ -84,7 +91,7 @@ const testing_switch_stuff: Program = {
             }
 
             macaddresses.set(etherheader.get("smac").toString(), data.rcvif);
-            
+
             if (data.broadcast || etherheader.get("dmac").isBroadcast()) {
                 return flood()
             }
@@ -95,7 +102,7 @@ const testing_switch_stuff: Program = {
             }
 
             forward(iface);
-        })
+        });
 
         proc.handle(proc, () => contact.close(contact))
 

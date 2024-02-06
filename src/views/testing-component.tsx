@@ -54,6 +54,10 @@ let iface_sw1_pc1 = sw1.interface_add(new EthernetInterface(sw1));
 let iface_sw1_pc2 = sw1.interface_add(new EthernetInterface(sw1));
 let iface_sw1_pc3 = sw1.interface_add(new EthernetInterface(sw1));
 
+/* vlan testing stuff */
+iface_sw1_pc1.vlan_set("access", 10)
+iface_sw1_pc3.vlan_set("access", 10)
+
 let pc1 = new Device2();
 let pc2 = new Device2();
 let pc3 = new Device2();
@@ -68,7 +72,6 @@ let iface_pc3 = new EthernetInterface(pc3, createMacAddress()); pc3.interface_ad
 pc1.interface_set_address(iface_pc1, new IPV4Address("192.168.1.10"), createMask(IPV4Address, 24));
 pc2.interface_set_address(iface_pc2, new IPV4Address("192.168.1.20"), createMask(IPV4Address, 24));
 pc3.interface_set_address(iface_pc3, new IPV4Address("192.168.1.30"), createMask(IPV4Address, 24));
-
 
 iface_sw1_pc1.connect(iface_pc1)
 iface_sw1_pc2.connect(iface_pc2)
@@ -125,7 +128,7 @@ export const TestingComponent: Component = () => {
                 <DeviceComponent device={pc3} />
             </div>
 
-            {[pc1, pc2].map((device) => (
+            {[pc1, pc2, pc3].map((device) => (
                 <div>
                     <button onClick={() => {
                         let ip = prompt("Please enter a destination ip, from: " + device.name)
@@ -147,7 +150,7 @@ export const TestingComponent: Component = () => {
                             let contact = device.contact_create("IPv4", "RAW").data!;
                             contact.receive(contact, (_, data) => {
                                 let iphdr = IPV4_HEADER.from(data.buffer);
-                                if (!uint8_equals(iphdr.get("saddr").buffer, destination.buffer )) return;
+                                if (!uint8_equals(iphdr.get("saddr").buffer, destination.buffer)) return;
                                 if (iphdr.get("proto") != PROTOCOLS.ICMP) return;
                                 if (iphdr.get("payload")[0] != ICMPV4_TYPES.ECHO_REPLY) return;
                                 contact.close(contact);
@@ -173,7 +176,7 @@ export const TestingComponent: Component = () => {
                             let contact = device.contact_create("IPv6", "RAW").data!;
                             contact.receive(contact, (_, data) => {
                                 let iphdr = IPV6_HEADER.from(data.buffer);
-                                if (!uint8_equals(iphdr.get("saddr").buffer, destination.buffer )) return;
+                                if (!uint8_equals(iphdr.get("saddr").buffer, destination.buffer)) return;
                                 if (iphdr.get("nextHeader") != PROTOCOLS.IPV6_ICMP) return;
                                 if (iphdr.get("payload")[0] != ICMPV6_TYPES.ECHO_REPLY) return;
                                 contact.close(contact);
