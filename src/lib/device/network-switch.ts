@@ -1,5 +1,8 @@
+import { BaseAddress } from "../address/base";
+import { createMask } from "../address/mask";
 import { ETHERNET_DOT1Q_HEADER, ETHERNET_HEADER, ETHER_TYPES } from "../header/ethernet";
 import { Device } from "./device";
+import { BaseInterface, Device2, DeviceRoute, EthernetInterface, NetworkData, Process, ProcessSignal, Program } from "./device2";
 import { Interface } from "./interface";
 
 
@@ -46,4 +49,57 @@ export class NetworkSwitch extends Device {
 
         return iface;
     }
+}
+
+export class NetworkSwitch2 extends Device2 {
+    constructor() {
+        super();
+        this.process_start(testing_switch_stuff);
+    }
+}
+
+const testing_switch_stuff: Program = {
+    name: "testing_switch_stuff",
+    init(proc) {
+        let contact = proc.device.contact_create("RAW", "RAW").data!;
+        let macaddresses = new Map<string, EthernetInterface>();
+
+        contact.receive(contact, (_, data) => {
+            if (!(data.rcvif instanceof EthernetInterface)) return;
+            let etherheader = ETHERNET_HEADER.from(data.buffer);
+
+            function forward (iface: BaseInterface) {
+                iface.output({
+                    ...data,
+                    buffer: etherheader.get("payload"),
+                    mode_raw: true
+                }, new BaseAddress(etherheader.getBuffer()))
+            }
+
+            function flood() {
+                for (let iface of proc.device.interfaces) {
+                    if (!data.rcvif || iface == data.rcvif || iface.constructor != data.rcvif.constructor || !iface.up) continue;
+                    forward(iface)
+                }
+            }
+
+            macaddresses.set(etherheader.get("smac").toString(), data.rcvif);
+            
+            if (data.broadcast || etherheader.get("dmac").isBroadcast()) {
+                return flood()
+            }
+
+            let iface = macaddresses.get(etherheader.get("dmac").toString());
+            if (!iface) {
+                return flood()
+            }
+
+            forward(iface);
+        })
+
+        proc.handle(proc, () => contact.close(contact))
+
+        return ProcessSignal.__EXPLICIT__;
+    },
+    __NODATA__: true
 }

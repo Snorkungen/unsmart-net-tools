@@ -46,6 +46,11 @@ export type NetworkData = {
 
     // !TODO: use the extra features that this structure provides
     type?: "DATA" | "HEADER";
+
+    /** configure the outgoing interfaces mode */
+
+    /** if true interface is not allowed to modify data or destination */
+    mode_raw?: true,
 }
 
 export type DeviceRoute<AddrType extends typeof BaseAddress = typeof BaseAddress> = {
@@ -456,8 +461,6 @@ export class Device2 {
             return;
         }
 
-        this.contact_input_raw("RAW", data);
-
         if ((iphdr.get("flags") & (1 << 2)) < 0) {
             throw "ipv4 fragments not supported"
         }
@@ -592,8 +595,6 @@ export class Device2 {
             // console.log(iphdr.getBuffer())
             this.contact_input_raw("IPv6", { ...data, buffer: iphdr.getBuffer() });
         }
-
-        this.contact_input_raw("RAW", data);
     }
 
     output_ipv6(data: NetworkData, destination: IPV6Address, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
@@ -797,6 +798,8 @@ export class Device2 {
     }
 
     input_ether(etherframe: typeof ETHERNET_HEADER, data: NetworkData) {
+        this.contact_input_raw("RAW", data);
+
         if (etherframe.get("ethertype") == ETHER_TYPES.IPv4) {
             this.input_ipv4(
                 IPV4_HEADER.from(etherframe.get("payload")),
@@ -811,8 +814,6 @@ export class Device2 {
             this.input_arp(etherframe, { rcvif: data.rcvif, broadcast: data.broadcast, buffer: etherframe.getBuffer().slice(0, ETHERNET_HEADER.getMinSize()) })
         } else if (etherframe.get("ethertype") == ETHER_TYPES.VLAN) {
             throw new Error("not implemented")
-        } else {
-            this.contact_input_raw("RAW", data);
         }
 
         // this knows that the data is an ethernet frame
@@ -977,7 +978,7 @@ export class Device2 {
 
     interfaces: BaseInterface[] = [];
     // interface_add and interface_remove defined so that if further devices have som type extra configuration they want to do
-    interface_add(iface: BaseInterface) { this.interfaces.push(iface) };
+    interface_add<F extends BaseInterface>(iface: F): F { this.interfaces.push(iface); return iface };
     interface_remove(iface: BaseInterface) { this.interfaces = this.interfaces.filter(f => f != iface) };
 
     interface_set_address<AT extends typeof BaseAddress>(iface: BaseInterface, address: InstanceType<AT>, netmask: AddressMask<AT>): DeviceResult { // !TODO: result could include the created route or address entry on iface idk
@@ -1314,7 +1315,7 @@ type DeviceAddress<AT extends typeof BaseAddress = typeof BaseAddress> = {
 }
 
 type InterfaceName = "eth" | "lo"
-class BaseInterface {
+export class BaseInterface {
     /** The device this interface is attached to */
     device: Device2;
     name: InterfaceName;
@@ -1366,7 +1367,7 @@ export class EthernetInterface extends BaseInterface {
     private target: EthernetInterface | undefined;
     macAddress: MACAddress
 
-    constructor(device: Device2, macAddress: MACAddress) {
+    constructor(device: Device2, macAddress: MACAddress = createMacAddress()) {
         super(device, "eth",
             device.interfaces.reduce((s, { name }) => s + ((name == "eth") as unknown as number), 0),
             1500
@@ -1375,12 +1376,13 @@ export class EthernetInterface extends BaseInterface {
     }
 
     output(data: NetworkData, destination: BaseAddress, rtentry?: DeviceRoute<typeof BaseAddress>): DeviceResult<"UDUMB"> {
-        if (!this.up || !rtentry || !this.target) {
+        if (!this.up || !this.target) {
             return { success: false, error: "UDUMB", message: "interface is eiter not up or a route entry is missing" };
         }
 
         let etherheader: typeof ETHERNET_HEADER;
         if (destination instanceof IPV4Address) {
+            if (!rtentry) return { success: false, error: "UDUMB", message: "route required" }
             let dmac = this.device.arp_resolve(data, destination, rtentry);
             if (!dmac) {
                 // this method will get called recalled at a later times
@@ -1388,6 +1390,7 @@ export class EthernetInterface extends BaseInterface {
             }
             etherheader = ETHERNET_HEADER.create({ dmac, ethertype: ETHER_TYPES.IPv4 })
         } else if (destination instanceof IPV6Address) {
+            if (!rtentry) return { success: false, error: "UDUMB", message: "route required" }
             let dmac = this.device.arp_resolve(data, destination, rtentry);
             if (!dmac) {
                 // this method will get called recalled at a later times
@@ -1402,7 +1405,10 @@ export class EthernetInterface extends BaseInterface {
             etherheader = ETHERNET_HEADER.from(destination.buffer);
         }
 
-        etherheader.set("smac", this.macAddress);
+        if (!data.mode_raw) {
+            etherheader.set("smac", this.macAddress);
+        }
+
         etherheader.set("payload", data.buffer);
 
         this.device.log({
