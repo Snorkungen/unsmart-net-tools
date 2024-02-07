@@ -227,7 +227,7 @@ export class Device2 {
         let frame_info = reader.readEthernet(data.buffer, data.buffer.length)
 
         let iface_name = iface.name + iface.unit;
-frame_info.protocol
+        frame_info.protocol
         if (type == "RECEIVE") {
             console.info(`${this.name} - ${iface_name}: received a frame from ${frame_info.saddr} - ${frame_info.protocol}`)
         } else if (type == "SEND") {
@@ -392,10 +392,19 @@ frame_info.protocol
         }
     }
 
+    process_termwriteto(proc: Process, bytes: Uint8Array) {
+        for (let tr of this.terminal_readers) {
+            if (proc !== tr.proc) continue;
+            if (tr.reader(proc, bytes)) break;
+        }
+    }
+
     private process_term_read(proc: Process, reader_func: ProcessTerminalReadFunc) {
         this.terminal_readers.unshift({ proc: proc, reader: reader_func });
     }
-    private process_term_write(bytes: Uint8Array) { (this.terminal) && this.terminal.write(bytes); }
+    private process_term_write(bytes: Uint8Array) {
+        (this.terminal) && this.terminal.write(bytes);
+    }
     private process_term_writeblackhole(_: Uint8Array) { }
     private process_term_flush() { (this.terminal) && this.terminal.flush(); }
     private process_term_flushblackhole() { }

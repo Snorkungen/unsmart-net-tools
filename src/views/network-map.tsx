@@ -148,7 +148,7 @@ class NetworkMapDevice {
                 if (!proc) {
                     terminalOwner.process_start(DAEMON_SHELL);
                 } else {
-                    
+                    proc.device.process_termwriteto(proc, new Uint8Array([10])); // press enter
                 }
             }}
         >
