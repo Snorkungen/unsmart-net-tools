@@ -11,7 +11,7 @@
       - [ ] input_ip verify that daddr is for the device
     - [x] migrate all previous programs and services to Device2 system
     - [x] implement vlan aware switch
-      - [ ] fix routing loop
+    - [ ] implement router & vlanif logic
     - [x] move views to exlusively use Device2
   - [ ] Device -> contact
     - [x] UDP protocol support

@@ -1,6 +1,6 @@
 import { StructOptions, StructType } from "../binary";
 import { ARP_HEADER, ARP_OPCODES } from "../header/arp";
-import { ETHERNET_HEADER, ETHER_TYPES } from "../header/ethernet";
+import { ETHERNET_DOT1Q_HEADER, ETHERNET_HEADER, ETHER_TYPES } from "../header/ethernet";
 import { ICMPV4_CODES, ICMPV4_TYPES, ICMPV6_TYPES, ICMP_DESTINATION_UNREACHABLE, ICMP_ECHO_HEADER, ICMP_HEADER, ICMP_NDP_HEADER, ICMP_UNUSED_HEADER } from "../header/icmp";
 import { IPV4_HEADER, IPV6_HEADER, PROTOCOLS } from "../header/ip";
 import { PCAP_RECORD_HEADER } from "../header/pcap";
@@ -81,25 +81,31 @@ export class PacketCaptureRecordReader {
     readRecordData(buf: Uint8Array, length: number): PacketCaptureRecordData {
         switch (this.options.Nformat) {
             case PacketCaptureNFormat.ethernet:
-                return this.readEthernet(buf, length);
+                return this.readEthernet(buf);
         }
 
         throw new Error(`network format: ${this.options.Hformat}, not implemented`);
     }
 
-    readEthernet(buf: Uint8Array, length: number): PacketCaptureRecordData {
-        let hdr = ETHERNET_HEADER.from(buf.subarray(this.offset, this.offset += length));
-        let data: PacketCaptureRecordData = {
-            saddr: hdr.get("smac"),
-            daddr: hdr.get("dmac"),
-            protocol: getKeyByValue(ETHER_TYPES, hdr.get("ethertype")),
-            status: PacketCaptureRecordStatus.NORMAL,
-            info: []
+    readEthernet(buf: Uint8Array, begin?: number, data?: PacketCaptureRecordData): PacketCaptureRecordData {
+        let hdr = ETHERNET_HEADER.from(buf.subarray(begin || 0));
+        if (!data) {
+            data = {
+                saddr: hdr.get("smac"),
+                daddr: hdr.get("dmac"),
+                protocol: getKeyByValue(ETHER_TYPES, hdr.get("ethertype")),
+                status: PacketCaptureRecordStatus.NORMAL,
+                info: []
+            }
+        } else {
+            data.protocol = getKeyByValue(ETHER_TYPES, hdr.get("ethertype"))
         }
 
         switch (hdr.get("ethertype")) {
             case ETHER_TYPES.ARP:
                 return this.readARP(hdr.getBuffer(), hdr.getMinSize(), data)
+            case ETHER_TYPES.VLAN:
+                return this.readVLAN(hdr.getBuffer(), hdr.getMinSize(), data)
             case ETHER_TYPES.IPv4:
                 return this.readIPv4(hdr.getBuffer(), hdr.getMinSize(), data)
             case ETHER_TYPES.IPv6:
@@ -109,20 +115,33 @@ export class PacketCaptureRecordReader {
         return data;
     }
 
+    readVLAN(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): PacketCaptureRecordData {
+        let hdr = ETHERNET_DOT1Q_HEADER.from(buf.subarray(begin));
+
+        data.info = ["VLAN/" + hdr.get("vid")]
+
+        // mess with the buf
+
+        let ethhdr = ETHERNET_HEADER.from(buf);
+        ethhdr.set("ethertype", hdr.get("ethertype"));
+        ethhdr.set("payload", hdr.get("payload"));
+
+        return this.readEthernet(ethhdr.getBuffer(), 0, data);
+    }
 
     readARP(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): PacketCaptureRecordData {
         let hdr = ARP_HEADER.from(buf.subarray(begin));
 
         if (hdr.get("ptype") != ETHER_TYPES.IPv4) {
             data.status = PacketCaptureRecordStatus.WARNING;
-            data.info = ["ARP type not implemented"]
+            data.info.push("ARP type not implemented")
             return data
         }
 
         if (hdr.get("oper") == ARP_OPCODES.REQUEST) {
-            data.info = [`${hdr.get("spa")} asks who has ${hdr.get("tpa")}?`]
+            data.info.push(`${hdr.get("spa")} asks who has ${hdr.get("tpa")}?`)
         } else {
-            data.info = [`${hdr.get("tpa")} is at ${hdr.get("tha")}.`]
+            data.info.push(`${hdr.get("tpa")} is at ${hdr.get("tha")}.`)
         }
 
         return data;
@@ -202,10 +221,10 @@ export class PacketCaptureRecordReader {
             case ICMPV6_TYPES.ECHO_REQUEST:
                 data.info.push(`Echo Request: id=${echoHdr.get("id")}, seq=${echoHdr.get("seq")}`)
                 break;
-            case ICMPV6_TYPES.NEIGHBOR_SOLICITATION: 
+            case ICMPV6_TYPES.NEIGHBOR_SOLICITATION:
                 data.info.push(`${ipHdr.get("saddr")} asks who has ${ndpHdr.get("targetAddress")};`)
-            case ICMPV6_TYPES.NEIGHBOR_ADVERTISMENT: 
-            break;
+            case ICMPV6_TYPES.NEIGHBOR_ADVERTISMENT:
+                break;
         }
         return data;
     }

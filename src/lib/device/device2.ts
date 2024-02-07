@@ -3,7 +3,7 @@ import { IPV4Address } from "../address/ipv4";
 import { ALL_LINK_LOCAL_NODES_ADDRESSV6, IPV6Address } from "../address/ipv6";
 import { MACAddress } from "../address/mac";
 import { AddressMask, createMask } from "../address/mask";
-import { and, not, or } from "../binary";
+import { Struct, and, not, or } from "../binary";
 import { uint8_concat, uint8_equals, uint8_fromNumber, uint8_matchLength, uint8_readUint32BE } from "../binary/uint8-array";
 import { ETHERNET_DOT1Q_HEADER, ETHERNET_HEADER, ETHER_TYPES, EtherType } from "../header/ethernet";
 import { IPV4_HEADER, IPV4_PSEUDO_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../header/ip";
@@ -43,12 +43,9 @@ export type NetworkData = {
     buffer: Uint8Array;
     broadcast?: boolean;
     rcvif?: BaseInterface;
-
-    // !TODO: use the extra features that this structure provides
-    type?: "DATA" | "HEADER";
-
+    /** for future use with some type of interface that pretends to be an ethernet interface */
+    rcivif_hwaddress?: BaseAddress;
     /** configure the outgoing interfaces mode */
-
     /** if true interface is not allowed to modify data or destination */
     mode_raw?: true,
 }
@@ -224,14 +221,14 @@ export class Device2 {
             bigEndian: true,
         })
 
-        let frame_info = reader.readEthernet(data.buffer, data.buffer.length)
+        let frame_info = reader.readEthernet(data.buffer)
 
         let iface_name = iface.name + iface.unit;
         frame_info.protocol
         if (type == "RECEIVE") {
             console.info(`${this.name} - ${iface_name}: received a frame from ${frame_info.saddr} - ${frame_info.protocol}`)
         } else if (type == "SEND") {
-            console.info(`${this.name} - ${iface_name}: sent a frame to ${frame_info.daddr} - ${frame_info.protocol}`)
+            console.info(`${this.name} - ${iface_name}: sent a frame to ${frame_info.daddr} - ${frame_info.protocol} ${!frame_info.info.length ? "": frame_info.info.join(" ")}`)
         }
 
         if (!record) {
@@ -798,7 +795,6 @@ export class Device2 {
             })
 
             rcvif.output({
-                type: "DATA",
                 buffer: replyARPHdr.getBuffer()
             }, new BaseAddress(replyEthHdr.getBuffer()),
                 {} as DeviceRoute // this is hacky but should work
@@ -807,20 +803,22 @@ export class Device2 {
     }
 
     input_ether(etherframe: typeof ETHERNET_HEADER, data: NetworkData) {
+        if (!(data.rcvif instanceof EthernetInterface)) {
+            throw new Error("rcvif missing or wrong type, rcvif must be a EthernetInterface")
+        }
+
+        data.rcivif_hwaddress = data.rcvif.macAddress;
+
         this.contact_input_raw("RAW", data);
 
         if (etherframe.get("ethertype") == ETHER_TYPES.IPv4) {
             this.input_ipv4(
-                IPV4_HEADER.from(etherframe.get("payload")),
-                { rcvif: data.rcvif, broadcast: data.broadcast, buffer: etherframe.getBuffer() }
-            )
+                IPV4_HEADER.from(etherframe.get("payload")), data)
         } else if (etherframe.get("ethertype") == ETHER_TYPES.IPv6) {
             this.input_ipv6(
-                IPV6_HEADER.from(etherframe.get("payload")),
-                { rcvif: data.rcvif, broadcast: data.broadcast, buffer: etherframe.getBuffer() }
-            )
+                IPV6_HEADER.from(etherframe.get("payload")), data)
         } else if (etherframe.get("ethertype") == ETHER_TYPES.ARP) {
-            this.input_arp(etherframe, { rcvif: data.rcvif, broadcast: data.broadcast, buffer: etherframe.getBuffer().slice(0, ETHERNET_HEADER.getMinSize()) })
+            this.input_arp(etherframe, data)
         }
 
         // this knows that the data is an ethernet frame
@@ -870,7 +868,6 @@ export class Device2 {
 
                 // wrap packet in ethernet frame
                 iface.output({
-                    type: "DATA",
                     buffer: arpHeader.getBuffer(),
                     broadcast: true
                 }, new BaseAddress(ETHERNET_HEADER.create({
@@ -921,7 +918,6 @@ export class Device2 {
 
                 // wrap packet in ethernet frame
                 iface.output({
-                    type: "DATA",
                     buffer: ipv6Hdr.getBuffer(),
                     broadcast: true
                 }, new BaseAddress(ETHERNET_HEADER.create({
@@ -1335,6 +1331,8 @@ export class BaseInterface {
     /** if interface is up and ready to send and receive */
     up: boolean;
 
+    /** hw header, a header that the interface uses */
+    header: null | Struct<any> = null;
 
     constructor(
         device: Device2,
@@ -1373,6 +1371,7 @@ export function createMacAddress(): MACAddress {
 export class EthernetInterface extends BaseInterface {
     private target: EthernetInterface | undefined;
     macAddress: MACAddress;
+    header = ETHERNET_HEADER;
 
     constructor(device: Device2, macAddress: MACAddress = createMacAddress()) {
         super(device, "eth",
@@ -1433,16 +1432,27 @@ export class EthernetInterface extends BaseInterface {
         etherheader.set("payload", data.buffer);
 
         this.device.log({
-            type: "DATA",
             buffer: etherheader.getBuffer(),
             rcvif: this
         }, "SEND")
 
         if (uint8_equals(etherheader.get("smac").buffer, etherheader.get("dmac").buffer)) {
             // this was meant for myself
-            this.device.schedule(() => this.receive(etherheader))
+            this.device.schedule(() => {
+                let lodata = { buffer: etherheader.getBuffer(), rcvif: this, broadcast: undefined };
+                this.device.log(lodata, "RECEIVE"); this.device.input_ether(etherheader, lodata)
+            });
             return { success: true, data: undefined }
         }
+
+        if (false && etherheader.get("dmac").isBroadcast()) {
+            // here i should send to the interface to itself but i don't want that
+            this.device.schedule(() => {
+                let lodata = { buffer: etherheader.getBuffer(), rcvif: this, broadcast: true };
+                this.device.log(lodata, "RECEIVE"); this.device.input_ether(etherheader, lodata)
+            });
+        }
+
 
         // !TODO: mode to enable user to skip over vlan handling
         vlan_handler: if (this.vlan) {
@@ -1477,11 +1487,6 @@ export class EthernetInterface extends BaseInterface {
             }
         }
 
-        if (etherheader.get("dmac").isBroadcast()) {
-            // here i should send to the interface to itself but i don't want that
-            // this.device.schedule(() => this.receive(etherheader))
-        }
-
         this.onSend && this.onSend();
         // somehow put on wire
         this.device.schedule(() => this.target && this.target.receive.call(this.target, etherheader), undefined);
@@ -1495,7 +1500,6 @@ export class EthernetInterface extends BaseInterface {
         this.onRecv && this.onRecv();
 
         vlan_handler: if (this.vlan) {
-            // !TODO: vlan input processing
             if (this.vlan.type == "access") {
                 if (etherheader.get("ethertype") != ETHER_TYPES.VLAN) {
                     // tag frame
@@ -1531,7 +1535,6 @@ export class EthernetInterface extends BaseInterface {
 
         this.device.schedule(() => {
             this.device.log({
-                type: "DATA",
                 buffer: etherheader.getBuffer(),
                 rcvif: this
             }, "RECEIVE");
@@ -1597,7 +1600,6 @@ export class LoopbackInterface extends BaseInterface {
         }
 
         let log_data: NetworkData = {
-            type: "DATA",
             buffer: ETHERNET_HEADER.create({
                 ethertype: ethertype,
                 payload: data.buffer
