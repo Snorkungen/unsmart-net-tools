@@ -53,29 +53,47 @@ sw1.name = "SW1";
 let iface_sw1_pc1 = sw1.interface_add(new EthernetInterface(sw1));
 let iface_sw1_pc2 = sw1.interface_add(new EthernetInterface(sw1));
 let iface_sw1_pc3 = sw1.interface_add(new EthernetInterface(sw1));
+let iface_sw1_sw2 = sw1.interface_add(new EthernetInterface(sw1));
+
+let sw2 = new NetworkSwitch2();
+sw2.name = "SW2";
+let iface_sw2_sw1 = sw2.interface_add(new EthernetInterface(sw2));
+let iface_sw2_pc4 = sw2.interface_add(new EthernetInterface(sw2));
 
 /* vlan testing stuff */
 iface_sw1_pc1.vlan_set("access", 10)
 iface_sw1_pc3.vlan_set("access", 10)
 
+iface_sw2_pc4.vlan_set("access", 10)
+iface_sw1_sw2.vlan_set("trunk", 1, 10)
+iface_sw2_sw1.vlan_set("trunk", 1, 10)
+
 let pc1 = new Device2();
 let pc2 = new Device2();
 let pc3 = new Device2();
+let pc4 = new Device2();
 pc1.name = "PC1"
 pc2.name = "PC2"
 pc3.name = "PC3"
+pc4.name = "PC4"
 
 let iface_pc1 = new EthernetInterface(pc1, createMacAddress()); pc1.interface_add(iface_pc1)
 let iface_pc2 = new EthernetInterface(pc2, createMacAddress()); pc2.interface_add(iface_pc2)
 let iface_pc3 = new EthernetInterface(pc3, createMacAddress()); pc3.interface_add(iface_pc3)
+let iface_pc4 = new EthernetInterface(pc4, createMacAddress()); pc4.interface_add(iface_pc4)
 
 pc1.interface_set_address(iface_pc1, new IPV4Address("192.168.1.10"), createMask(IPV4Address, 24));
 pc2.interface_set_address(iface_pc2, new IPV4Address("192.168.1.20"), createMask(IPV4Address, 24));
 pc3.interface_set_address(iface_pc3, new IPV4Address("192.168.1.30"), createMask(IPV4Address, 24));
+pc4.interface_set_address(iface_pc4, new IPV4Address("192.168.1.40"), createMask(IPV4Address, 24));
 
 iface_sw1_pc1.connect(iface_pc1)
 iface_sw1_pc2.connect(iface_pc2)
 iface_sw1_pc3.connect(iface_pc3)
+
+iface_sw2_sw1.connect(iface_sw1_sw2);
+
+iface_sw2_pc4.connect(iface_pc4)
 
 function screamToEchoUDPServer(pc: Device2) {
     let contact = pc.contact_create("IPv4", "UDP").data!;
@@ -126,6 +144,8 @@ export const TestingComponent: Component = () => {
                 <DeviceComponent device={sw1} />
                 <DeviceComponent device={pc2} />
                 <DeviceComponent device={pc3} />
+                <DeviceComponent device={sw2} />
+                <DeviceComponent device={pc4} />
             </div>
 
             {[pc1, pc2, pc3].map((device) => (

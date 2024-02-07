@@ -144,7 +144,12 @@ class NetworkMapDevice {
                 terminalOwner.terminal_detach()
                 terminalOwner = this.device;
                 terminalOwner.terminal_attach(terminal);
-                terminalOwner.process_start(DAEMON_SHELL);
+                let proc = terminalOwner.processes.find(p => p && p.id.includes(DAEMON_SHELL.name))
+                if (!proc) {
+                    terminalOwner.process_start(DAEMON_SHELL);
+                } else {
+                    
+                }
             }}
         >
             {this.rect}
@@ -298,7 +303,7 @@ class NetworkMap {
 
 const INTERFACE_ANIM_DELAY = 900;
 
-function init_programs (device: Device2) {
+function init_programs(device: Device2) {
     device.process_start(DAEMON_ECHO_REPLIER);
     device.programs = [
         DEVICE_PROGRAM_ECHO,
@@ -315,7 +320,7 @@ networkSwitch.name = "SW1"
 networkSwitch2.name = "SW2"
 
 let swIface_trunk = networkSwitch.interface_add(new EthernetInterface(networkSwitch));
-let swIface2_trunk = networkSwitch2.interface_add(new EthernetInterface(networkSwitch));
+let swIface2_trunk = networkSwitch2.interface_add(new EthernetInterface(networkSwitch2));
 swIface_trunk.connect(swIface2_trunk);
 
 let swIface_pc1 = networkSwitch.interface_add(new EthernetInterface(networkSwitch));
@@ -323,7 +328,7 @@ let swIface_pc2 = networkSwitch.interface_add(new EthernetInterface(networkSwitc
 let swIface_pc3 = networkSwitch.interface_add(new EthernetInterface(networkSwitch));
 let swIface_pc4 = networkSwitch.interface_add(new EthernetInterface(networkSwitch));
 
-let swIface2_pc5 = networkSwitch2.interface_add(new EthernetInterface(networkSwitch));
+let swIface2_pc5 = networkSwitch2.interface_add(new EthernetInterface(networkSwitch2));
 
 let vlan10: EthernetInterface["vlan"] = {
     type: "access",
