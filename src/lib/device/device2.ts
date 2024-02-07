@@ -228,7 +228,7 @@ export class Device2 {
         if (type == "RECEIVE") {
             console.info(`${this.name} - ${iface_name}: received a frame from ${frame_info.saddr} - ${frame_info.protocol}`)
         } else if (type == "SEND") {
-            console.info(`${this.name} - ${iface_name}: sent a frame to ${frame_info.daddr} - ${frame_info.protocol} ${!frame_info.info.length ? "": frame_info.info.join(" ")}`)
+            console.info(`${this.name} - ${iface_name}: sent a frame to ${frame_info.daddr} - ${frame_info.protocol} ${!frame_info.info.length ? "" : frame_info.info.join(" ")}`)
         }
 
         if (!record) {
@@ -418,7 +418,7 @@ export class Device2 {
         if (!source) return {
             success: false,
             error: "HOSTUNREACH",
-            message: "no source address for intreface found"
+            message: "no source address for interface found"
         }
 
         if (data.buffer.length < UDP_HEADER.getMinSize()) return { success: false, error: "ERROR", message: "bad header" };
@@ -474,13 +474,11 @@ export class Device2 {
         // !TODO: verify that daddr is for this device
         // !TODO: maybe support routing somehow idk
 
+        this.contact_input_raw("IPv4", { ...data, buffer: iphdr.getBuffer() });
+
         if (iphdr.get("proto") == PROTOCOLS.UDP) {
             this.input_udp4(iphdr, data)
-        } else {
-            this.contact_input_raw("IPv4", { ...data, buffer: iphdr.getBuffer() });
         }
-
-
     }
 
     output_ipv4(data: NetworkData, destination: IPV4Address, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
@@ -844,25 +842,26 @@ export class Device2 {
             return entry.macAddress;
         }
 
-        rtentry.f_gateway = undefined; // this is hacky but logically it should be reasonable
+        // rtentry.f_gateway = undefined; // this is hacky but logically it should be reasonable
 
         if (destination instanceof IPV4Address) {
             this.arp_enqueue(data, destination, rtentry);
             // send away arp request
             for (let iface of this.interfaces) {
+                // TODO: use BaseInterface.header and data.rcvif_hwaddress instead in the future
                 if (!(iface instanceof EthernetInterface) || !iface.up) {
                     continue
                 }
 
-                let spa = iface.addresses.find(({ address }) => address instanceof IPV4Address)?.address;
-                if (!spa) {
-                    spa = new IPV4Address("0.0.0.0")
+                let source = iface.addresses.find(({ address }) => address instanceof IPV4Address);
+                if (!source || !source.netmask.compare(source.address, destination)) {
+                    continue
                 }
 
                 let arpHeader = createARPHeader({
                     oper: ARP_OPCODES.REQUEST,
                     sha: iface.macAddress,
-                    spa: spa,
+                    spa: source.address,
                     tpa: destination
                 })
 
@@ -874,7 +873,7 @@ export class Device2 {
                     dmac: new MACAddress("ff:ff:ff:ff:ff:ff"),
                     smac: iface.macAddress,
                     ethertype: ETHER_TYPES.ARP,
-                }).getBuffer()), {} as DeviceRoute)
+                }).getBuffer()))
             }
         } else if (destination instanceof IPV6Address) {
             this.arp_enqueue(data, destination, rtentry);
