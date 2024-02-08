@@ -19,9 +19,7 @@ function receive4(contact: Contact2, data: NetworkData) {
     }
 
     // verify that destination is for source device
-    if (!data.rcvif?.device.interfaces.find(i => i.addresses.find(a => uint8_equals(a.address.buffer, iphdr.get("daddr").buffer))) && !data.loopback) {
-        return; // request is not meant for destination
-    }
+    if (!data.destination) return;
 
     let reply_icmphdr = icmphdr;
     reply_icmphdr.set("type", ICMPV4_TYPES.ECHO_REPLY);
@@ -47,12 +45,13 @@ function receive6(contact: Contact2, data: NetworkData) {
     if (iphdr.get("nextHeader") != PROTOCOLS.IPV6_ICMP) {
         return;
     }
+    
+    if (!data.destination) return;
 
     let icmphdr = ICMP_HEADER.from(iphdr.get("payload"));
     if (icmphdr.get("type") != ICMPV6_TYPES.ECHO_REQUEST) {
         return;
     }
-
     let reply_icmphdr = icmphdr;
     let pseudoHdr = IPV6_PSEUDO_HEADER.create({
         saddr: iphdr.get("daddr"),

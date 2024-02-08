@@ -41,8 +41,11 @@ export type DeviceResult<E extends unknown = unknown, D extends unknown = undefi
 
 export type NetworkData = {
     buffer: Uint8Array;
-    broadcast?: boolean;
     loopback?: boolean;
+    broadcast?: boolean;
+    multicast?: boolean;
+    /** if this device is the final destination for the packet  */
+    destination?: boolean;
     rcvif?: BaseInterface;
     /** for future use with some type of interface that pretends to be an ethernet interface */
     rcvif_hwaddress?: BaseAddress;
@@ -474,8 +477,33 @@ export class Device2 {
             throw "ipv4 fragments not supported"
         }
 
-        // !TODO: verify that daddr is for this device
-        // !TODO: maybe support routing somehow idk
+        if (data.loopback) {
+            data.destination = true; // it is looped back IT IS for this device
+        } else if (false) {
+            // something something  multicast
+        } else {
+            data.destination = false; // this could have been set by lower level things
+            let daddr = iphdr.get("daddr")
+            daddr_check: for (let iface of this.interfaces) for (let source of iface.addresses) {
+                if (source.address.constructor != daddr.constructor)
+                    continue
+
+                if (uint8_equals(source.address.buffer, daddr.buffer)) {
+                    data.destination = true;
+                    break daddr_check;
+                }
+
+                if (uint8_equals(
+                    or(source.address.buffer, not(source.netmask.buffer)), // subnet broadcast address
+                    daddr.buffer
+                )) {
+                    data.broadcast = true;
+                    data.destination = true;
+                    break daddr_check;
+                }
+            }
+        }
+
         this.contact_input_raw("IPv4", { ...data, buffer: iphdr.getBuffer() });
 
         if (iphdr.get("proto") == PROTOCOLS.UDP) {
@@ -546,6 +574,9 @@ export class Device2 {
     }
 
     input_udp4(iphdr: typeof IPV4_HEADER, data: NetworkData) {
+        if (!data.destination)
+            return; // if it is not the destination then this is an unnecessary check
+
         let udphdr = UDP_HEADER.from(iphdr.get("payload"));
 
         if (udphdr.get("csum") > 0) {
@@ -594,16 +625,30 @@ export class Device2 {
 
     input_ipv6(iphdr: typeof IPV6_HEADER, data: NetworkData) {
         if (!data.rcvif) { console.warn("rcvif missing"); return }
-        // demultiplex data
-        // in reality there should be some checking as if the packet is for the device
 
+        let daddr = iphdr.get("daddr")
+        data.multicast = daddr.isMulticast();
+
+        if (data.loopback) {
+            data.destination = true; // it is looped back IT IS for this device
+        } if (data.multicast) {
+            // !TODO: add a more generic way of checking multicast subscriptions
+            // for now assume that all multicasts are FF01:0:0:0:0:0:0:1 A.K.A. ALL_NODES
+            data.destination = true; // REMEMBER, THIS IS TEMPORARY
+        } else {
+            data.destination = false; // this could have been set by lower level things
+            daddr_check: for (let iface of this.interfaces) for (let source of iface.addresses) {
+                if (source.address.constructor != daddr.constructor) continue;
+                if (uint8_equals(source.address.buffer, daddr.buffer))
+                    data.destination = true; break daddr_check;
+            }
+        }
 
         if (iphdr.get("nextHeader") === PROTOCOLS.IPV6_ICMP) {
             return this.input_icmp6(iphdr, data);
         } else if (iphdr.get("nextHeader") === PROTOCOLS.UDP) {
             return this.input_udp6(iphdr, data);
         } else {
-            // console.log(iphdr.getBuffer())
             this.contact_input_raw("IPv6", { ...data, buffer: iphdr.getBuffer() });
         }
     }

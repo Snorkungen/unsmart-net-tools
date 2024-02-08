@@ -16,29 +16,9 @@ export const DAEMON_ROUTING: Program = {
         let contact4 = proc.device.contact_create("IPv4", "RAW").data!;
         contact4.receive(contact4, (contact, data) => {
             let iphdr = IPV4_HEADER.from(data.buffer);
-            console.log("routing", proc.device.name)
 
-            let device = proc.device;
-            // check that destination is not for the device
-            let stat: "found" | "found_broadcast" | undefined =  undefined;
-            for (let iface of device.interfaces) {
-                for (let source of iface.addresses) {
-                    if (source.address.constructor != iphdr.get("daddr").constructor) {
-                        continue
-                    }
-
-                    if (uint8_equals(source.address.buffer, iphdr.get("daddr").buffer)) {
-                        stat = "found"
-                        break;
-                    }
-                    
-                    if (uint8_equals(or(source.address.buffer, not(source.netmask.buffer)), iphdr.get("daddr").buffer)) {
-                        stat = "found_broadcast"
-                    }
-                }
-            }
-
-            if (stat == "found") {
+            // use new data flags     #IDONOTLIKE_MULTICAST
+            if (data.destination || data.broadcast || data.multicast || data.loopback) {
                 return;
             }
 
@@ -63,11 +43,13 @@ export const DAEMON_ROUTING: Program = {
                 return; // discarded
             }
 
+            
             // decrement ttl and recalculate checksum
             iphdr.set("ttl", iphdr.get("ttl") - 1);
             iphdr.set("csum", 0);
             iphdr.set("csum", calculateChecksum(iphdr.getBuffer().subarray(0, iphdr.get("ihl") << 2)));
-
+            
+            console.log(proc.device.name, "[ROUTING]")
             contact.send(contact, { buffer: iphdr.getBuffer() }, iphdr.get("daddr"), route)
         });
 
@@ -75,29 +57,8 @@ export const DAEMON_ROUTING: Program = {
         contact6.receive(contact6, (contact, data) => {
             let iphdr = IPV6_HEADER.from(data.buffer);
 
-            let stat: "found" | "found_broadcast" | undefined =  undefined;
-            for (let iface of proc.device.interfaces) {
-                for (let source of iface.addresses) {
-                    if (source.address.constructor != iphdr.get("daddr").constructor) {
-                        continue
-                    }
-
-                    if (uint8_equals(source.address.buffer, iphdr.get("daddr").buffer)) {
-                        stat = "found"
-                        break;
-                    }
-                    
-                    if (uint8_equals(or(source.address.buffer, not(source.netmask.buffer)), iphdr.get("daddr").buffer)) {
-                        stat = "found_broadcast"
-                    }
-                }
-            }
-            
-            if (iphdr.get("daddr").isMulticast()) {
-                stat = "found_broadcast"
-            }
-
-            if (stat == "found") {
+            // use new data flags     #IDONOTLIKE_MULTICAST
+            if (data.broadcast || data.multicast || data.loopback) {
                 return;
             }
 
