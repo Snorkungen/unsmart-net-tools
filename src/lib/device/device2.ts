@@ -531,9 +531,10 @@ export class Device2 {
         let broadcast = uint8_readUint32BE(not(or(source.netmask.buffer, iphdr.get("daddr").buffer))) === 0;
         if (broadcast) { data.broadcast = broadcast }
 
-        let res_loopback = this.output_loopback(data, destination, route);
-        if (res_loopback.success)
-            return res_loopback;
+        // !TODO: this could check all addresses on the device if its for the device
+        if (route.iface.addresses.find(a => uint8_equals(a.address.buffer, destination.buffer))) {
+            return this.output_loopback(data, destination, route);
+        }
 
         let res = route.iface.output(data, destination, route);
 
@@ -649,9 +650,10 @@ export class Device2 {
         let broadcast = destination.isMulticast();
         if (broadcast) { data.broadcast = broadcast }
 
-        let res_loopback = this.output_loopback(data, destination, route);
-        if (res_loopback.success)
-            return res_loopback;
+        // !TODO: this could check all addresses on the device if its for the device
+        if (route.iface.addresses.find(a => uint8_equals(a.address.buffer, destination.buffer))) {
+            return this.output_loopback(data, destination, route);
+        }
 
         let res = route.iface.output(data, destination, route);
         return {
@@ -662,12 +664,7 @@ export class Device2 {
     }
 
     input_icmp6(iphdr: typeof IPV6_HEADER, data: NetworkData) {
-
         let icmphdr = ICMP_HEADER.from(iphdr.get("payload"));
-        if (icmphdr.get("type") === ICMPV6_TYPES.NEIGHBOR_ADVERTISMENT) {
-
-        }
-
         switch (icmphdr.get("type")) {
             case ICMPV6_TYPES.NEIGHBOR_ADVERTISMENT:
                 this.input_ndp_advertisment(iphdr, data); break;
@@ -680,7 +677,7 @@ export class Device2 {
     }
 
     input_ndp_advertisment(iphdr: typeof IPV6_HEADER, data: NetworkData) {
-        if (!(data.rcvif instanceof EthernetInterface)) {
+        if (!data.rcvif || data.loopback || data.rcvif.header != ETHERNET_HEADER || !(data.rcvif_hwaddress instanceof MACAddress)) {
             return;
         }
 
@@ -697,7 +694,7 @@ export class Device2 {
     }
 
     input_ndp_solicitation(iphdr: typeof IPV6_HEADER, data: NetworkData) {
-        if (!data.rcvif || data.rcvif.header != ETHERNET_HEADER || !(data.rcvif_hwaddress instanceof MACAddress)) {
+        if (!data.rcvif || data.loopback || data.rcvif.header != ETHERNET_HEADER || !(data.rcvif_hwaddress instanceof MACAddress)) {
             return;
         }
 
@@ -756,8 +753,7 @@ export class Device2 {
     }
 
     input_arp(etherheader: typeof ETHERNET_HEADER, data: NetworkData) {
-        if (!data.rcvif) { console.warn("rcvif missing"); return };
-        if (data.rcvif.header != ETHERNET_HEADER || !(data.rcvif_hwaddress instanceof MACAddress)) return;
+        if (!data.rcvif || data.loopback || data.rcvif.header != ETHERNET_HEADER || !(data.rcvif_hwaddress instanceof MACAddress)) return;
 
         let arpHdr = ARP_HEADER.from(etherheader.get("payload")), rcvif = data.rcvif;
 
@@ -837,17 +833,11 @@ export class Device2 {
             this.input_vlan(etherframe, data)
         }
 
-        // this knows that the data is an ethernet frame
-
-        // this should do something or mayber there something listening to all traffic that would be interested in this
     }
 
-    output_loopback(data: NetworkData, destination: BaseAddress, route?: DeviceRoute, skip_address_check?: boolean): DeviceResult<"HOSTUNREACH" | "ERROR"> {
+    output_loopback(data: NetworkData, destination: BaseAddress, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
         if (!route)
             return { success: false, error: "ERROR" };
-
-        if (!skip_address_check && !route.iface.addresses.find(a => uint8_equals(a.address.buffer, destination.buffer)))
-            return { success: false, error: "ERROR" }
 
         // loopback
         data = { ...data, rcvif: route.iface, loopback: true };
@@ -858,8 +848,10 @@ export class Device2 {
         }); else if (destination instanceof IPV6Address) this.schedule(() => {
             this.log({ ...data, buffer: ETHERNET_HEADER.create({ ethertype: ETHER_TYPES.IPv6, payload: data.buffer }).getBuffer() }, "LOOPBACK")
             this.input_ipv6(IPV6_HEADER.from(data.buffer), data);
-        }); else
+        }); else {
+            // !TODO: check for iface header and proceed accordingly
             return { success: !data.broadcast, error: "HOSTUNREACH", data: undefined }
+        }
 
         return { success: !data.broadcast, error: "ERROR", data: undefined };
     }
@@ -1622,7 +1614,7 @@ export class LoopbackInterface extends BaseInterface {
     }
 
     output(data: NetworkData, destination: BaseAddress, route?: DeviceRoute): DeviceResult<"UDUMB"> {
-        let res = this.device.output_loopback(data, destination, route, true);
+        let res = this.device.output_loopback(data, destination, route);
         return { ...res, error: "UDUMB" }
     }
 
