@@ -243,7 +243,7 @@ export class Device2 {
 
         this.log_records.push({
             time: Date.now(),
-            buffer: data.buffer,
+            buffer: new Uint8Array(data.buffer),
             iface
         })
     }
@@ -441,6 +441,7 @@ export class Device2 {
 
             pseudo_header.set("proto", PROTOCOLS.UDP);
             pseudo_header.set("len", udphdr.size);
+            udphdr.set("length", udphdr.size);
 
             udphdr.set("csum", calculateChecksum(uint8_concat([pseudo_header.getBuffer(), udphdr.getBuffer()])) || 0xffff);
 
@@ -852,7 +853,7 @@ export class Device2 {
                 oper: ARP_OPCODES.REPLY,
                 tha: data.rcvif_hwaddress
             }), replyEthHdr = ETHERNET_HEADER.create({
-                dmac: arpHdr.get("sha"),
+                dmac: etherheader.get("smac"),
                 smac: data.rcvif_hwaddress,
                 ethertype: ETHER_TYPES.ARP
             })
@@ -1536,10 +1537,6 @@ export class EthernetInterface extends BaseInterface {
 
         etherheader.set("payload", data.buffer);
 
-        this.device.log({
-            buffer: etherheader.getBuffer(),
-            rcvif: this
-        }, "SEND")
 
         if (uint8_equals(etherheader.get("smac").buffer, etherheader.get("dmac").buffer)) {
             // this was meant for myself
@@ -1557,7 +1554,6 @@ export class EthernetInterface extends BaseInterface {
                 this.device.log(lodata, "RECEIVE"); this.device.input_ether(etherheader, lodata)
             });
         }
-
 
         // !TODO: mode to enable user to skip over vlan handling
         vlan_handler: if (this.vlan) {
@@ -1594,7 +1590,13 @@ export class EthernetInterface extends BaseInterface {
 
         this.onSend && this.onSend();
         // somehow put on wire
-        this.device.schedule(() => this.target && this.target.receive.call(this.target, etherheader), undefined);
+        this.device.schedule(() => {
+            this.device.log({
+                buffer: etherheader.getBuffer(),
+                rcvif: this
+            }, "SEND")
+            this.target && this.target.receive.call(this.target, etherheader)
+        }, undefined);
         return { success: true, data: undefined }
     }
 
@@ -1749,7 +1751,7 @@ export class VlanInterface extends BaseInterface {
             data = { rcvif: this, rcvif_hwaddress: data.rcvif_hwaddress, buffer: etherframe.getBuffer(), broadcast: data.broadcast }
 
             if (this.log_input) {
-                this.device.log(data, "RECEIVE")
+                // this.device.log(data, "RECEIVE")
             }
 
             this.device.input_ether(etherframe, data)
@@ -1813,9 +1815,6 @@ export class VlanInterface extends BaseInterface {
         if (iface) {
             this.device.schedule(() => {
                 if (!iface) return;
-                // if (this.log_input) {
-                //     this.device.log(data, "SEND");
-                // }
                 iface.output(data, new BaseAddress(etherheader.getBuffer()), rtentry)
             })
             return { success: true, data: undefined };
@@ -1827,11 +1826,8 @@ export class VlanInterface extends BaseInterface {
         }
 
         this.device.schedule(() => {
-            if (this.log_input) {
-                // this.device.log(data, "SEND");
-                for (iface of out_interfaces) {
-                    iface.output(data, new BaseAddress(etherheader.getBuffer()), rtentry);
-                }
+            for (iface of out_interfaces) {
+                iface.output(data, new BaseAddress(etherheader.getBuffer()), rtentry);
             }
         })
 
