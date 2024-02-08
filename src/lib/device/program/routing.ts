@@ -1,9 +1,10 @@
 import { IPV4Address } from "../../address/ipv4";
+import { IPV6Address } from "../../address/ipv6";
 import { not, or } from "../../binary";
 import { calculateChecksum } from "../../binary/checksum";
-import { uint8_equals } from "../../binary/uint8-array";
-import { ICMPV4_CODES, ICMPV4_TYPES, ICMPV6_CODES, ICMPV6_TYPES, ICMP_HEADER } from "../../header/icmp";
-import { IPV4_HEADER, IPV6_HEADER, PROTOCOLS } from "../../header/ip";
+import { uint8_concat, uint8_equals } from "../../binary/uint8-array";
+import { ICMPV4_CODES, ICMPV4_TYPES, ICMPV6_CODES, ICMPV6_TYPES, ICMP_HEADER, ICMP_UNUSED_HEADER } from "../../header/icmp";
+import { IPV4_HEADER, IPV4_PSEUDO_HEADER, IPV6_HEADER, PROTOCOLS } from "../../header/ip";
 import { Program, ProcessSignal } from "../device2";
 
 export const DAEMON_ROUTING: Program = {
@@ -22,13 +23,17 @@ export const DAEMON_ROUTING: Program = {
                 return;
             }
 
+
+
             if (iphdr.get("ttl") < 1) {
                 let icmphdr = ICMP_HEADER.create({
-                    type: ICMPV4_TYPES.TIMESTAMP,
+                    type: ICMPV4_TYPES.TIME_EXCEEDED,
                     code: ICMPV4_CODES[ICMPV4_TYPES.TIME_EXCEEDED].TTL,
-                    data: iphdr.getBuffer().subarray(0, 64)
+                    data: ICMP_UNUSED_HEADER.create({ data: data.buffer.slice(0, 64) }).getBuffer(),
+                    csum: 0
                 });
 
+                icmphdr.set("csum", calculateChecksum(icmphdr.getBuffer()))
                 iphdr = IPV4_HEADER.create({
                     daddr: iphdr.get("saddr"),
                     proto: PROTOCOLS.ICMP,
@@ -43,12 +48,12 @@ export const DAEMON_ROUTING: Program = {
                 return; // discarded
             }
 
-            
+
             // decrement ttl and recalculate checksum
             iphdr.set("ttl", iphdr.get("ttl") - 1);
             iphdr.set("csum", 0);
             iphdr.set("csum", calculateChecksum(iphdr.getBuffer().subarray(0, iphdr.get("ihl") << 2)));
-            
+
             console.log(proc.device.name, "[ROUTING]")
             contact.send(contact, { buffer: iphdr.getBuffer() }, iphdr.get("daddr"), route)
         });
@@ -65,16 +70,30 @@ export const DAEMON_ROUTING: Program = {
             if (iphdr.get("hopLimit") <= 0) {
                 let icmphdr = ICMP_HEADER.create({
                     type: ICMPV6_TYPES.TIME_EXCEEDED,
-                    data: iphdr.getBuffer().subarray(0, 64)
+                    data: ICMP_UNUSED_HEADER.create({ data: data.buffer.slice(0, 64) }).getBuffer()
                 });
 
+                let route = proc.device.route_resolve(iphdr.get("daddr"));
+                if (!route) return;
+                let source = route.iface.addresses.find(a => a.address instanceof IPV6Address)
+                if (!source) return;
+
+                let pseudohdr = IPV4_PSEUDO_HEADER.create({
+                    saddr: source.address,
+                    daddr: iphdr.get("saddr"),
+                    proto: PROTOCOLS.IPV6_ICMP,
+                    len: icmphdr.size
+                });
+
+                icmphdr.set("csum", calculateChecksum(uint8_concat([pseudohdr.getBuffer(), icmphdr.getBuffer()])))
+
                 iphdr = IPV6_HEADER.create({
-                    daddr: iphdr.get("daddr"),
+                    daddr: iphdr.get("saddr"),
                     nextHeader: PROTOCOLS.IPV6_ICMP,
                     payload: icmphdr.getBuffer(),
                 });
 
-                return contact.send(contact, { buffer: iphdr.getBuffer() }, iphdr.get("daddr"));
+                return contact.send(contact, { buffer: iphdr.getBuffer() }, iphdr.get("saddr"));
             }
 
             let route = proc.device.route_resolve(iphdr.get("daddr"));
