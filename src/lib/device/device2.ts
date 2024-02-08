@@ -44,7 +44,7 @@ export type NetworkData = {
     broadcast?: boolean;
     rcvif?: BaseInterface;
     /** for future use with some type of interface that pretends to be an ethernet interface */
-    rcivif_hwaddress?: BaseAddress;
+    rcvif_hwaddress?: BaseAddress;
     /** configure the outgoing interfaces mode */
     /** if true interface is not allowed to modify data or destination */
     mode_raw?: true,
@@ -688,7 +688,7 @@ export class Device2 {
     }
 
     input_ndp_solicitation(iphdr: typeof IPV6_HEADER, data: NetworkData) {
-        if (!(data.rcvif instanceof EthernetInterface)) {
+        if (!data.rcvif || data.rcvif.header != ETHERNET_HEADER || !(data.rcvif_hwaddress instanceof MACAddress)) {
             return;
         }
 
@@ -741,16 +741,14 @@ export class Device2 {
 
         data.rcvif.output({ buffer: replyIPHdr.getBuffer() }, new BaseAddress(ETHERNET_HEADER.create({
             dmac: ethhdr.get("smac"),
-            smac: data.rcvif.macAddress,
+            smac: data.rcvif_hwaddress,
             ethertype: ETHER_TYPES.IPv6
-        }).getBuffer()),
-            {} as DeviceRoute // this is hacky but should work
-        )
+        }).getBuffer()))
     }
 
     input_arp(etherheader: typeof ETHERNET_HEADER, data: NetworkData) {
         if (!data.rcvif) { console.warn("rcvif missing"); return };
-        if (!(data.rcvif instanceof EthernetInterface)) return;
+        if (data.rcvif.header != ETHERNET_HEADER || !(data.rcvif_hwaddress instanceof MACAddress)) return;
 
         let arpHdr = ARP_HEADER.from(etherheader.get("payload")), rcvif = data.rcvif;
 
@@ -769,14 +767,7 @@ export class Device2 {
                 createdAt: Date.now()
             });
         } else if (arpHdr.get("oper") == ARP_OPCODES.REQUEST) {
-            // sanity check 
-            if (!(data.rcvif instanceof EthernetInterface)) {
-                return
-            }
-
             let tpa = arpHdr.get("tpa");
-
-            // naive approach in actuality i should check all interfaces but then again tha might caus unforseen challenging
 
             let iface = this.interfaces.find(({ addresses }) => addresses.find(({ address }) => uint8_equals(address.buffer, tpa.buffer)))
             if (!iface) {
@@ -785,27 +776,43 @@ export class Device2 {
 
             let replyARPHdr = arpHdr.create({
                 oper: ARP_OPCODES.REPLY,
-                tha: rcvif.macAddress
+                tha: data.rcvif_hwaddress
             }), replyEthHdr = ETHERNET_HEADER.create({
                 dmac: arpHdr.get("sha"),
-                smac: rcvif.macAddress,
+                smac: data.rcvif_hwaddress,
                 ethertype: ETHER_TYPES.ARP
             })
 
             rcvif.output({
                 buffer: replyARPHdr.getBuffer()
-            }, new BaseAddress(replyEthHdr.getBuffer()),
-                {} as DeviceRoute // this is hacky but should work
-            )
+            }, new BaseAddress(replyEthHdr.getBuffer()))
+        }
+    }
+
+    input_vlan(etherheader: typeof ETHERNET_HEADER, data: NetworkData) {
+        if (!data.rcvif) { console.warn("rcvif missing"); return };
+        if (data.rcvif.header != ETHERNET_HEADER || !(data.rcvif_hwaddress instanceof MACAddress)) return;
+
+        if (etherheader.get("ethertype") != ETHER_TYPES.VLAN)
+            return;
+
+        let vlanhdr = ETHERNET_DOT1Q_HEADER.from(etherheader.get("payload"));
+
+        for (let iface of this.interfaces) {
+            if (!(iface instanceof VlanInterface))
+                continue;
+
+            if (vlanhdr.get("vid") != iface.vid)
+                continue;
+
+            iface.input(etherheader, data);
         }
     }
 
     input_ether(etherframe: typeof ETHERNET_HEADER, data: NetworkData) {
-        if (!(data.rcvif instanceof EthernetInterface)) {
+        if (!data.rcvif || data.rcvif.header !== ETHERNET_HEADER) {
             throw new Error("rcvif missing or wrong type, rcvif must be a EthernetInterface")
         }
-
-        data.rcivif_hwaddress = data.rcvif.macAddress;
 
         this.contact_input_raw("RAW", data);
 
@@ -817,6 +824,8 @@ export class Device2 {
                 IPV6_HEADER.from(etherframe.get("payload")), data)
         } else if (etherframe.get("ethertype") == ETHER_TYPES.ARP) {
             this.input_arp(etherframe, data)
+        } else if (etherframe.get("ethertype") == ETHER_TYPES.VLAN) { // !TODO: in future support for S_VLAN
+            this.input_vlan(etherframe, data)
         }
 
         // this knows that the data is an ethernet frame
@@ -849,7 +858,7 @@ export class Device2 {
             // send away arp request
             for (let iface of this.interfaces) {
                 // TODO: use BaseInterface.header and data.rcvif_hwaddress instead in the future
-                if (!(iface instanceof EthernetInterface) || !iface.up) {
+                if (iface.header !== ETHERNET_HEADER || !iface.up) {
                     continue
                 }
 
@@ -858,9 +867,19 @@ export class Device2 {
                     continue
                 }
 
-                let arpHeader = createARPHeader({
+                let sha: MACAddress | undefined = undefined;
+                if (iface instanceof EthernetInterface) {
+                    sha = iface.macAddress
+                }
+
+                let arpHeader = ARP_HEADER.create({
+                    htype: 1,
+                    ptype: ETHER_TYPES.IPv4,
+                    hlen: 6,
+                    plen: 4,
+
                     oper: ARP_OPCODES.REQUEST,
-                    sha: iface.macAddress,
+                    sha: sha,
                     spa: source.address,
                     tpa: destination
                 })
@@ -871,14 +890,14 @@ export class Device2 {
                     broadcast: true
                 }, new BaseAddress(ETHERNET_HEADER.create({
                     dmac: new MACAddress("ff:ff:ff:ff:ff:ff"),
-                    smac: iface.macAddress,
+                    smac: undefined, // this gets overwritten by the outgoing ethernet interface
                     ethertype: ETHER_TYPES.ARP,
                 }).getBuffer()))
             }
         } else if (destination instanceof IPV6Address) {
             this.arp_enqueue(data, destination, rtentry);
             for (let iface of this.interfaces) {
-                if (!(iface instanceof EthernetInterface) || !iface.up) continue;
+                if (iface.header !== ETHERNET_HEADER || !iface.up) continue;
 
                 let ndpHdr = ICMP_NDP_HEADER.create({
                     targetAddress: destination
@@ -921,9 +940,9 @@ export class Device2 {
                     broadcast: true
                 }, new BaseAddress(ETHERNET_HEADER.create({
                     dmac: new MACAddress("ff:ff:ff:ff:ff:ff"),
-                    smac: iface.macAddress,
+                    smac: undefined, // this gets set byte the output interface
                     ethertype: ETHER_TYPES.IPv6,
-                }).getBuffer()), {} as DeviceRoute)
+                }).getBuffer()))
             }
         }
 
@@ -1048,6 +1067,13 @@ export class Device2 {
                 neighbor: address,
                 iface: iface,
                 macAddress: iface.macAddress,
+                createdAt: -1 // trick to make this not get deleted, if i were to check time by subtracting from now with createdAt
+            })
+        } else if (iface instanceof VlanInterface) {
+            this.arp_cache_entry(address, {
+                neighbor: address,
+                iface: iface,
+                macAddress: new MACAddress(new Uint8Array(6)),
                 createdAt: -1 // trick to make this not get deleted, if i were to check time by subtracting from now with createdAt
             })
         }
@@ -1316,7 +1342,7 @@ type DeviceAddress<AT extends typeof BaseAddress = typeof BaseAddress> = {
     netmask: AddressMask<AT>
 }
 
-type InterfaceName = "eth" | "lo"
+type InterfaceName = "eth" | "lo" | "vlanif";
 export class BaseInterface {
     /** The device this interface is attached to */
     device: Device2;
@@ -1533,13 +1559,10 @@ export class EthernetInterface extends BaseInterface {
         }
 
         this.device.schedule(() => {
-            this.device.log({
-                buffer: etherheader.getBuffer(),
-                rcvif: this
-            }, "RECEIVE");
+            let data = { rcvif: this, rcvif_hwaddress: this.macAddress, buffer: etherheader.getBuffer(), broadcast: etherheader.get("dmac").isBroadcast() }
 
-            this.device.input_ether(etherheader,
-                { rcvif: this, buffer: etherheader.getBuffer(), broadcast: etherheader.get("dmac").isBroadcast() });
+            this.device.log(data, "RECEIVE");
+            this.device.input_ether(etherheader, data);
         }, this.receive_delay)
     }
 
@@ -1639,4 +1662,138 @@ export class LoopbackInterface extends BaseInterface {
         this.up = true;
         return { success: true, data: undefined };
     };
+}
+export class VlanInterface extends BaseInterface {
+    get vid() { return this.unit };
+    constructor(device: Device2, vid: number) {
+        super(device, "vlanif",
+            vid,
+            0xfffe,
+        )
+
+        this.header = ETHERNET_HEADER;
+        this.up = true;
+    }
+
+    private macaddresses = new Map<string, BaseInterface>()
+    private log_input = true;
+
+    input(etherframe: typeof ETHERNET_HEADER, data: NetworkData) {
+        if (etherframe.get("ethertype") != ETHER_TYPES.VLAN)
+            throw new Error("vlanif can't process etherhdr, must have a vlan tag");
+
+            let vlanhdr = ETHERNET_DOT1Q_HEADER.from(etherframe.get("payload"));
+            if (vlanhdr.get("vid") != this.vid)
+            throw new Error("vlanif incorrect vid passed")
+            
+            // untag frame
+            etherframe.set("ethertype", vlanhdr.get("ethertype"));
+            etherframe.set("payload", vlanhdr.get("payload"));
+            
+        if (!data.rcvif || !(data.rcvif_hwaddress instanceof MACAddress)) {
+            return; // !TODO: this should mayber throw an error
+        }
+        // !TODO: maybe pass other vlan information forward to the device
+
+        this.macaddresses.set(etherframe.get("smac").toString(), data.rcvif);
+
+        this.device.schedule(() => {
+            data = { rcvif: this, rcvif_hwaddress: data.rcvif_hwaddress, buffer: etherframe.getBuffer(), broadcast: data.broadcast }
+
+            if (this.log_input) {
+                this.device.log(data, "RECEIVE")
+            }
+
+            this.device.input_ether(etherframe, data)
+        })
+    }
+
+    output(data: NetworkData, destination: BaseAddress, rtentry?: DeviceRoute<typeof BaseAddress> | undefined): DeviceResult<"UDUMB"> {
+        let etherheader: typeof ETHERNET_HEADER;
+        if (destination instanceof IPV4Address) {
+            if (!rtentry) return { success: false, error: "UDUMB", message: "route required" }
+            let dmac = this.device.arp_resolve(data, destination, rtentry);
+            if (!dmac) {
+                // this method will get called recalled at a later times
+                return { success: true, data: undefined, message: "the interface is waiting for a LINK_LEVEL destination" };
+            }
+            etherheader = ETHERNET_HEADER.create({ dmac, ethertype: ETHER_TYPES.IPv4 })
+        } else if (destination instanceof IPV6Address) {
+            if (!rtentry) return { success: false, error: "UDUMB", message: "route required" }
+            let dmac = this.device.arp_resolve(data, destination, rtentry);
+            if (!dmac) {
+                // this method will get called recalled at a later times
+                return { success: true, data: undefined, message: "the interface is waiting for a LINK_LEVEL destination" };
+            }
+            etherheader = ETHERNET_HEADER.create({ dmac, ethertype: ETHER_TYPES.IPv6 })
+        } else {
+            if (destination.buffer.length < ETHERNET_HEADER.getMinSize()) {
+                // the header is an invalid size
+                return { success: true, data: undefined, error: "UDUMB", message: "the ethernet header added is invalid" };
+            }
+            etherheader = ETHERNET_HEADER.from(destination.buffer);
+        }
+
+        etherheader.set("payload", data.buffer);
+
+        // #ALWAYSTAGGING
+        if (etherheader.get("ethertype") === ETHER_TYPES.VLAN) {
+            let vlanhdr = ETHERNET_DOT1Q_HEADER.from(etherheader.get("payload"));
+            // !TODO: if i could be bothered support S_VLAN
+            if (vlanhdr.get("vid") != this.vid) {
+                return { success: false, error: "UDUMB", message: "vlanif can't output an incorrectly tagged frame, vid does not match" }
+            }
+        } else {
+            let vlanhdr = ETHERNET_DOT1Q_HEADER.create({
+                vid: this.vid,
+                ethertype: etherheader.get("ethertype"),
+                payload: etherheader.get("payload")
+            });
+            etherheader.set("ethertype", ETHER_TYPES.VLAN);
+            etherheader.set("payload", vlanhdr.getBuffer());
+        }
+
+        data = { rcvif: this, buffer: etherheader.get("payload"), broadcast: data.broadcast };
+
+        if (uint8_equals(etherheader.get("dmac").buffer, (new Uint8Array(6)))) { // assume this is for looping back
+            this.input(etherheader, {...data, rcvif_hwaddress : new MACAddress(new Uint8Array(6))});
+            return { success: true, data: undefined }
+        }
+
+
+        // handle loopback situation
+        // !TODO: figure out a more generic solution
+        if (this.addresses.find(({ address }) => uint8_equals(address.buffer, destination.buffer))) {
+            this.input(etherheader, data)
+            return { success: true, data: undefined }
+        }
+
+        let iface = this.macaddresses.get(etherheader.get("dmac").toString());
+        if (iface) {
+            this.device.schedule(() => {
+                if (!iface) return;
+                // if (this.log_input) {
+                //     this.device.log(data, "SEND");
+                // }
+                iface.output(data, new BaseAddress(etherheader.getBuffer()), rtentry)
+            })
+            return { success: true, data: undefined };
+        }
+
+        let out_interfaces = this.device.interfaces.filter(iface => iface !== this && iface.header === ETHERNET_HEADER && iface);
+        if (out_interfaces.length == 0) {
+            return { success: false, error: "UDUMB", message: "vlanif no outgoing interface found for frame" }
+        }
+
+        this.device.schedule(() => {
+            if (this.log_input) {
+                // this.device.log(data, "SEND");
+                for (iface of out_interfaces) {
+                    iface.output(data, new BaseAddress(etherheader.getBuffer()), rtentry);
+                }
+            }
+        })
+
+        return { success: true, data: undefined }
+    }
 }

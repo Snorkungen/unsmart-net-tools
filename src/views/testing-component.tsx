@@ -6,7 +6,7 @@ import { uint8_concat, uint8_equals, uint8_fromNumber, uint8_readUint16BE } from
 import { ICMPV4_TYPES, ICMPV6_TYPES, ICMP_ECHO_HEADER, ICMP_HEADER } from "../lib/header/icmp";
 import { calculateChecksum } from "../lib/binary/checksum";
 import { IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS, createIPV4Header } from "../lib/header/ip";
-import { Device2, EthernetInterface, createMacAddress } from "../lib/device/device2";
+import { Device2, EthernetInterface, VlanInterface, createMacAddress } from "../lib/device/device2";
 import { DEVICE_PROGRAM_DOWNLOAD } from "../lib/device/program/program2";
 import { DAEMON_ECHO_REPLIER } from "../lib/device/program/echo-replier";
 import { NetworkSwitch2 } from "../lib/device/network-switch";
@@ -54,7 +54,7 @@ sw1.name = "SW1";
 let iface_sw1_pc1 = sw1.interface_add(new EthernetInterface(sw1));
 let iface_sw1_pc2 = sw1.interface_add(new EthernetInterface(sw1));
 let iface_sw1_pc3 = sw1.interface_add(new EthernetInterface(sw1));
-// let iface_sw1_pc4 = sw1.interface_add(new EthernetInterface(sw1));
+let iface_sw1_pc4 = sw1.interface_add(new EthernetInterface(sw1));
 
 
 let pc1 = new Device2();
@@ -66,36 +66,38 @@ pc2.name = "PC2"
 pc3.name = "PC3"
 pc4.name = "PC4"
 
+
 let iface_pc1 = new EthernetInterface(pc1, createMacAddress()); pc1.interface_add(iface_pc1)
 let iface_pc2 = new EthernetInterface(pc2, createMacAddress()); pc2.interface_add(iface_pc2)
 let iface_pc3 = new EthernetInterface(pc3, createMacAddress()); pc3.interface_add(iface_pc3)
 let iface_pc4 = new EthernetInterface(pc4, createMacAddress()); pc4.interface_add(iface_pc4)
 
-pc1.interface_set_address(iface_pc1, new IPV4Address("192.168.1.10"), createMask(IPV4Address, 24));
+// Vlanif test
+let vlanif1_pc1 = pc1.interface_add(new VlanInterface(pc1, 1 /* default interface for switches */));
+pc1.interface_set_address(vlanif1_pc1, new IPV4Address("192.168.1.10"), createMask(IPV4Address, 24));
+let vlanif10_pc1 = pc1.interface_add(new VlanInterface(pc1, 10));
+pc1.interface_set_address(vlanif10_pc1, new IPV4Address("192.168.10.10"), createMask(IPV4Address, 24));
+
+iface_sw1_pc1.vlan_set("trunk", 1, 10)
+iface_sw1_pc1.connect(iface_pc1)
+
+
 pc2.interface_set_address(iface_pc2, new IPV4Address("192.168.1.20"), createMask(IPV4Address, 24));
 pc3.interface_set_address(iface_pc3, new IPV4Address("192.168.1.30"), createMask(IPV4Address, 24));
-pc4.interface_set_address(iface_pc4, new IPV4Address("192.168.1.40"), createMask(IPV4Address, 24));
-
-iface_sw1_pc1.connect(iface_pc1)
 iface_sw1_pc2.connect(iface_pc2)
 iface_sw1_pc3.connect(iface_pc3)
 
-
-/* ROUTING TEST */
-// router pc2
-let iface_pc2_10 = new EthernetInterface(pc2, createMacAddress()); pc2.interface_add(iface_pc2_10);
-iface_pc2_10.connect(iface_pc4)
-pc2.interface_set_address(iface_pc2_10, new IPV4Address("192.168.10.20"), createMask(IPV4Address, 24));
-
-pc2.process_start(DAEMON_ROUTING); // this might be a problem because devices to not check that packet is for the device
-
-// pc4 iface on different subnet
 pc4.interface_set_address(iface_pc4, new IPV4Address("192.168.10.40"), createMask(IPV4Address, 24));
-pc4.routes.push({ destination: new IPV4Address("0.0.0.0"), netmask: createMask(IPV4Address, 0), gateway: new IPV4Address("192.168.10.20"), f_gateway: true, iface: iface_pc4 })
+iface_sw1_pc4.vlan_set("access", 10)
+iface_sw1_pc4.connect(iface_pc4)
 
-pc3.routes.push({ destination: new IPV4Address("0.0.0.0"), netmask: createMask(IPV4Address, 0), gateway: new IPV4Address("192.168.1.20"), f_gateway: true, iface: iface_pc3 })
-pc1.routes.push({ destination: new IPV4Address("0.0.0.0"), netmask: createMask(IPV4Address, 0), gateway: new IPV4Address("192.168.1.20"), f_gateway: true, iface: iface_pc1 })
+// pc1 routing
+pc1.process_start(DAEMON_ROUTING);
 
+pc2.routes.push({ destination: new IPV4Address("0.0.0.0"), netmask: createMask(IPV4Address, 0), gateway: new IPV4Address("192.168.1.10"), f_gateway: true, iface: iface_pc2 })
+pc3.routes.push({ destination: new IPV4Address("0.0.0.0"), netmask: createMask(IPV4Address, 0), gateway: new IPV4Address("192.168.1.10"), f_gateway: true, iface: iface_pc3 })
+
+pc4.routes.push({ destination: new IPV4Address("0.0.0.0"), netmask: createMask(IPV4Address, 0), gateway: new IPV4Address("192.168.10.10"), f_gateway: true, iface: iface_pc4 })
 
 function screamToEchoUDPServer(pc: Device2) {
     let contact = pc.contact_create("IPv4", "UDP").data!;
