@@ -412,57 +412,81 @@ export class Device2 {
     private process_term_flush() { (this.terminal) && this.terminal.flush(); }
     private process_term_flushblackhole() { }
 
-
+    /** data.buffer contains the pseudo_header followed by the udp header */
     output_udp(data: NetworkData, destination: BaseAddress, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
         if (!route && !(route = this.route_resolve(destination))) return {
             success: false,
             error: "HOSTUNREACH",
             message: "No outgoing route found"
         }
-        // select an address from the outgoing interface
+
         let source = route.iface.addresses.find(value => value.address.constructor == destination.constructor);
-        if (!source) return {
-            success: false,
-            error: "HOSTUNREACH",
-            message: "no source address for interface found"
-        }
 
-        if (data.buffer.length < UDP_HEADER.getMinSize()) return { success: false, error: "ERROR", message: "bad header" };
-        let udphdr = UDP_HEADER.from(data.buffer);
-        udphdr.set("length", udphdr.getBuffer().byteLength);
-
-        let ip_output: Device2["output_ipv4"];
-        let iphdr: typeof IPV4_HEADER | typeof IPV6_HEADER;
-
-        udphdr.set("csum", 0);
         if (destination instanceof IPV4Address) {
-            let pseudohdr = IPV4_PSEUDO_HEADER.create({
-                saddr: source.address as IPV4Address,
-                daddr: destination,
-                proto: PROTOCOLS.UDP,
-                len: udphdr.get("length")
-            });
+            let pseudo_header = IPV4_PSEUDO_HEADER.from(data.buffer.subarray(0, IPV4_PSEUDO_HEADER.size)),
+                udphdr = UDP_HEADER.from(data.buffer.slice(pseudo_header.size));
 
-            udphdr.set("csum", calculateChecksum(uint8_concat([pseudohdr.getBuffer(), udphdr.getBuffer()])) || 0xffff);
-            ip_output = this.output_ipv4;
-            iphdr = IPV4_HEADER.create({ proto: PROTOCOLS.UDP, payload: udphdr.getBuffer() });
-        } else if (destination instanceof IPV6Address) {
-            let pseudohdr = IPV6_PSEUDO_HEADER.create({
-                saddr: source.address as IPV6Address,
-                daddr: destination,
-                proto: PROTOCOLS.UDP,
-                len: udphdr.get("length")
-            });
+            if (uint8_readUint32BE(pseudo_header.get("saddr").buffer) === 0) {
+                if (!source) return {
+                    success: false,
+                    error: "HOSTUNREACH",
+                    message: "no source address for interface found"
+                }
 
-            udphdr.set("csum", calculateChecksum(uint8_concat([pseudohdr.getBuffer(), udphdr.getBuffer()])));
-            ip_output = this.output_ipv6;
-            iphdr = IPV6_HEADER.create({ nextHeader: PROTOCOLS.UDP, payload: udphdr.getBuffer() });
-        } else {
-            return { success: false, error: "HOSTUNREACH", message: "destination MUST be an ip address" };
+                pseudo_header.set("saddr", source.address);
+            }
+
+            if (uint8_readUint32BE(pseudo_header.get("daddr").buffer) === 0)
+                pseudo_header.set("daddr", destination);
+
+            pseudo_header.set("proto", PROTOCOLS.UDP);
+            pseudo_header.set("len", udphdr.size);
+
+            udphdr.set("csum", calculateChecksum(uint8_concat([pseudo_header.getBuffer(), udphdr.getBuffer()])) || 0xffff);
+
+            return this.output_ipv4({
+                ...data, buffer: IPV4_HEADER.create({
+                    daddr: pseudo_header.get("daddr"),
+                    saddr: pseudo_header.get("saddr"),
+                    proto: pseudo_header.get("proto"),
+                    payload: udphdr.getBuffer()
+                }).getBuffer()
+            }, destination, route);
         }
 
-        data.buffer = iphdr.getBuffer();
-        return ip_output.call(this, data, destination, route)
+        if (destination instanceof IPV6Address) {
+            let pseudo_header = IPV6_PSEUDO_HEADER.from(data.buffer.subarray(0, IPV6_PSEUDO_HEADER.size)),
+                udphdr = UDP_HEADER.from(data.buffer.slice(pseudo_header.size));
+
+            if (pseudo_header.get("saddr").toString(4) == "::") {
+                if (!source) return {
+                    success: false,
+                    error: "HOSTUNREACH",
+                    message: "no source address for interface found"
+                }
+
+                pseudo_header.set("saddr", source.address.buffer);
+            }
+
+            if (pseudo_header.get("daddr").toString(4) == "::")
+                pseudo_header.set("daddr", destination);
+
+            pseudo_header.set("proto", PROTOCOLS.UDP);
+            pseudo_header.set("len", udphdr.size);
+
+
+            udphdr.set("csum", calculateChecksum(uint8_concat([pseudo_header.getBuffer(), udphdr.getBuffer()])));
+
+            return this.output_ipv6({
+                ...data, buffer: IPV6_HEADER.create({
+                    daddr: pseudo_header.get("daddr"),
+                    saddr: pseudo_header.get("saddr"),
+                    nextHeader: pseudo_header.get("proto"),
+                    payload: udphdr.getBuffer()
+                }).getBuffer()
+            }, destination, route);
+        }
+        return { success: false, error: "HOSTUNREACH", message: "destination MUST be an ip address" };
     }
 
     input_ipv4(iphdr: typeof IPV4_HEADER, data: NetworkData) {
@@ -584,7 +608,7 @@ export class Device2 {
                 saddr: iphdr.get("saddr"),
                 daddr: iphdr.get("daddr"),
                 proto: PROTOCOLS.UDP,
-                len: udphdr.get("length")
+                len: udphdr.size
             });
 
             if (calculateChecksum(uint8_concat([pseudohdr.getBuffer(), udphdr.getBuffer()])) !== 0) {
@@ -607,7 +631,7 @@ export class Device2 {
             saddr: iphdr.get("saddr"),
             daddr: iphdr.get("daddr"),
             proto: PROTOCOLS.UDP,
-            len: udphdr.get("length")
+            len: udphdr.size
         });
 
         if (calculateChecksum(uint8_concat([pseudohdr.getBuffer(), udphdr.getBuffer()])) !== 0) {
@@ -1323,7 +1347,12 @@ export class Device2 {
             payload: data.buffer
         });
 
-        data.buffer = udphdr.getBuffer();
+        let pseudo_header = IPV4_PSEUDO_HEADER.create({
+            saddr: contact.address.saddr,
+            daddr: contact.address.daddr,
+        })
+
+        data.buffer = uint8_concat([pseudo_header.getBuffer(), udphdr.getBuffer()]);
         let res = this.output_udp(data, contact.address.daddr, rtentry);
         return { success: res.success, error: undefined, data: undefined, message: res.message }
     }
