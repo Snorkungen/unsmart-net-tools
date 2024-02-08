@@ -42,6 +42,7 @@ export type DeviceResult<E extends unknown = unknown, D extends unknown = undefi
 export type NetworkData = {
     buffer: Uint8Array;
     broadcast?: boolean;
+    loopback?: boolean;
     rcvif?: BaseInterface;
     /** for future use with some type of interface that pretends to be an ethernet interface */
     rcvif_hwaddress?: BaseAddress;
@@ -206,7 +207,7 @@ export class Device2 {
     /** this approach is different in such a way that it allows to select for a specific interfac if that something i would like to do */
     private log_records: { time: number, buffer: Uint8Array, iface: BaseInterface }[] = []
     /** This thing is only to be called by interfaces that know the magic sauce  */
-    log(data: NetworkData, type: "SEND" | "RECEIVE", record = true) {
+    log(data: NetworkData, type: "SEND" | "RECEIVE" | "LOOPBACK", record = true) {
         // data.buffer is a complete ethernet frame
 
         let iface = data.rcvif;
@@ -229,6 +230,8 @@ export class Device2 {
             console.info(`${this.name} - ${iface_name}: received a frame from ${frame_info.saddr} - ${frame_info.protocol}`)
         } else if (type == "SEND") {
             console.info(`${this.name} - ${iface_name}: sent a frame to ${frame_info.daddr} - ${frame_info.protocol} ${!frame_info.info.length ? "" : frame_info.info.join(" ")}`)
+        } else if (type == "LOOPBACK") {
+            console.info(`${this.name} - ${iface.name}: loopback from(${frame_info.saddr}) to(${frame_info.daddr}) - ${frame_info.protocol} ${!frame_info.info.length ? "" : frame_info.info.join(" ")}`)
         }
 
         if (!record) {
@@ -456,7 +459,7 @@ export class Device2 {
         }
 
         data.buffer = iphdr.getBuffer();
-        return ip_output(data, destination, route)
+        return ip_output.call(this, data, destination, route)
     }
 
     input_ipv4(iphdr: typeof IPV4_HEADER, data: NetworkData) {
@@ -473,7 +476,6 @@ export class Device2 {
 
         // !TODO: verify that daddr is for this device
         // !TODO: maybe support routing somehow idk
-
         this.contact_input_raw("IPv4", { ...data, buffer: iphdr.getBuffer() });
 
         if (iphdr.get("proto") == PROTOCOLS.UDP) {
@@ -528,6 +530,10 @@ export class Device2 {
         // put some thinking to if the destination is a broadcast address
         let broadcast = uint8_readUint32BE(not(or(source.netmask.buffer, iphdr.get("daddr").buffer))) === 0;
         if (broadcast) { data.broadcast = broadcast }
+
+        let res_loopback = this.output_loopback(data, destination, route);
+        if (res_loopback.success)
+            return res_loopback;
 
         let res = route.iface.output(data, destination, route);
 
@@ -643,8 +649,11 @@ export class Device2 {
         let broadcast = destination.isMulticast();
         if (broadcast) { data.broadcast = broadcast }
 
-        let res = route.iface.output(data, destination, route);
+        let res_loopback = this.output_loopback(data, destination, route);
+        if (res_loopback.success)
+            return res_loopback;
 
+        let res = route.iface.output(data, destination, route);
         return {
             success: res.success,
             error: res.error ? "ERROR" : undefined,
@@ -831,6 +840,28 @@ export class Device2 {
         // this knows that the data is an ethernet frame
 
         // this should do something or mayber there something listening to all traffic that would be interested in this
+    }
+
+    output_loopback(data: NetworkData, destination: BaseAddress, route?: DeviceRoute, skip_address_check?: boolean): DeviceResult<"HOSTUNREACH" | "ERROR"> {
+        if (!route)
+            return { success: false, error: "ERROR" };
+
+        if (!skip_address_check && !route.iface.addresses.find(a => uint8_equals(a.address.buffer, destination.buffer)))
+            return { success: false, error: "ERROR" }
+
+        // loopback
+        data = { ...data, rcvif: route.iface, loopback: true };
+
+        if (destination instanceof IPV4Address) this.schedule(() => {
+            this.log({ ...data, buffer: ETHERNET_HEADER.create({ ethertype: ETHER_TYPES.IPv4, payload: data.buffer }).getBuffer() }, "LOOPBACK")
+            this.input_ipv4(IPV4_HEADER.from(data.buffer), data);
+        }); else if (destination instanceof IPV6Address) this.schedule(() => {
+            this.log({ ...data, buffer: ETHERNET_HEADER.create({ ethertype: ETHER_TYPES.IPv6, payload: data.buffer }).getBuffer() }, "LOOPBACK")
+            this.input_ipv6(IPV6_HEADER.from(data.buffer), data);
+        }); else
+            return { success: !data.broadcast, error: "HOSTUNREACH", data: undefined }
+
+        return { success: !data.broadcast, error: "ERROR", data: undefined };
     }
 
     arp_sendqueue = new Map<string, (Parameters<BaseInterface["output"]> | null)[]>();
@@ -1058,23 +1089,6 @@ export class Device2 {
                 gateway: rt_gateway,
                 netmask: netmask,
                 iface: iface
-            })
-        }
-
-        // 6th: if iface is an etheriface, add an arp entry
-        if (iface instanceof EthernetInterface) {
-            this.arp_cache_entry(address, {
-                neighbor: address,
-                iface: iface,
-                macAddress: iface.macAddress,
-                createdAt: -1 // trick to make this not get deleted, if i were to check time by subtracting from now with createdAt
-            })
-        } else if (iface instanceof VlanInterface) {
-            this.arp_cache_entry(address, {
-                neighbor: address,
-                iface: iface,
-                macAddress: new MACAddress(new Uint8Array(6)),
-                createdAt: -1 // trick to make this not get deleted, if i were to check time by subtracting from now with createdAt
             })
         }
 
@@ -1607,43 +1621,11 @@ export class LoopbackInterface extends BaseInterface {
         )
     }
 
-    output(data: NetworkData, destination: BaseAddress): DeviceResult<"UDUMB"> {
-        // based on address determine if ipv4 or ipv6
-        data.rcvif = this;
-
-        let ethertype: EtherType;
-        if (destination instanceof IPV4Address) {
-            ethertype = ETHER_TYPES.IPv4;
-        } else if (destination instanceof IPV6Address) {
-            ethertype = ETHER_TYPES.IPv6;
-        } else {
-            // unrecognised address type
-            return { success: false, error: "UDUMB", message: "unrecognised address type" };
-        }
-
-        let log_data: NetworkData = {
-            buffer: ETHERNET_HEADER.create({
-                ethertype: ethertype,
-                payload: data.buffer
-
-            }).getBuffer(),
-            rcvif: this
-        }
-
-        this.device.log(log_data, "SEND", false)
-
-        this.device.schedule(() => {
-            if (ethertype == ETHER_TYPES.IPv4) {
-                this.device.input_ipv4(IPV4_HEADER.from(data.buffer), data)
-            } else if (ethertype == ETHER_TYPES.IPv6) {
-                this.device.input_ipv6(IPV6_HEADER.from(data.buffer), data)
-            }
-
-            this.device.log(log_data, "RECEIVE", true) // Duplicate recording is probably superflous
-        })
-
-        return { success: true, data: undefined };
+    output(data: NetworkData, destination: BaseAddress, route?: DeviceRoute): DeviceResult<"UDUMB"> {
+        let res = this.device.output_loopback(data, destination, route, true);
+        return { ...res, error: "UDUMB" }
     }
+
     /** Initialize stuff idk but for example dhcp or for loclalhost self assign ip address */
     start(): DeviceResult<"UDUMB"> {
 
@@ -1682,14 +1664,14 @@ export class VlanInterface extends BaseInterface {
         if (etherframe.get("ethertype") != ETHER_TYPES.VLAN)
             throw new Error("vlanif can't process etherhdr, must have a vlan tag");
 
-            let vlanhdr = ETHERNET_DOT1Q_HEADER.from(etherframe.get("payload"));
-            if (vlanhdr.get("vid") != this.vid)
+        let vlanhdr = ETHERNET_DOT1Q_HEADER.from(etherframe.get("payload"));
+        if (vlanhdr.get("vid") != this.vid)
             throw new Error("vlanif incorrect vid passed")
-            
-            // untag frame
-            etherframe.set("ethertype", vlanhdr.get("ethertype"));
-            etherframe.set("payload", vlanhdr.get("payload"));
-            
+
+        // untag frame
+        etherframe.set("ethertype", vlanhdr.get("ethertype"));
+        etherframe.set("payload", vlanhdr.get("payload"));
+
         if (!data.rcvif || !(data.rcvif_hwaddress instanceof MACAddress)) {
             return; // !TODO: this should mayber throw an error
         }
@@ -1755,13 +1737,6 @@ export class VlanInterface extends BaseInterface {
 
         data = { rcvif: this, buffer: etherheader.get("payload"), broadcast: data.broadcast };
 
-        if (uint8_equals(etherheader.get("dmac").buffer, (new Uint8Array(6)))) { // assume this is for looping back
-            this.input(etherheader, {...data, rcvif_hwaddress : new MACAddress(new Uint8Array(6))});
-            return { success: true, data: undefined }
-        }
-
-
-        // handle loopback situation
         // !TODO: figure out a more generic solution
         if (this.addresses.find(({ address }) => uint8_equals(address.buffer, destination.buffer))) {
             this.input(etherheader, data)

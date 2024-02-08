@@ -19,7 +19,7 @@ function receive4(contact: Contact2, data: NetworkData) {
     }
 
     // verify that destination is for source device
-    if (!data.rcvif?.device.interfaces.find(i => i.addresses.find(a => uint8_equals(a.address.buffer, iphdr.get("daddr").buffer)))) {
+    if (!data.rcvif?.device.interfaces.find(i => i.addresses.find(a => uint8_equals(a.address.buffer, iphdr.get("daddr").buffer))) && !data.loopback) {
         return; // request is not meant for destination
     }
 
@@ -82,7 +82,6 @@ export const DAEMON_ECHO_REPLIER: Program = {
         if (proc.device.processes.find(p => p?.id.includes(this.name) && proc != p)) {
             return ProcessSignal.EXIT;
         }
-
         let contact4 = proc.device.contact_create("IPv4", "RAW").data!;
         contact4.receive(contact4, receive4);
 
