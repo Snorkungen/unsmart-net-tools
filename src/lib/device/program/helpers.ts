@@ -1,10 +1,5 @@
 import { uint8_concat, uint8_fromString } from "../../binary/uint8-array";
 import { CSI, ASCIICodes } from "../../terminal/shared";
-import { DeviceProgramTerminal } from "../device-program";
-
-export function twrite(terminal: DeviceProgramTerminal, message: string): void {
-    terminal.write(uint8_fromString(message))
-}
 
 export const COLS = 80; // this is hacky i should come up with a system of getting the terminal size
 export const TAB_SIZE = 8;

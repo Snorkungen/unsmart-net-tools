@@ -1,54 +1,7 @@
 import { BaseAddress } from "../address/base";
 import { ETHERNET_HEADER } from "../header/ethernet";
-import { Device } from "./device";
-import { BaseInterface, Device2, DeviceRoute, EthernetInterface, NetworkData, Process, ProcessSignal, Program } from "./device2";
-import { Interface } from "./interface";
+import { BaseInterface, Device2, EthernetInterface, ProcessSignal, Program } from "./device2";
 
-
-export class NetworkSwitch extends Device {
-    macaddresses = new Map<string, Interface>()
-
-    private flood(frame: typeof ETHERNET_HEADER, ifID: string) {
-        for (let iface of this.interfaces) {
-            if (iface.ifID == ifID) {
-                continue;
-            }
-
-            this.sendFrame(frame, iface)
-        }
-    }
-
-    private forwardFrame(frame: typeof ETHERNET_HEADER, iface: Interface) {
-        // set source address in 
-        this.macaddresses.set(frame.get("smac").toString(), iface);
-
-        // find iface for destination
-        let destIface = this.macaddresses.get(frame.get("dmac").toString());
-
-        if (destIface) {
-            this.sendFrame(frame, destIface);
-        } else {
-            this.flood(frame, iface.ifID);
-        }
-    }
-
-    listener(frame: typeof ETHERNET_HEADER, iface: Interface) {
-        this.log(frame, iface);
-        return this.forwardFrame(frame, iface)
-    }
-
-    createInterface(): Interface {
-        let iface = super.createInterface()
-
-        // This is hacky but i think it is valid
-        iface.vlan = {
-            type: "access",
-            vids: [1]
-        }
-
-        return iface;
-    }
-}
 
 export class NetworkSwitch2 extends Device2 {
     constructor() {

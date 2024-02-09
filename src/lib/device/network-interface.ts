@@ -1,7 +1,6 @@
 import type { BaseAddress } from "../address/base";
 import { MACAddress } from "../address/mac";
 import type { AddressMask } from "../address/mask";
-import type { Device } from "./device";
 
 export enum NetworkAddressFamily {
     UNSPECIFIED,
@@ -116,7 +115,7 @@ export interface NetworkInterfaceAddress<AT extends typeof BaseAddress> {
 
 export interface NetworkInterface {
     /** Reference to device */
-    device: Device;
+    // device: Device;
 
     name: string;
     unit: number;
@@ -188,68 +187,6 @@ export interface NetworkInterfaceEthernet extends NetworkInterface {
     // !TODO: reference to multicast, which is probably not going to be implemented
 }
 
-export function netifInit(device: Device, type: NetworkInterfaceType): NetworkInterface {
-    return {
-        device: device,
-        name: "",
-        unit: 0,
-        addresses: [],
-        flags: 0,
-
-        type: type,
-        // addressLength: 0,
-        // headerLength: 0,
-        mtu: 0,
-        metric: 0,
-
-        stat_ipackets: 0,
-        stat_ierrors: 0,
-        stat_opackets: 0,
-        stat_oerrors: 0,
-        stat_collisions: 0,
-        stat_ibytes: 0,
-        stat_obytes: 0,
-        stat_imcast: 0,
-        stat_idrops: 0,
-        stat_noproto: 0,
-
-        stat_lastchange: new Date()
-    }
-}
-
-export function netifInitLoopback(device: Device): NetworkInterfaceLoopback {
-    let netif = netifInit(device, NetworkInterfaceType.LOOPBACK) as NetworkInterfaceLoopback;
-
-    netif.name = "lo"
-    netif.unit = 0;
-    netif.flags = NetworkInterfaceFlag.LOOPBACK | NetworkInterfaceFlag.MULTICAST;
-    netif.mtu == 1 << 15; // should probably be ((1 << 16 )- 1)
-
-    netif.output = netifOutputLoopback;
-
-    return netif;
-}
-
-export function netifInitEthernet(device: Device, macaddress: MACAddress): NetworkInterfaceEthernet {
-    // !TODO: unit should be initialized by counting the number of interface with the same type
-    let unit = 0;
-
-    let netif = netifInit(device, NetworkInterfaceType.ETHERNET) as NetworkInterfaceEthernet;
-
-    netif.name = "eth";
-    netif.unit = unit;
-    netif.flags = (
-        NetworkInterfaceFlag.BROADCAST |
-        NetworkInterfaceFlag.MULTICAST |
-        NetworkInterfaceFlag.SIMPLEX
-    )
-
-    netif.mtu = 1500; // magic value for ethernet MTU
-
-    netif.macaddress = macaddress;
-
-    return netif;
-}
 
 function netifOutputLoopback(
     netif: NetworkInterface,
