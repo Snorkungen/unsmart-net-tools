@@ -7,6 +7,7 @@ enum ShellState {
     UNITIALIZED,
     PROMPT,
     RUNNING_PROGRAM,
+    LAZY_WRITING
 }
 
 class ShellHistory {
@@ -50,6 +51,8 @@ type ShellData = {
 
     runningProc: Process | undefined;
 
+
+
 };
 
 function writePrompt(proc: Process<ShellData>) {
@@ -80,6 +83,90 @@ function replacePromptBuffer(proc: Process<ShellData>, text: string, cursorX?: n
         CSI(...uint8_fromString(proc.data.cursorX.toString()), ASCIICodes.G) // move cursor to new position
     ]))
 
+}
+
+
+function numbertonumbers(n: number): Uint8Array {
+    return uint8_fromString(n.toString())
+}
+function lazywriter_write_options(proc: Process<string>, options: string[], i: number) {
+    let cursorX = 0;
+    let option = options[i];
+
+    const MAX_OPTIONS_WIDTH = 34;
+
+    // !TODO: make the options scrollable
+
+    // move cursor & clear the row
+    proc.term_write(CSI(...numbertonumbers(1), ASCIICodes.G, ...CSI(ASCIICodes.Two, ASCIICodes.K)))
+
+    for (let j = 0; j < options.length; j++) {
+        option = options[j]
+        if (j < i) {
+            cursorX += option.length + 1;
+        }
+
+        proc.term_write(uint8_fromString(option + " "))
+        // !TODO: make the cursor more obvious
+    }
+
+    proc.term_write(CSI(...numbertonumbers(cursorX + 1), ASCIICodes.G))
+}
+
+/**
+ * 
+ * This does not actually need to be a seperate program \
+ * but it exists to experiment with how spawning programs could be used
+ */
+const lazywriter: Program<string> = {
+    name: "shell_lazywriter",
+    init(proc: Process<string>, _, data?: string | undefined): ProcessSignal {
+        proc.data = data || ""; // set data
+
+        let options = proc.device.programs.map(p => p.name);
+
+        if (options.includes(proc.data)) {
+            return ProcessSignal.EXIT;
+        }
+
+        if (proc.data) {
+            options = options.filter(n => n.startsWith(proc.data));
+            if (options.length == 1) {
+                proc.data = options[0];
+                return ProcessSignal.EXIT;
+            } else if (options.length == 0) {
+
+                // !TODO: auto complete for sub programs
+                // check if this could be sub program
+
+                return ProcessSignal.EXIT;
+            }
+        }
+
+        let selected_option_idx = 0;
+        proc.term_write(new Uint8Array([ASCIICodes.NewLine]));
+        lazywriter_write_options(proc, options, selected_option_idx);
+
+
+        proc.term_read(proc, (_, bytes) => {
+            let byte = bytes[0];
+
+            if (byte === ASCIICodes.NewLine || byte === ASCIICodes.CarriageReturn) {
+                proc.data = options[selected_option_idx]
+                // move cursor to start clear line and go up on line
+                proc.term_write(CSI(...numbertonumbers(1), ASCIICodes.G, ...CSI(ASCIICodes.Two, ASCIICodes.K), ...CSI(ASCIICodes.A)));
+                proc.close(proc, ProcessSignal.EXIT);
+            }
+
+
+            selected_option_idx = (selected_option_idx + 1) % options.length;
+            lazywriter_write_options(proc, options, selected_option_idx)
+
+            return true;
+        })
+
+        return ProcessSignal.__EXPLICIT__;
+    }
 }
 
 function read(proc: Process<ShellData>, bytes: Uint8Array) {
@@ -129,6 +216,12 @@ function read(proc: Process<ShellData>, bytes: Uint8Array) {
 
             } else if (byte == ASCIICodes.Tab) {
                 console.log("[TAB] Pressed")
+                proc.spawn(proc, lazywriter, undefined, proc.data.promptBuffer, (sproc) => {
+                    if (sproc.data) {
+                        replacePromptBuffer(proc, sproc.data)
+                    }
+                });
+
             } else if (byte == ASCIICodes.CarriageReturn || byte == ASCIICodes.NewLine) {
                 console.log("[ENTER] Pressed")
                 // do stuff
