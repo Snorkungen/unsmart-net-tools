@@ -1,7 +1,7 @@
 import { uint8_fromString } from "../../binary/uint8-array";
 import { PCAP_GLOBAL_HEADER, PCAP_MAGIC_NUMBER, PCAP_RECORD_HEADER } from "../../header/pcap";
 import { ASCIICodes, CSI } from "../../terminal/shared";
-import { ProcessSignal, Program } from "../device2";
+import { ProcessSignal, Program } from "../device";
 import { COLS, chunkString, formatTable } from "./helpers";
 
 export const DEVICE_PROGRAM_CLEAR: Program = {

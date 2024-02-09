@@ -12,6 +12,7 @@ import { PacketCaptureHFormat, PacketCaptureNFormat, PacketCaptureRecordReader }
 import { calculateChecksum } from "../binary/checksum";
 import { ICMPV6_TYPES, ICMP_HEADER, ICMP_NDP_HEADER } from "../header/icmp";
 import { UDP_HEADER } from "../header/udp";
+import { BaseInterface, VlanInterface, EthernetInterface } from "./interface";
 
 // source <https://stackoverflow.com/a/63029283>
 type DropFirst<T extends unknown[]> = T extends [any, ...infer U] ? U : never;
@@ -71,7 +72,7 @@ export type DeviceRoute<AddrType extends typeof BaseAddress = typeof BaseAddress
 
 type ContactAF = "RAW" | "IPv4" | "IPv6";
 type ContactProto = "RAW" | "UDP";
-export type ContactReceiver = (contact: Contact2, data: NetworkData, caddr?: ContactAddress2<BaseAddress>) => void;
+export type ContactReceiver = (contact: Contact, data: NetworkData, caddr?: ContactAddress2<BaseAddress>) => void;
 export type ContactReceiveOptions = { promiscuous?: true };
 type ContactError = unknown; // !TODO: conjure up some type of problems that might occur
 
@@ -82,7 +83,7 @@ type ContactAddress2<Addr extends BaseAddress> = {
     daddr: Addr;
 }
 
-export interface Contact2<AF extends ContactAF = ContactAF, Proto extends ContactProto = ContactProto, AT extends typeof BaseAddress = typeof BaseAddress, Addr extends BaseAddress = InstanceType<AT>> {
+export interface Contact<AF extends ContactAF = ContactAF, Proto extends ContactProto = ContactProto, AT extends typeof BaseAddress = typeof BaseAddress, Addr extends BaseAddress = InstanceType<AT>> {
     status: "OPEN" | "CLOSED";
 
     addressFamily: AF;
@@ -92,14 +93,14 @@ export interface Contact2<AF extends ContactAF = ContactAF, Proto extends Contac
     address?: ContactAddress2<Addr>;
 
     /* Methods */
-    close(contact: Contact2<AF, Proto, AT, Addr>): DeviceResult<ContactError>;
-    bind(contact: Contact2<AF, Proto, AT, Addr>, caddr: ContactAddress2<Addr>): DeviceResult<ContactError, typeof caddr>;
+    close(contact: Contact<AF, Proto, AT, Addr>): DeviceResult<ContactError>;
+    bind(contact: Contact<AF, Proto, AT, Addr>, caddr: ContactAddress2<Addr>): DeviceResult<ContactError, typeof caddr>;
 
-    receive(contact: Contact2, receiver: ContactReceiver, options?: ContactReceiveOptions): DeviceResult<ContactError>;
-    receiveFrom(contact: Contact2, receiver: ContactReceiver, caddr: Partial<ContactAddress2<Addr>>, options?: ContactReceiveOptions): DeviceResult<ContactError>;
+    receive(contact: Contact, receiver: ContactReceiver, options?: ContactReceiveOptions): DeviceResult<ContactError>;
+    receiveFrom(contact: Contact, receiver: ContactReceiver, caddr: Partial<ContactAddress2<Addr>>, options?: ContactReceiveOptions): DeviceResult<ContactError>;
 
-    send(contact: Contact2<AF, Proto, AT, Addr>, data: NetworkData, destination?: Addr, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
-    sendTo(contact: Contact2<AF, Proto, AT, Addr>, data: NetworkData, caddr?: Partial<ContactAddress2<Addr>>, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
+    send(contact: Contact<AF, Proto, AT, Addr>, data: NetworkData, destination?: Addr, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
+    sendTo(contact: Contact<AF, Proto, AT, Addr>, data: NetworkData, caddr?: Partial<ContactAddress2<Addr>>, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
 
 }
 
@@ -129,7 +130,7 @@ export type Process<DT = any> = {
     status: "UNINIT" | "MARKED_CLOSED" | "CLOSED" | "RUNNING"
 
     id: ProcessID;
-    device: Device2;
+    device: Device;
     program: Program;
     data: DT;
 
@@ -151,7 +152,7 @@ type DeviceTerminal = {
     flush(): void;
 }
 
-function __contact_throw_if_closed(contact: Contact2) {
+function __contact_throw_if_closed(contact: Contact) {
     if (contact.status === "CLOSED") {
         throw new Error("contact has been closed");
     }
@@ -163,7 +164,7 @@ function __address_is_unset(address: BaseAddress): boolean {
     return sum === 0;
 }
 
-export function __find_best_caddr_match<CR extends ({ contact: Contact2 } | undefined)>(af: ContactAF, input_caddr: ContactAddress2<BaseAddress>, creceivers: CR[]): CR | undefined {
+export function __find_best_caddr_match<CR extends ({ contact: Contact } | undefined)>(af: ContactAF, input_caddr: ContactAddress2<BaseAddress>, creceivers: CR[]): CR | undefined {
     let best: CR | undefined = undefined;
     for (let creceiver of creceivers) {
         if (!creceiver || creceiver.contact.addressFamily != af || creceiver.contact.proto != "UDP") {
@@ -203,7 +204,7 @@ export function __find_best_caddr_match<CR extends ({ contact: Contact2 } | unde
     return best;
 }
 
-export class Device2 {
+export class Device {
     name = Math.floor(Math.random() * 10_000).toString() + "B2";
 
     constructor() { }
@@ -249,7 +250,7 @@ export class Device2 {
         })
     }
 
-    log_select_records(iface_id?: string): Device2["log_records"] {
+    log_select_records(iface_id?: string): Device["log_records"] {
         if (!iface_id) {
             return this.log_records
         }
@@ -1193,18 +1194,18 @@ export class Device2 {
 
     /** this is to ensure that contacts get given unique ephemeral ports */
     private contact_ephemport = 4001
-    private contacts: (Contact2<ContactAF, ContactProto> | undefined)[] = [];
-    private contact_receivers: ({ receiver: ContactReceiver, contact: Contact2, options: ContactReceiveOptions } | undefined)[] = [];
-    contact_create<CAF extends ContactAF, CProto extends ContactProto>(addressFamily: CAF, proto: CProto): DeviceResult<ContactError, Contact2<CAF, CProto>> {
+    private contacts: (Contact<ContactAF, ContactProto> | undefined)[] = [];
+    private contact_receivers: ({ receiver: ContactReceiver, contact: Contact, options: ContactReceiveOptions } | undefined)[] = [];
+    contact_create<CAF extends ContactAF, CProto extends ContactProto>(addressFamily: CAF, proto: CProto): DeviceResult<ContactError, Contact<CAF, CProto>> {
         // do some rules checking
         if (addressFamily === "RAW" && proto !== "RAW") {
             return { success: false, error: "", message: "AF cannot be RAW when the proto is something other that RAW" }
         }
 
         // methods for sending and doing stuff
-        let m_send: Contact2["send"],
-            m_sendTo: Contact2["sendTo"],
-            m_receiveFrom: Contact2["receiveFrom"];
+        let m_send: Contact["send"],
+            m_sendTo: Contact["sendTo"],
+            m_receiveFrom: Contact["receiveFrom"];
 
         if (proto == "RAW") {
             m_send = this.contact_m_send_raw;
@@ -1234,9 +1235,9 @@ export class Device2 {
             sendTo: m_sendTo.bind(this)
         };
 
-        return { success: true, data: this.contacts[i] as Contact2<CAF, CProto> };
+        return { success: true, data: this.contacts[i] as Contact<CAF, CProto> };
     }
-    contact_close(contact: Contact2): DeviceResult<ContactError> {
+    contact_close(contact: Contact): DeviceResult<ContactError> {
         __contact_throw_if_closed(contact);
 
         // have some logic to stop doing other stuff i.e. TCP
@@ -1259,7 +1260,7 @@ export class Device2 {
 
         return { success: false, error: undefined, message: "could not locate contact" }
     }
-    contact_bind<Addr extends BaseAddress = BaseAddress>(contact: Contact2, caddr: ContactAddress2<Addr>): DeviceResult<ContactError, ContactAddress2<Addr>> {
+    contact_bind<Addr extends BaseAddress = BaseAddress>(contact: Contact, caddr: ContactAddress2<Addr>): DeviceResult<ContactError, ContactAddress2<Addr>> {
         __contact_throw_if_closed(contact);
         if (contact.addressFamily == "RAW" || contact.proto == "RAW") {
             return { success: false, error: undefined, message: "cannot bind a RAW contact" };
@@ -1303,7 +1304,7 @@ export class Device2 {
         return { success: true, data: caddr }
     }
     private contact_default_receive_options: ContactReceiveOptions = {}
-    contact_receive: Contact2["receive"] = (contact, receiver, options?: ContactReceiveOptions) => {
+    contact_receive: Contact["receive"] = (contact, receiver, options?: ContactReceiveOptions) => {
         let i = -1; while (this.contact_receivers[++i]) { continue; };
 
         this.contact_receivers[i] = {
@@ -1333,12 +1334,12 @@ export class Device2 {
         best.receiver(best.contact, ...receiver_params);
     }
 
-    private contact_method_not_supported = (contact: Contact2): DeviceResult<ContactError> => {
+    private contact_method_not_supported = (contact: Contact): DeviceResult<ContactError> => {
         __contact_throw_if_closed(contact);
         return { success: false, error: undefined, message: "method not supported for protocol" }
     }
 
-    private contact_m_send_raw: Contact2["send"] = (contact, data, destination, rtentry) => {
+    private contact_m_send_raw: Contact["send"] = (contact, data, destination, rtentry) => {
         __contact_throw_if_closed(contact);
 
         if (!destination) {
@@ -1367,7 +1368,7 @@ export class Device2 {
         return { success: false, error: undefined, message: "failed to send" }
     }
 
-    private contact_m_send_udp: Contact2["send"] = (contact, data, _, rtentry) => {
+    private contact_m_send_udp: Contact["send"] = (contact, data, _, rtentry) => {
         __contact_throw_if_closed(contact);
         if (contact.addressFamily == "RAW") {
             return { success: false, error: undefined, message: "cannot send incorrect \"address family\": " + contact.addressFamily }
@@ -1393,7 +1394,7 @@ export class Device2 {
         return { success: res.success, error: undefined, data: undefined, message: res.message }
     }
 
-    private contact_m_sendTo_udp: Contact2["sendTo"] = (contact, data, caddr, rtentry) => {
+    private contact_m_sendTo_udp: Contact["sendTo"] = (contact, data, caddr, rtentry) => {
         __contact_throw_if_closed(contact);
         if (contact.addressFamily == "RAW") {
             return { success: false, error: undefined, message: "cannot send incorrect \"address family\": " + contact.addressFamily };
@@ -1431,7 +1432,7 @@ export class Device2 {
         return this.contact_m_send_udp(contact, data, undefined, rtentry);
     }
 
-    private contact_m_receiveFrom_udp: Contact2["receiveFrom"] = (contact, receiver, caddr, options) => {
+    private contact_m_receiveFrom_udp: Contact["receiveFrom"] = (contact, receiver, caddr, options) => {
         let bres = this.contact_bind(contact, {
             saddr: contact.addressFamily == "IPv4" ? _UNSET_ADDRESS_IPV4 : _UNSET_ADDRESS_IPV6,
             daddr: contact.addressFamily == "IPv4" ? _UNSET_ADDRESS_IPV4 : _UNSET_ADDRESS_IPV6,
@@ -1439,7 +1440,7 @@ export class Device2 {
             sport: 0,
             ...caddr
         });
-        if (!bres.success) return bres as ReturnType<Contact2["receiveFrom"]>;
+        if (!bres.success) return bres as ReturnType<Contact["receiveFrom"]>;
         return this.contact_receive(contact, receiver, options);
     }
 
@@ -1449,417 +1450,5 @@ export class Device2 {
 
         // in future, create my own runtime because why not complexity is fun.
         window.setTimeout(f, delay)
-    }
-}
-
-type DeviceAddress<AT extends typeof BaseAddress = typeof BaseAddress> = {
-    address: InstanceType<AT>;
-    // broadcast: InstanceType<AT>; // calculate broadcast on the fly
-    netmask: AddressMask<AT>
-}
-
-type InterfaceName = "eth" | "lo" | "vlanif";
-export class BaseInterface {
-    /** The device this interface is attached to */
-    device: Device2;
-    name: InterfaceName;
-    unit: number;
-
-    addresses: DeviceAddress[];
-
-    /** MAX TRANSMISSION UNIT */
-    mtu: number;
-    /** if interface is up and ready to send and receive */
-    up: boolean;
-
-    /** hw header, a header that the interface uses */
-    header: null | Struct<any> = null;
-
-    constructor(
-        device: Device2,
-        name: InterfaceName,
-        unit: number,
-        mtu: number = 256
-    ) {
-        this.device = device;
-        this.name = name;
-        this.unit = unit;
-
-        this.addresses = [];
-        this.mtu = mtu;
-        this.up = false;
-    }
-
-    output(data: NetworkData, destination: BaseAddress, rtentry?: DeviceRoute): DeviceResult {
-        throw new Error("method not implemented")
-    }
-    /** Initialize stuff idk but for example dhcp or for loclalhost self assign ip address */
-    start(): DeviceResult {
-        throw new Error("method not implemented")
-    };
-
-    id() {
-        return this.name + this.unit
-    }
-}
-
-let macAddressCount = 0;
-let startBuf = new Uint8Array([0xfa, 0xff, 0x0f, 0])
-export function createMacAddress(): MACAddress {
-    let buf = uint8_fromNumber(macAddressCount++, 2)
-    return new MACAddress(uint8_concat([startBuf, buf]))
-}
-export class EthernetInterface extends BaseInterface {
-    private target: EthernetInterface | undefined;
-    macAddress: MACAddress;
-    header = ETHERNET_HEADER;
-
-    constructor(device: Device2, macAddress: MACAddress = createMacAddress()) {
-        super(device, "eth",
-            device.interfaces.reduce((s, { name }) => s + ((name == "eth") as unknown as number), 0),
-            1500
-        )
-        this.macAddress = macAddress;
-    }
-
-    /** this logic might need to be hoisted to {@link Device2} */
-    vlan?: {
-        // first id default
-        vids: number[];
-        type: "access" | "trunk"
-    }
-    vlan_set(type: "access" | "trunk", ...vids: number[]) {
-        if (vids.length < 1) {
-            vids.push(1); // default id;
-        }
-        this.vlan = { type: type, vids: vids };
-    }
-
-    onSend?: () => void;
-    output(data: NetworkData, destination: BaseAddress, rtentry?: DeviceRoute<typeof BaseAddress>): DeviceResult<"UDUMB"> {
-        if (!this.up || !this.target) {
-            return { success: false, error: "UDUMB", message: "interface is eiter not up or a route entry is missing" };
-        }
-
-        let etherheader: typeof ETHERNET_HEADER;
-        if (destination instanceof IPV4Address) {
-            if (!rtentry) return { success: false, error: "UDUMB", message: "route required" }
-            let dmac = this.device.arp_resolve(data, destination, rtentry);
-            if (!dmac) {
-                // this method will get called recalled at a later times
-                return { success: true, data: undefined, message: "the interface is waiting for a LINK_LEVEL destination" };
-            }
-            etherheader = ETHERNET_HEADER.create({ dmac, ethertype: ETHER_TYPES.IPv4 })
-        } else if (destination instanceof IPV6Address) {
-            if (!rtentry) return { success: false, error: "UDUMB", message: "route required" }
-            let dmac = this.device.arp_resolve(data, destination, rtentry);
-            if (!dmac) {
-                // this method will get called recalled at a later times
-                return { success: true, data: undefined, message: "the interface is waiting for a LINK_LEVEL destination" };
-            }
-            etherheader = ETHERNET_HEADER.create({ dmac, ethertype: ETHER_TYPES.IPv6 })
-        } else {
-            if (destination.buffer.length < ETHERNET_HEADER.getMinSize()) {
-                // the header is an invalid size
-                return { success: true, data: undefined, error: "UDUMB", message: "the ethernet header added is invalid" };
-            }
-            etherheader = ETHERNET_HEADER.from(destination.buffer);
-        }
-
-        if (!data.mode_raw) {
-            etherheader.set("smac", this.macAddress);
-        }
-
-        etherheader.set("payload", data.buffer);
-
-
-        if (uint8_equals(etherheader.get("smac").buffer, etherheader.get("dmac").buffer)) {
-            // this was meant for myself
-            this.device.schedule(() => {
-                let lodata = { buffer: etherheader.getBuffer(), rcvif: this, broadcast: undefined };
-                this.device.log(lodata, "RECEIVE"); this.device.input_ether(etherheader, lodata)
-            });
-            return { success: true, data: undefined }
-        }
-
-        if (false && etherheader.get("dmac").isBroadcast()) {
-            // here i should send to the interface to itself but i don't want that
-            this.device.schedule(() => {
-                let lodata = { buffer: etherheader.getBuffer(), rcvif: this, broadcast: true };
-                this.device.log(lodata, "RECEIVE"); this.device.input_ether(etherheader, lodata)
-            });
-        }
-
-        // !TODO: mode to enable user to skip over vlan handling
-        vlan_handler: if (this.vlan) {
-            if (this.vlan.type === "access") {
-                if (etherheader.get("ethertype") != ETHER_TYPES.VLAN) {
-                    break vlan_handler; // if untagged pass through
-                }
-
-                let vlanhdr = ETHERNET_DOT1Q_HEADER.from(etherheader.get("payload"));
-                if (!this.vlan.vids.includes(vlanhdr.get("vid"))) {
-                    return {
-                        success: false, error: "UDUMB",
-                        message: "vlan id: " + vlanhdr.get("vid") + " is not in vlan id list"
-                    }
-                }
-
-                // untag frame
-                etherheader.set("ethertype", vlanhdr.get("ethertype"));
-                etherheader.set("payload", vlanhdr.get("payload"));
-            } else if (this.vlan.type == "trunk") {
-                if (etherheader.get("ethertype") != ETHER_TYPES.VLAN) {
-                    return { success: false, error: "UDUMB", message: "frame must have a vlan tag for trunk interface" }
-                }
-
-                let vlanhdr = ETHERNET_DOT1Q_HEADER.from(etherheader.get("payload"));
-                if (!this.vlan.vids.includes(vlanhdr.get("vid"))) {
-                    return {
-                        success: false, error: "UDUMB",
-                        message: "vlan id: " + vlanhdr.get("vid") + " is not in vlan id list"
-                    }
-                }
-            }
-        }
-
-        this.onSend && this.onSend();
-        // somehow put on wire
-        this.device.schedule(() => {
-            this.device.log({
-                buffer: etherheader.getBuffer(),
-                rcvif: this
-            }, "SEND")
-            this.target && this.target.receive.call(this.target, etherheader)
-        }, undefined);
-        return { success: true, data: undefined }
-    }
-
-    onRecv?: () => void;
-    receive_delay: number | undefined = undefined;
-    private receive(etherheader: typeof ETHERNET_HEADER) {
-        // on recieive
-        this.onRecv && this.onRecv();
-
-        vlan_handler: if (this.vlan) {
-            if (this.vlan.type == "access") {
-                if (etherheader.get("ethertype") != ETHER_TYPES.VLAN) {
-                    // tag frame
-                    let vid = this.vlan.vids[0] || 0; // default to 0 to insinuate that there is a problem
-
-                    let vlanhdr = ETHERNET_DOT1Q_HEADER.create({
-                        vid: vid,
-                        ethertype: etherheader.get("ethertype"),
-                        payload: etherheader.get("payload")
-                    });
-
-                    etherheader.set("ethertype", ETHER_TYPES.VLAN);
-                    etherheader.set("payload", vlanhdr.getBuffer());
-
-                    break vlan_handler;
-                }
-
-                let vlanhdr = ETHERNET_DOT1Q_HEADER.from(etherheader.get("payload"));
-                if (!this.vlan.vids.includes(vlanhdr.get("vid"))) {
-                    return; // discard
-                }
-            } else if (this.vlan.type == "trunk") {
-                if (etherheader.get("ethertype") != ETHER_TYPES.VLAN) {
-                    return; // discard
-                }
-
-                let vlanhdr = ETHERNET_DOT1Q_HEADER.from(etherheader.get("payload"));
-                if (!this.vlan.vids.includes(vlanhdr.get("vid"))) {
-                    return; // discard
-                }
-            }
-        }
-
-        this.device.schedule(() => {
-            let data = { rcvif: this, rcvif_hwaddress: this.macAddress, buffer: etherheader.getBuffer(), broadcast: etherheader.get("dmac").isBroadcast() }
-
-            this.device.log(data, "RECEIVE");
-            this.device.input_ether(etherheader, data);
-        }, this.receive_delay)
-    }
-
-    onDisconnect?: (iface: EthernetInterface) => void;
-    disconnect(): boolean {
-        if (!this.target) {
-            return true;
-        }
-
-        let disconnect = this.target.disconnect.bind(this.target);
-        this.target = undefined;
-
-        this.onDisconnect && this.onDisconnect(this);
-
-        this.up = false;
-        return disconnect();
-    }
-
-    onConnect?: (iface: EthernetInterface) => void;
-    connect(target: EthernetInterface) {
-        if (this == target) {
-            throw new Error("cannot connect to self")
-        }
-
-        if (this.target == target) {
-            return true;
-        }
-
-        this.disconnect();
-        this.target = target;
-
-        this.up = true;
-        target.connect(this)
-        this.onConnect && this.onConnect(this);
-    }
-}
-export class LoopbackInterface extends BaseInterface {
-    constructor(device: Device2) {
-        super(device, "lo",
-            device.interfaces.reduce((s, { name }) => s + ((name == "lo") as unknown as number), 0),
-            0xfffe
-        )
-    }
-
-    output(data: NetworkData, destination: BaseAddress, route?: DeviceRoute): DeviceResult<"UDUMB"> {
-        let res = this.device.output_loopback(data, destination, route);
-        return { ...res, error: "UDUMB" }
-    }
-
-    /** Initialize stuff idk but for example dhcp or for loclalhost self assign ip address */
-    start(): DeviceResult<"UDUMB"> {
-
-        this.device.interface_set_address(
-            this,
-            new IPV4Address("127.0.0.1"),
-            createMask(IPV4Address, 8)
-        );
-
-        this.device.interface_set_address(
-            this,
-            new IPV6Address("::1"),
-            createMask(IPV6Address, IPV6Address.ADDRESS_LENGTH /* 128 */)
-        );
-
-        this.up = true;
-        return { success: true, data: undefined };
-    };
-}
-export class VlanInterface extends BaseInterface {
-    get vid() { return this.unit };
-    constructor(device: Device2, vid: number) {
-        super(device, "vlanif",
-            vid,
-            0xfffe,
-        )
-
-        this.header = ETHERNET_HEADER;
-        this.up = true;
-    }
-
-    private macaddresses = new Map<string, BaseInterface>()
-    private log_input = true;
-
-    input(etherframe: typeof ETHERNET_HEADER, data: NetworkData) {
-        if (etherframe.get("ethertype") != ETHER_TYPES.VLAN)
-            throw new Error("vlanif can't process etherhdr, must have a vlan tag");
-
-        let vlanhdr = ETHERNET_DOT1Q_HEADER.from(etherframe.get("payload"));
-        if (vlanhdr.get("vid") != this.vid)
-            throw new Error("vlanif incorrect vid passed")
-
-        // untag frame
-        etherframe.set("ethertype", vlanhdr.get("ethertype"));
-        etherframe.set("payload", vlanhdr.get("payload"));
-
-        if (!data.rcvif || !(data.rcvif_hwaddress instanceof MACAddress)) {
-            return; // !TODO: this should mayber throw an error
-        }
-
-        // !TODO: maybe pass other vlan information forward to the device
-        this.macaddresses.set(etherframe.get("smac").toString(), data.rcvif);
-
-        this.device.schedule(() => {
-            data = { rcvif: this, rcvif_hwaddress: data.rcvif_hwaddress, buffer: etherframe.getBuffer(), broadcast: data.broadcast }
-
-            if (this.log_input) {
-                // this.device.log(data, "RECEIVE")
-            }
-
-            this.device.input_ether(etherframe, data)
-        })
-    }
-
-    output(data: NetworkData, destination: BaseAddress, rtentry?: DeviceRoute<typeof BaseAddress> | undefined): DeviceResult<"UDUMB"> {
-        let etherheader: typeof ETHERNET_HEADER;
-        if (destination instanceof IPV4Address) {
-            if (!rtentry) return { success: false, error: "UDUMB", message: "route required" }
-            let dmac = this.device.arp_resolve(data, destination, rtentry);
-            if (!dmac) {
-                // this method will get called recalled at a later times
-                return { success: true, data: undefined, message: "the interface is waiting for a LINK_LEVEL destination" };
-            }
-            etherheader = ETHERNET_HEADER.create({ dmac, ethertype: ETHER_TYPES.IPv4 })
-        } else if (destination instanceof IPV6Address) {
-            if (!rtentry) return { success: false, error: "UDUMB", message: "route required" }
-            let dmac = this.device.arp_resolve(data, destination, rtentry);
-            if (!dmac) {
-                // this method will get called recalled at a later times
-                return { success: true, data: undefined, message: "the interface is waiting for a LINK_LEVEL destination" };
-            }
-            etherheader = ETHERNET_HEADER.create({ dmac, ethertype: ETHER_TYPES.IPv6 })
-        } else {
-            if (destination.buffer.length < ETHERNET_HEADER.getMinSize()) {
-                // the header is an invalid size
-                return { success: true, data: undefined, error: "UDUMB", message: "the ethernet header added is invalid" };
-            }
-            etherheader = ETHERNET_HEADER.from(destination.buffer);
-        }
-
-        etherheader.set("payload", data.buffer);
-
-        // #ALWAYSTAGGING
-        if (etherheader.get("ethertype") === ETHER_TYPES.VLAN) {
-            let vlanhdr = ETHERNET_DOT1Q_HEADER.from(etherheader.get("payload"));
-            // !TODO: if i could be bothered support S_VLAN
-            if (vlanhdr.get("vid") != this.vid) {
-                return { success: false, error: "UDUMB", message: "vlanif can't output an incorrectly tagged frame, vid does not match" }
-            }
-        } else {
-            let vlanhdr = ETHERNET_DOT1Q_HEADER.create({
-                vid: this.vid,
-                ethertype: etherheader.get("ethertype"),
-                payload: etherheader.get("payload")
-            });
-            etherheader.set("ethertype", ETHER_TYPES.VLAN);
-            etherheader.set("payload", vlanhdr.getBuffer());
-        }
-
-        data = { rcvif: this, buffer: etherheader.get("payload"), broadcast: data.broadcast };
-
-        let iface = this.macaddresses.get(etherheader.get("dmac").toString());
-        if (iface) {
-            this.device.schedule(() => {
-                if (!iface) return;
-                iface.output(data, new BaseAddress(etherheader.getBuffer()), rtentry)
-            })
-            return { success: true, data: undefined };
-        }
-
-        let out_interfaces = this.device.interfaces.filter(iface => iface !== this && iface.header === ETHERNET_HEADER && iface);
-        if (out_interfaces.length == 0) {
-            return { success: false, error: "UDUMB", message: "vlanif no outgoing interface found for frame" }
-        }
-
-        this.device.schedule(() => {
-            for (iface of out_interfaces) {
-                iface.output(data, new BaseAddress(etherheader.getBuffer()), rtentry);
-            }
-        })
-
-        return { success: true, data: undefined }
     }
 }

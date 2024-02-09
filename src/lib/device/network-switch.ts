@@ -1,9 +1,10 @@
 import { BaseAddress } from "../address/base";
 import { ETHERNET_HEADER } from "../header/ethernet";
-import { BaseInterface, Device2, EthernetInterface, ProcessSignal, Program } from "./device2";
+import { Device, ProcessSignal, Program } from "./device";
+import { BaseInterface, EthernetInterface } from "./interface";
 
 
-export class NetworkSwitch2 extends Device2 {
+export class NetworkSwitch extends Device {
     constructor() {
         super();
         this.process_start(testing_switch_stuff);

@@ -10,7 +10,8 @@ import { createDHCPOptionsMap } from "../../header/dhcp/utils";
 import { ETHERNET_HEADER, ETHER_TYPES } from "../../header/ethernet";
 import { IPV4_HEADER, IPV4_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
 import { UDP_HEADER } from "../../header/udp";
-import { Program, ProcessSignal, Process, Contact2, NetworkData, BaseInterface } from "../device2";
+import { Program, ProcessSignal, Process, Contact, NetworkData } from "../device";
+import { BaseInterface } from "../interface";
 
 enum DHCPServerState {
     BINDING,
@@ -28,7 +29,7 @@ function serializeClientID(buffer: Uint8Array): string {
 type DHCPServerData = {
     /** server id */
     sid: Uint8Array;
-    contact: Contact2;
+    contact: Contact;
     iface: BaseInterface;
     addressRange4: [start: IPV4Address, end: IPV4Address];
     netmask4: AddressMask<typeof IPV4Address>;
@@ -365,7 +366,7 @@ function handleRequest(proc: Process<DHCPServerData>, dhcphdr: typeof DHCP_HEADE
 }
 
 function receive(proc: Process<DHCPServerData>) {
-    return function (_: Contact2, data: NetworkData) {
+    return function (_: Contact, data: NetworkData) {
         if (data.rcvif != proc.data.iface)
             return;
 

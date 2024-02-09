@@ -1,15 +1,16 @@
 import { JSX } from "solid-js/jsx-runtime";
 import { IPV4Address } from "../lib/address/ipv4";
 import { createMask } from "../lib/address/mask";
-import { NetworkSwitch2 } from "../lib/device/network-switch";
+import { NetworkSwitch } from "../lib/device/network-switch";
 import Terminal from "../lib/terminal/terminal";
-import { Device2, EthernetInterface, ProcessSignal, VlanInterface } from "../lib/device/device2";
-import { DAEMON_SHELL } from "../lib/device/program/shell2";
+import { Device, ProcessSignal } from "../lib/device/device";
+import { DAEMON_SHELL } from "../lib/device/program/shell";
 import { DAEMON_ECHO_REPLIER } from "../lib/device/program/echo-replier";
-import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_HELP } from "../lib/device/program/program2";
-import { DEVICE_PROGRAM_PING } from "../lib/device/program/ping2";
-import { DEVICE_PROGRAM_IFINFO } from "../lib/device/program/ifinfo2";
+import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_HELP } from "../lib/device/program/program";
+import { DEVICE_PROGRAM_PING } from "../lib/device/program/ping";
+import { DEVICE_PROGRAM_IFINFO } from "../lib/device/program/ifinfo";
 import { DAEMON_ROUTING } from "../lib/device/program/routing";
+import { EthernetInterface, VlanInterface } from "../lib/device/interface";
 
 class NetworkMapInterface {
     iface: EthernetInterface;
@@ -76,9 +77,9 @@ class NetworkMapDevice {
     y: number;
     width: number;
     height: number;
-    device: Device2;
+    device: Device;
     nmInterfaces: Array<NetworkMapInterface>
-    constructor(x: number, y: number, device: Device2) {
+    constructor(x: number, y: number, device: Device) {
         this.x = x;
         this.y = y;
         this.width = 50;
@@ -93,7 +94,7 @@ class NetworkMapDevice {
 
     map?: NetworkMap;
     update() {
-        if (this.device instanceof NetworkSwitch2) {
+        if (this.device instanceof NetworkSwitch) {
             this.width = 75;
             this.height = 25
         }
@@ -304,7 +305,7 @@ class NetworkMap {
 
 const INTERFACE_ANIM_DELAY = 900;
 
-function init_programs(device: Device2) {
+function init_programs(device: Device) {
     device.process_start(DAEMON_ECHO_REPLIER);
     device.programs = [
         DEVICE_PROGRAM_ECHO,
@@ -316,12 +317,12 @@ function init_programs(device: Device2) {
     ]
 }
 
-let networkSwitch = new NetworkSwitch2();
-let networkSwitch2 = new NetworkSwitch2();
+let networkSwitch = new NetworkSwitch();
+let networkSwitch2 = new NetworkSwitch();
 networkSwitch.name = "SW1"
 networkSwitch2.name = "SW2"
 
-let networkRouter = new NetworkSwitch2(); networkRouter.name = "R1"
+let networkRouter = new NetworkSwitch(); networkRouter.name = "R1"
 networkRouter.processes.forEach(p => p && networkRouter.process_close(p, ProcessSignal.EXIT));// kill all running proceesses
 
 networkRouter.process_start(DAEMON_ROUTING); // start routing daemon
@@ -375,13 +376,13 @@ swIface2_trunk.vlan = vlanTrunk;
 swIface_trunk_rtr.vlan_set("trunk", 1, 10, 20);
 swIface_trunk_rtr.connect(rtr_iface)
 
-let pc1 = new Device2(); pc1.name = "PC1";
-let pc2 = new Device2(); pc2.name = "PC2";
-let pc3 = new Device2(); pc3.name = "PC3";
+let pc1 = new Device(); pc1.name = "PC1";
+let pc2 = new Device(); pc2.name = "PC2";
+let pc3 = new Device(); pc3.name = "PC3";
 
 // vlan test
-let pc4 = new Device2(); pc4.name = "PC4";
-let pc5 = new Device2(); pc5.name = "PC5";
+let pc4 = new Device(); pc4.name = "PC4";
+let pc5 = new Device(); pc5.name = "PC5";
 
 let iface_pc1 = pc1.interface_add(new EthernetInterface(pc1));
 let iface_pc2 = pc2.interface_add(new EthernetInterface(pc2));

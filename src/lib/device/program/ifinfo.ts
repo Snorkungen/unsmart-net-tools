@@ -2,7 +2,8 @@ import { BaseAddress } from "../../address/base";
 import { IPV4Address } from "../../address/ipv4";
 import { AddressMask, createMask } from "../../address/mask";
 import { uint8_fromString, uint8_readUint32BE } from "../../binary/uint8-array";
-import { EthernetInterface, Process, ProcessSignal, Program, VlanInterface } from "../device2";
+import { Process, ProcessSignal, Program } from "../device";
+import { EthernetInterface, VlanInterface } from "../interface";
 import { formatTable } from "./helpers";
 
 function cidrNotate(addr?: BaseAddress, len?: number): string {

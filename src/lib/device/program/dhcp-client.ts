@@ -11,8 +11,9 @@ import { createDHCPOptionsMap } from "../../header/dhcp/utils";
 import { ETHERNET_HEADER, ETHER_TYPES } from "../../header/ethernet";
 import { IPV4_HEADER, IPV4_PSEUDO_HEADER, PROTOCOLS, createIPV4Header } from "../../header/ip";
 import { UDP_HEADER } from "../../header/udp";
-import { NetworkData } from "../device2";
-import { Contact2, EthernetInterface, Process, ProcessSignal, Program } from "../device2";
+import { NetworkData } from "../device";
+import { Contact, Process, ProcessSignal, Program } from "../device";
+import { EthernetInterface } from "../interface";
 
 enum DHCPClientState {
     DISCOVER,
@@ -25,7 +26,7 @@ type DHCPClientData = {
     /** transaction id */
     xid: number;
     state: DHCPClientState;
-    contact: Contact2;
+    contact: Contact;
     iface: EthernetInterface;
 
     parameterReqList: Uint8Array;
@@ -100,7 +101,7 @@ function sendDHCPv4Hdr(proc: Process<DHCPClientData>, dhcpHdr: typeof DHCP_HEADE
 }
 
 function receive(proc: Process<DHCPClientData>) {
-    return function (_: Contact2, data: NetworkData) {
+    return function (_: Contact, data: NetworkData) {
         if (data.rcvif != proc.data.iface) {
             return;
         }

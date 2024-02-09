@@ -2,17 +2,8 @@
 
 ## Tasks
 
-- Develop on device logic
+- Device
   - [ ] add teardown method for `BaseInterface`
-  - [x] Overhaul Device
-    - [x] Integrate Device2 into Contact "Infrastructure"
-    - [x] flesh out the functionality
-      - [x] output_ip check that the destination is not source then loopback etc.
-      - [x] input_ip verify that daddr is for the device
-    - [x] migrate all previous programs and services to Device2 system
-    - [x] implement vlan aware switch
-    - [x] implement router & vlanif logic
-    - [x] move views to exlusively use Device2
   - [ ] Device -> contact
     - [x] UDP protocol support
     - [ ] TCP protocol support

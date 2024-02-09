@@ -1,6 +1,6 @@
 import { uint8_concat, uint8_fromString } from "../../binary/uint8-array";
 import { ASCIICodes, CSI, readParams } from "../../terminal/shared";
-import { Process, ProcessSignal, Program } from "../device2";
+import { Process, ProcessSignal, Program } from "../device";
 import { parseArgs } from "./helpers";
 
 enum ShellState {

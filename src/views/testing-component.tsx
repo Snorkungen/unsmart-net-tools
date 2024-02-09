@@ -6,10 +6,11 @@ import { uint8_concat, uint8_equals, uint8_fromNumber, uint8_readUint16BE } from
 import { ICMPV4_TYPES, ICMPV6_TYPES, ICMP_ECHO_HEADER, ICMP_HEADER } from "../lib/header/icmp";
 import { calculateChecksum } from "../lib/binary/checksum";
 import { IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS, createIPV4Header } from "../lib/header/ip";
-import { Device2, EthernetInterface, VlanInterface, createMacAddress } from "../lib/device/device2";
-import { DEVICE_PROGRAM_DOWNLOAD } from "../lib/device/program/program2";
+import { Device } from "../lib/device/device";
+import { EthernetInterface, VlanInterface, createMacAddress } from "../lib/device/interface";
+import { DEVICE_PROGRAM_DOWNLOAD } from "../lib/device/program/program";
 import { DAEMON_ECHO_REPLIER } from "../lib/device/program/echo-replier";
-import { NetworkSwitch2 } from "../lib/device/network-switch";
+import { NetworkSwitch } from "../lib/device/network-switch";
 import { DAEMON_ROUTING } from "../lib/device/program/routing";
 const selectContents = (ev: MouseEvent) => {
     if (!(ev.currentTarget instanceof HTMLElement)) return;
@@ -18,7 +19,7 @@ const selectContents = (ev: MouseEvent) => {
     window.getSelection()?.addRange(range);
 }
 
-const DeviceComponent: Component<{ device: Device2 }> = ({ device }) => {
+const DeviceComponent: Component<{ device: Device }> = ({ device }) => {
     // HACKY BS
     device.process_start(DAEMON_ECHO_REPLIER);
 
@@ -49,7 +50,7 @@ const DeviceComponent: Component<{ device: Device2 }> = ({ device }) => {
     </div>
 }
 
-let sw1 = new NetworkSwitch2();
+let sw1 = new NetworkSwitch();
 sw1.name = "SW1";
 let iface_sw1_pc1 = sw1.interface_add(new EthernetInterface(sw1));
 let iface_sw1_pc2 = sw1.interface_add(new EthernetInterface(sw1));
@@ -57,10 +58,10 @@ let iface_sw1_pc3 = sw1.interface_add(new EthernetInterface(sw1));
 let iface_sw1_pc4 = sw1.interface_add(new EthernetInterface(sw1));
 
 
-let pc1 = new Device2();
-let pc2 = new Device2();
-let pc3 = new Device2();
-let pc4 = new Device2();
+let pc1 = new Device();
+let pc2 = new Device();
+let pc3 = new Device();
+let pc4 = new Device();
 pc1.name = "PC1"
 pc2.name = "PC2"
 pc3.name = "PC3"
@@ -99,7 +100,7 @@ pc3.routes.push({ destination: new IPV4Address("0.0.0.0"), netmask: createMask(I
 
 pc4.routes.push({ destination: new IPV4Address("0.0.0.0"), netmask: createMask(IPV4Address, 0), gateway: new IPV4Address("192.168.10.10"), f_gateway: true, iface: iface_pc4 })
 
-function screamToEchoUDPServer(pc: Device2) {
+function screamToEchoUDPServer(pc: Device) {
     let contact = pc.contact_create("IPv4", "UDP").data!;
 
     let destination = new IPV4Address("192.168.1.10"); // iface_pc1 ipv4 address

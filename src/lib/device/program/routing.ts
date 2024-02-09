@@ -3,7 +3,7 @@ import { calculateChecksum } from "../../binary/checksum";
 import { uint8_concat, uint8_equals } from "../../binary/uint8-array";
 import { ICMPV4_CODES, ICMPV4_TYPES, ICMPV6_CODES, ICMPV6_TYPES, ICMP_HEADER, ICMP_UNUSED_HEADER } from "../../header/icmp";
 import { IPV4_HEADER, IPV4_PSEUDO_HEADER, IPV6_HEADER, PROTOCOLS } from "../../header/ip";
-import { Program, ProcessSignal, ContactReceiveOptions } from "../device2";
+import { Program, ProcessSignal, ContactReceiveOptions } from "../device";
 
 const RECEIVE_OPTIONS: ContactReceiveOptions = { promiscuous: true };
 

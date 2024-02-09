@@ -5,10 +5,10 @@ import { calculateChecksum } from "../../binary/checksum";
 import { uint8_concat, uint8_equals, uint8_fromString } from "../../binary/uint8-array";
 import { ICMP_ECHO_HEADER, ICMP_HEADER, ICMPV4_TYPES, ICMPV6_TYPES } from "../../header/icmp";
 import { IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
-import { Contact2, DeviceRoute, NetworkData, Process, ProcessSignal, Program } from "../device2";
+import { Contact, DeviceRoute, NetworkData, Process, ProcessSignal, Program } from "../device";
 
 type PingData = {
-    contact: Contact2;
+    contact: Contact;
     identifier: number;
     sequence: number;
     destination: BaseAddress;
@@ -121,7 +121,7 @@ function handlereply(proc: Process<PingData>, source: BaseAddress, bytes: number
 }
 
 function receivev4(proc: Process<PingData>) { // !TODO: rewrite everything againg because this does not feel so ergonomic
-    return function (_: Contact2, data: NetworkData) {
+    return function (_: Contact, data: NetworkData) {
         let iphdr = IPV4_HEADER.from(data.buffer);
         if (!(uint8_equals(iphdr.get("saddr").buffer, proc.data.destination.buffer))) {
             return; // HMM
@@ -144,7 +144,7 @@ function receivev4(proc: Process<PingData>) { // !TODO: rewrite everything again
 }
 
 function receivev6(proc: Process<PingData>) {
-    return function (_: Contact2, data: NetworkData) {
+    return function (_: Contact, data: NetworkData) {
         let iphdr = IPV6_HEADER.from(data.buffer);
         if (!(uint8_equals(iphdr.get("saddr").buffer, proc.data.destination.buffer))) {
             return; // HMM
@@ -176,7 +176,7 @@ export const DEVICE_PROGRAM_PING: Program = {
     init(proc, argv) {
         let [, target, sendCount] = argv
         let destination: IPV4Address | IPV6Address;
-        let contact: Contact2 | undefined;
+        let contact: Contact | undefined;
         let identifier = Math.floor(Math.random() * (0xffff));
 
         let maxSendCount = parseInt(sendCount);
@@ -185,7 +185,7 @@ export const DEVICE_PROGRAM_PING: Program = {
         }
 
         let sender: (proc: Process<PingData>) => void;
-        let receiver: (contact: Contact2, data: NetworkData) => void;
+        let receiver: (contact: Contact, data: NetworkData) => void;
 
         if (IPV4Address.validate(target)) {
             contact = proc.device.contact_create("IPv4", "RAW").data!;

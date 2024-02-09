@@ -3,7 +3,7 @@ import Terminal, { TerminalRenderer } from "../lib/terminal/terminal";
 import { uint8_concat, uint8_fromNumber, uint8_fromString, uint8_mutateSet, uint8_readUint32BE } from "../lib/binary/uint8-array";
 import { ASCIICodes, CSI } from "../lib/terminal/shared";
 import { formatTable } from "../lib/device/program/helpers";
-import { Device2, EthernetInterface, LoopbackInterface, ProcessSignal, Program } from "../lib/device/device2";
+import { Device, ProcessSignal, Program } from "../lib/device/device";
 import { ICMPV4_TYPES, ICMPV6_TYPES, ICMP_HEADER, ICMP_ECHO_HEADER } from "../lib/header/icmp";
 import { IPV4Address } from "../lib/address/ipv4";
 import { calculateChecksum } from "../lib/binary/checksum";
@@ -11,13 +11,14 @@ import { IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../lib/
 import { MACAddress } from "../lib/address/mac";
 import { createMask } from "../lib/address/mask";
 import { IPV6Address } from "../lib/address/ipv6";
-import { DAEMON_SHELL } from "../lib/device/program/shell2";
-import { DEVICE_PROGRAM_PING } from "../lib/device/program/ping2";
-import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_HELP, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_ECHO } from "../lib/device/program/program2";
-import { DEVICE_PROGRAM_IFINFO } from "../lib/device/program/ifinfo2";
+import { DAEMON_SHELL } from "../lib/device/program/shell";
+import { DEVICE_PROGRAM_PING } from "../lib/device/program/ping";
+import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_HELP, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_ECHO } from "../lib/device/program/program";
+import { DEVICE_PROGRAM_IFINFO } from "../lib/device/program/ifinfo";
 import { DAEMON_ECHO_REPLIER } from "../lib/device/program/echo-replier";
 import { DEVICE_PROGRAM_DHCP_CLIENT } from "../lib/device/program/dhcp-client";
 import { DAEMON_DHCP_SERVER } from "../lib/device/program/dhcp-server";
+import { LoopbackInterface, EthernetInterface } from "../lib/device/interface";
 
 export const TestingComponent2: Component = () => {
     let terminal: Terminal;
@@ -53,14 +54,14 @@ export const TestingComponent2: Component = () => {
         newdevice.process_start(DAEMON_SHELL, []);
     });
 
-    let newdevice = new Device2();
+    let newdevice = new Device();
     // add all my programs to the device
     newdevice.programs.push(
         test_program, DEVICE_PROGRAM_PING, DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_HELP,
         DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_IFINFO
     )
     newdevice.name = "FIRETTE"
-    let newdevice2 = new Device2();
+    let newdevice2 = new Device();
     newdevice2.name = "HFDAN"
     let loopbackiface = new LoopbackInterface(newdevice);
     loopbackiface.start()
@@ -97,7 +98,7 @@ export const TestingComponent2: Component = () => {
     newdevice2.interface_set_address(etherinterface_4, new IPV4Address("192.168.1.1"), createMask(IPV4Address, 24))
     newdevice2.process_start(DAEMON_DHCP_SERVER, ["", etherinterface_4.id()])
 
-    function test_sending_ipv4(device: Device2, destination: IPV4Address) {
+    function test_sending_ipv4(device: Device, destination: IPV4Address) {
         console.log("%cSENDING ECHO TO: " + destination, "padding:1em; color:green; background: black;")
 
         let identifier = Math.floor(Math.random() * 0xfffe), sequence = 1;
@@ -126,7 +127,7 @@ export const TestingComponent2: Component = () => {
         contact!.close(contact!);
     }
 
-    function test_sending_ipv6(device: Device2, destination: IPV6Address) {
+    function test_sending_ipv6(device: Device, destination: IPV6Address) {
         let cres = device.contact_create("IPv6", "RAW");
         if (!cres.success) {
             console.log(cres.error, cres.message)

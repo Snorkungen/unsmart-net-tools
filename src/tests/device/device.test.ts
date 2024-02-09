@@ -1,10 +1,11 @@
 import { describe, expect, test } from "vitest";
-import { Contact2, Device2, LoopbackInterface, __find_best_caddr_match } from "../../lib/device/device2";
+import { Contact, Device, __find_best_caddr_match } from "../../lib/device/device";
 import { IPV4Address } from "../../lib/address/ipv4";
 import { createMask } from "../../lib/address/mask";
 import { IPV6Address } from "../../lib/address/ipv6";
+import { LoopbackInterface } from "../../lib/device/interface";
 
-let device = new Device2();
+let device = new Device();
 let lb_iface = new LoopbackInterface(device);
 lb_iface.up = true; // this is something that is required
 
@@ -162,7 +163,7 @@ describe("Device2 contact_bind", () => {
 
 describe("Devic2 __find_best_caddr_match", () => {
 
-    let dev = new Device2();
+    let dev = new Device();
     let unset = new IPV4Address("0.0.0.0"), default_caddr = {
         saddr: unset,
         daddr: unset,
@@ -171,7 +172,7 @@ describe("Devic2 __find_best_caddr_match", () => {
     }
     dev.contact_create("IPv4", "UDP").data!;
 
-    let crecivers: { contact: Contact2, idx: number }[] = [{
+    let crecivers: { contact: Contact, idx: number }[] = [{
         contact: {
             ...dev.contact_create("IPv4", "UDP").data!, address: default_caddr
         }, idx: 1_000_000_000
@@ -208,7 +209,7 @@ describe("Devic2 __find_best_caddr_match", () => {
                 daddr: lb_address4
             }
         }, idx: 3_000
-    }].sort(() => Math.random() -0.5)
+    }].sort(() => Math.random() - 0.5)
 
     test("default", () => expect(__find_best_caddr_match("IPv4", {
         saddr: new IPV4Address("255.255.255.255"),
