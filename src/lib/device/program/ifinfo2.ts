@@ -2,7 +2,7 @@ import { BaseAddress } from "../../address/base";
 import { IPV4Address } from "../../address/ipv4";
 import { AddressMask, createMask } from "../../address/mask";
 import { uint8_fromString, uint8_readUint32BE } from "../../binary/uint8-array";
-import { EthernetInterface, Process, ProcessSignal, Program } from "../device2";
+import { EthernetInterface, Process, ProcessSignal, Program, VlanInterface } from "../device2";
 import { formatTable } from "./helpers";
 
 function cidrNotate(addr?: BaseAddress, len?: number): string {
@@ -103,20 +103,29 @@ export const DEVICE_PROGRAM_IFINFO: Program = {
             interfaces = interfaces.filter(f => argv.includes(f.id()));
         }
 
+        let table: (string | undefined)[][] = []
+
         for (let iface of interfaces) {
             let ifid = iface.id();
 
-            let table: (string | undefined)[][] = [[ifid]];
-            let info: unknown[], tr = 0;
+            table.push([ifid])
+            let info: unknown[], tr = table.length - 1;
             if (iface instanceof EthernetInterface) {
                 // display ethernet related information
                 info = [
+                    (iface.up ? "active" : "down"),
                     iface.macAddress
-                ]; // !TODO: display vlan information
+                ];
 
-                table[tr++][1] = info.join(" ");
-            } else {
-                tr++;
+                if (iface.vlan)
+                    info.push(
+                        `vlan(${iface.vlan.type} ${iface.vlan.vids.join(",")})`
+                    )
+
+                table[tr][1] = info.join(" ");
+            } else if (iface instanceof VlanInterface) {
+                table[tr][1] = `vlan(${iface.vid})`
+                // !TODO: future could display short info about info macaddress 
             }
 
             for (let address of iface.addresses) {
@@ -126,12 +135,12 @@ export const DEVICE_PROGRAM_IFINFO: Program = {
                     // dhcp could possible be put here on the address or maybe seperate
                 ];
 
-                table[tr] = [];
-                table[tr++][1] = info.filter(Boolean).join(" ");
+                table.push([undefined, info.filter(Boolean).join(" ")])
             }
 
-            proc.term_write(formatTable(table));
         }
+        proc.term_write(formatTable(table));
+
         return ProcessSignal.EXIT;
     },
     sub: [DEVICE_PROGRAM_IFINFO_SET4]
