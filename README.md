@@ -4,6 +4,7 @@
 
 - Device
   - [ ] add teardown method for `BaseInterface`
+  - [ ] spawned programs able to return values to parent
   - programs
     - [ ] UDP/DNS server and client
     - [ ] program for interacting with `Device.routes`

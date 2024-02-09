@@ -128,6 +128,7 @@ export type ProcessHandler = (proc: Process, signal: ProcessSignal) => void;
 export type ProcessTerminalReadFunc = (proc: Process, bytes: Uint8Array) => void | true;
 export type Process<DT = any> = {
     status: "UNINIT" | "MARKED_CLOSED" | "CLOSED" | "RUNNING"
+    signal: ProcessSignal;
 
     id: ProcessID;
     device: Device;
@@ -280,6 +281,7 @@ export class Device {
 
         this.processes[i] = {
             status: "UNINIT",
+            signal: ProcessSignal.__EXPLICIT__,
 
             id: id + program.name + i,
             device: this,
@@ -296,9 +298,15 @@ export class Device {
         };
 
         let init_sig = program.init(this.processes[i]!, args || [], data);
+        this.processes[i]!.signal = init_sig;
+
         if (init_sig !== ProcessSignal.__EXPLICIT__) {
-            this.process_close(this.processes[i]!, init_sig)
-            return undefined;
+            if (proc) {
+                this.processes[i]!.status = "MARKED_CLOSED";
+                return this.processes[i]!;
+            }
+            this.process_close(this.processes[i]!, init_sig);
+            return;
         } else if (!this.processes[i]?.data && !program.__NODATA__) {
             // check that data is defined but there needs to be away to silence the message if program does not use data.
             console.warn(program.name, "data not defined! to silence warning set __NODATA__ ")
@@ -326,7 +334,7 @@ export class Device {
             }
             // if process has a owner call handle_close if it exists
             if ((h.proc.id === proc.id && signal != ProcessSignal.EXIT) || h.proc.id != h.id && h.id == proc.id) {
-                h.handler(h.proc, signal);
+                h.handler(proc, signal);
             }
 
             delete this.process_handlers[hj];
@@ -348,10 +356,14 @@ export class Device {
 
     process_spawn: Process["spawn"] = (proc, program, args, data, handle_close) => {
         let spawned_proc: Process | undefined = this.process_start(program, args, data, proc);
+        if (!spawned_proc)
+            return;     // proc could not be created
 
-        if (!spawned_proc) {
-            handle_close && handle_close(proc, ProcessSignal.EXIT);
-            return undefined;
+
+        if (spawned_proc.status == "MARKED_CLOSED") {
+            handle_close && handle_close(spawned_proc, spawned_proc.signal);
+            this.process_close(spawned_proc, spawned_proc.signal);
+            return;
         }
 
         if (handle_close) {
@@ -405,7 +417,7 @@ export class Device {
     }
 
     private process_term_read(proc: Process, reader_func: ProcessTerminalReadFunc) {
-        this.terminal_readers.unshift({ proc: proc, reader: reader_func });
+        this.terminal_readers = [{ proc, reader: reader_func }, ...this.terminal_readers]
     }
     private process_term_write(bytes: Uint8Array) {
         (this.terminal) && this.terminal.write(bytes);
