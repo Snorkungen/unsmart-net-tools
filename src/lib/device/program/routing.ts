@@ -1,11 +1,11 @@
-import { IPV4Address } from "../../address/ipv4";
 import { IPV6Address } from "../../address/ipv6";
-import { not, or } from "../../binary";
 import { calculateChecksum } from "../../binary/checksum";
 import { uint8_concat, uint8_equals } from "../../binary/uint8-array";
 import { ICMPV4_CODES, ICMPV4_TYPES, ICMPV6_CODES, ICMPV6_TYPES, ICMP_HEADER, ICMP_UNUSED_HEADER } from "../../header/icmp";
 import { IPV4_HEADER, IPV4_PSEUDO_HEADER, IPV6_HEADER, PROTOCOLS } from "../../header/ip";
-import { Program, ProcessSignal } from "../device2";
+import { Program, ProcessSignal, ContactReceiveOptions } from "../device2";
+
+const RECEIVE_OPTIONS: ContactReceiveOptions = { promiscuous: true };
 
 export const DAEMON_ROUTING: Program = {
     name: "daemon_routing",
@@ -22,8 +22,6 @@ export const DAEMON_ROUTING: Program = {
             if (data.destination || data.broadcast || data.multicast || data.loopback) {
                 return;
             }
-
-
 
             if (iphdr.get("ttl") < 1) {
                 let icmphdr = ICMP_HEADER.create({
@@ -48,7 +46,6 @@ export const DAEMON_ROUTING: Program = {
                 return; // discarded
             }
 
-
             // decrement ttl and recalculate checksum
             iphdr.set("ttl", iphdr.get("ttl") - 1);
             iphdr.set("csum", 0);
@@ -56,7 +53,7 @@ export const DAEMON_ROUTING: Program = {
 
             console.log(proc.device.name, "[ROUTING]")
             contact.send(contact, { buffer: iphdr.getBuffer() }, iphdr.get("daddr"), route)
-        });
+        }, RECEIVE_OPTIONS);
 
         let contact6 = proc.device.contact_create("IPv6", "RAW").data!;
         contact6.receive(contact6, (contact, data) => {
@@ -102,7 +99,7 @@ export const DAEMON_ROUTING: Program = {
             }
 
             iphdr.set("hopLimit", iphdr.get("hopLimit") - 1)
-        });
+        }, RECEIVE_OPTIONS);
 
         proc.handle(proc, () => {
             contact4.close(contact4);

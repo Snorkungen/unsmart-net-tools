@@ -1,5 +1,5 @@
 import { calculateChecksum } from "../../binary/checksum";
-import { uint8_concat, uint8_equals } from "../../binary/uint8-array";
+import { uint8_concat } from "../../binary/uint8-array";
 import { ICMPV4_TYPES, ICMPV6_TYPES, ICMP_HEADER } from "../../header/icmp";
 import { IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
 import { Contact2, NetworkData, ProcessSignal, Program } from "../device2";

@@ -71,7 +71,8 @@ export type DeviceRoute<AddrType extends typeof BaseAddress = typeof BaseAddress
 
 type ContactAF = "RAW" | "IPv4" | "IPv6";
 type ContactProto = "RAW" | "UDP";
-type ContactReciever = (contact: Contact2, data: NetworkData, caddr?: ContactAddress2<BaseAddress>) => void;
+export type ContactReceiver = (contact: Contact2, data: NetworkData, caddr?: ContactAddress2<BaseAddress>) => void;
+export type ContactReceiveOptions = { promiscuous?: true };
 type ContactError = unknown; // !TODO: conjure up some type of problems that might occur
 
 type ContactAddress2<Addr extends BaseAddress> = {
@@ -94,8 +95,8 @@ export interface Contact2<AF extends ContactAF = ContactAF, Proto extends Contac
     close(contact: Contact2<AF, Proto, AT, Addr>): DeviceResult<ContactError>;
     bind(contact: Contact2<AF, Proto, AT, Addr>, caddr: ContactAddress2<Addr>): DeviceResult<ContactError, typeof caddr>;
 
-    receive(contact: Contact2, receiver: ContactReciever): DeviceResult<ContactError>;
-    receiveFrom(contact: Contact2, receiver: ContactReciever, caddr: Partial<ContactAddress2<Addr>>): DeviceResult<ContactError>;
+    receive(contact: Contact2, receiver: ContactReceiver, options?: ContactReceiveOptions): DeviceResult<ContactError>;
+    receiveFrom(contact: Contact2, receiver: ContactReceiver, caddr: Partial<ContactAddress2<Addr>>, options?: ContactReceiveOptions): DeviceResult<ContactError>;
 
     send(contact: Contact2<AF, Proto, AT, Addr>, data: NetworkData, destination?: Addr, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
     sendTo(contact: Contact2<AF, Proto, AT, Addr>, data: NetworkData, caddr?: Partial<ContactAddress2<Addr>>, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
@@ -502,13 +503,17 @@ export class Device2 {
             throw "ipv4 fragments not supported"
         }
 
+
+        let daddr = iphdr.get("daddr")
         if (data.loopback) {
             data.destination = true; // it is looped back IT IS for this device
+        } else if (daddr.toString() == "255.255.255.255") { // all hosts broadcst
+            data.broadcast = true;
+            data.destination = true;
         } else if (false) {
             // something something  multicast
         } else {
             data.destination = false; // this could have been set by lower level things
-            let daddr = iphdr.get("daddr")
             daddr_check: for (let iface of this.interfaces) for (let source of iface.addresses) {
                 if (source.address.constructor != daddr.constructor)
                     continue
@@ -860,7 +865,22 @@ export class Device2 {
 
             rcvif.output({
                 buffer: replyARPHdr.getBuffer()
-            }, new BaseAddress(replyEthHdr.getBuffer()))
+            }, new BaseAddress(replyEthHdr.getBuffer()));
+
+
+            if (true) { // optimisation to set an entry for the requester
+                if (uint8_readUint32BE(arpHdr.get("spa").buffer) === 0)
+                    return; // not source protocol address set
+                else if (uint8_readUint32BE(arpHdr.get("tpa").buffer) === 0)
+                    return
+
+                this.arp_cache_entry(arpHdr.get("spa"), {
+                    neighbor: arpHdr.get("tpa"),
+                    iface: data.rcvif,
+                    macAddress: etherheader.get("smac"),
+                    createdAt: Date.now()
+                });
+            }
         }
     }
 
@@ -887,6 +907,17 @@ export class Device2 {
     input_ether(etherframe: typeof ETHERNET_HEADER, data: NetworkData) {
         if (!data.rcvif || data.rcvif.header !== ETHERNET_HEADER) {
             throw new Error("rcvif missing or wrong type, rcvif must be a EthernetInterface")
+        }
+
+        // check for destination
+        let dmac = etherframe.get("dmac")
+        if (data.broadcast || dmac.isBroadcast()) {
+            data.broadcast = true; data.destination = true;
+        } else if (data.multicast || dmac.isMulticast()) {
+            // !TODO: some generic way of checking for multicast subscriptions
+            data.multicast = true; data.destination = true;
+        } else if (dmac.isUnicast()) {
+            data.destination = data.rcvif_hwaddress && uint8_equals(data.rcvif_hwaddress?.buffer, dmac.buffer);
         }
 
         this.contact_input_raw("RAW", data);
@@ -1163,7 +1194,7 @@ export class Device2 {
     /** this is to ensure that contacts get given unique ephemeral ports */
     private contact_ephemport = 4001
     private contacts: (Contact2<ContactAF, ContactProto> | undefined)[] = [];
-    private contact_receivers: ({ receiver: ContactReciever, contact: Contact2 } | undefined)[] = [];
+    private contact_receivers: ({ receiver: ContactReceiver, contact: Contact2, options: ContactReceiveOptions } | undefined)[] = [];
     contact_create<CAF extends ContactAF, CProto extends ContactProto>(addressFamily: CAF, proto: CProto): DeviceResult<ContactError, Contact2<CAF, CProto>> {
         // do some rules checking
         if (addressFamily === "RAW" && proto !== "RAW") {
@@ -1271,26 +1302,30 @@ export class Device2 {
         contact.address = caddr;
         return { success: true, data: caddr }
     }
-    contact_receive: Contact2["receive"] = (contact, receiver) => {
+    private contact_default_receive_options: ContactReceiveOptions = {}
+    contact_receive: Contact2["receive"] = (contact, receiver, options?: ContactReceiveOptions) => {
         let i = -1; while (this.contact_receivers[++i]) { continue; };
 
         this.contact_receivers[i] = {
             contact: contact,
-            receiver: receiver
+            receiver: receiver,
+            options: options || this.contact_default_receive_options
         };
 
         return { success: true, data: undefined };
     }
 
-    private contact_input_raw(af: ContactAF, ...receiver_params: DropFirst<Parameters<ContactReciever>>) {
+    private contact_input_raw(af: ContactAF, ...receiver_params: DropFirst<Parameters<ContactReceiver>>) {
         for (let creciver of this.contact_receivers) {
-            if (!creciver || creciver.contact.addressFamily != af || creciver.contact.proto != "RAW") {
+            if (!creciver || creciver.contact.addressFamily != af || creciver.contact.proto != "RAW")
                 continue;
-            }
+            else if (!creciver.options?.promiscuous && !receiver_params[0].destination)
+                continue;
+
             creciver.receiver(creciver.contact, ...receiver_params);
         }
     }
-    private contact_input_udp(af: ContactAF, ...receiver_params: DropFirst<Parameters<ContactReciever>>) {
+    private contact_input_udp(af: ContactAF, ...receiver_params: DropFirst<Parameters<ContactReceiver>>) {
         let input_caddr = receiver_params[1];
         if (!input_caddr) return;
         let best = __find_best_caddr_match(af, input_caddr, this.contact_receivers);
@@ -1396,7 +1431,7 @@ export class Device2 {
         return this.contact_m_send_udp(contact, data, undefined, rtentry);
     }
 
-    private contact_m_receiveFrom_udp: Contact2["receiveFrom"] = (contact, receiver, caddr) => {
+    private contact_m_receiveFrom_udp: Contact2["receiveFrom"] = (contact, receiver, caddr, options) => {
         let bres = this.contact_bind(contact, {
             saddr: contact.addressFamily == "IPv4" ? _UNSET_ADDRESS_IPV4 : _UNSET_ADDRESS_IPV6,
             daddr: contact.addressFamily == "IPv4" ? _UNSET_ADDRESS_IPV4 : _UNSET_ADDRESS_IPV6,
@@ -1405,7 +1440,7 @@ export class Device2 {
             ...caddr
         });
         if (!bres.success) return bres as ReturnType<Contact2["receiveFrom"]>;
-        return this.contact_receive(contact, receiver);
+        return this.contact_receive(contact, receiver, options);
     }
 
     schedule_default_delay = 0;
@@ -1743,8 +1778,8 @@ export class VlanInterface extends BaseInterface {
         if (!data.rcvif || !(data.rcvif_hwaddress instanceof MACAddress)) {
             return; // !TODO: this should mayber throw an error
         }
-        // !TODO: maybe pass other vlan information forward to the device
 
+        // !TODO: maybe pass other vlan information forward to the device
         this.macaddresses.set(etherframe.get("smac").toString(), data.rcvif);
 
         this.device.schedule(() => {
@@ -1804,12 +1839,6 @@ export class VlanInterface extends BaseInterface {
         }
 
         data = { rcvif: this, buffer: etherheader.get("payload"), broadcast: data.broadcast };
-
-        // !TODO: figure out a more generic solution
-        if (this.addresses.find(({ address }) => uint8_equals(address.buffer, destination.buffer))) {
-            this.input(etherheader, data)
-            return { success: true, data: undefined }
-        }
 
         let iface = this.macaddresses.get(etherheader.get("dmac").toString());
         if (iface) {

@@ -1,4 +1,3 @@
-import { BaseAddress } from "../../address/base";
 import { IPV4Address } from "../../address/ipv4";
 import { AddressMask, createMask } from "../../address/mask";
 import { and, mutateNot, mutateAnd, mutateOr, not, or } from "../../binary";
@@ -11,8 +10,7 @@ import { createDHCPOptionsMap } from "../../header/dhcp/utils";
 import { ETHERNET_HEADER, ETHER_TYPES } from "../../header/ethernet";
 import { IPV4_HEADER, IPV4_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
 import { UDP_HEADER } from "../../header/udp";
-import { Program, ProcessSignal, Process, EthernetInterface, Contact2, NetworkData } from "../device2";
-import { BROADCAST_MAC_ADDRESS } from "../neighbor-table";
+import { Program, ProcessSignal, Process, Contact2, NetworkData, BaseInterface } from "../device2";
 
 enum DHCPServerState {
     BINDING,
@@ -31,7 +29,7 @@ type DHCPServerData = {
     /** server id */
     sid: Uint8Array;
     contact: Contact2;
-    iface: EthernetInterface;
+    iface: BaseInterface;
     addressRange4: [start: IPV4Address, end: IPV4Address];
     netmask4: AddressMask<typeof IPV4Address>;
     gateways4?: IPV4Address[];
@@ -65,7 +63,6 @@ function sendDHCPv4HdrServer(proc: Process<DHCPServerData>, dhcpHdr: typeof DHCP
         saddr = source.address
     }
 
-
     let udphdr = UDP_HEADER.create({
         dport: DCHP_PORT_CLIENT,
         sport: DCHP_PORT_SERVER,
@@ -74,42 +71,25 @@ function sendDHCPv4HdrServer(proc: Process<DHCPServerData>, dhcpHdr: typeof DHCP
     udphdr.set("length", udphdr.size)
 
     let pseudohdr = IPV4_PSEUDO_HEADER.create({
-        saddr, daddr, proto: PROTOCOLS.UDP, len: udphdr.get("length"),
+        saddr, daddr, proto: PROTOCOLS.UDP, len: udphdr.size,
     });
-
     udphdr.set("csum", calculateChecksum(uint8_concat([pseudohdr.getBuffer(), udphdr.getBuffer()])));
 
     let iphdr = IPV4_HEADER.create({
-        version: 4,
-        ihl: IPV4_HEADER.getMinSize() >> 2,
-        tos: 0,
-        ttl: 1,
-        len: IPV4_HEADER.size + udphdr.size,
+        daddr, saddr,
         payload: udphdr.getBuffer(),
-        csum: 0,
-        proto: PROTOCOLS.UDP,
-        saddr,
-        daddr
+        proto: PROTOCOLS.UDP
     })
 
-    iphdr.set("csum", 0);
-    iphdr.set("csum", calculateChecksum(iphdr.getBuffer().slice(0, iphdr.get("ihl") << 2)));
-
-    let dmac = BROADCAST_MAC_ADDRESS;
-    let etherhdr = ETHERNET_HEADER.create({
-        smac: proc.data.iface.macAddress,
-        dmac: dmac,
-        ethertype: ETHER_TYPES.IPv4,
-    });
-    proc.data.contact.send(proc.data.contact, {
+    return proc.device.output_ipv4(({
         buffer: iphdr.getBuffer(),
-        broadcast: true,
-    }, new BaseAddress(etherhdr.getBuffer()), {
-        destination: iphdr.get("daddr"),
+        broadcast: true
+    }), daddr, {
+        destination: daddr,
         gateway: UNSET_IPV4_ADDRESS,
-        netmask: createMask(IPV4Address, UNSET_IPV4_ADDRESS.buffer),
+        netmask: createMask(IPV4Address, 0),
         iface: proc.data.iface
-    });
+    })
 }
 
 function getAddress(proc: Process<DHCPServerData>): IPV4Address | null {
@@ -386,9 +366,11 @@ function handleRequest(proc: Process<DHCPServerData>, dhcphdr: typeof DHCP_HEADE
 
 function receive(proc: Process<DHCPServerData>) {
     return function (_: Contact2, data: NetworkData) {
-        if (data.rcvif != proc.data.iface) {
+        if (data.rcvif != proc.data.iface)
             return;
-        }
+
+        if (data.loopback)
+            return; // do not handle loopback 
 
         let etherhdr = ETHERNET_HEADER.from(data.buffer);
         if (etherhdr.get("ethertype") != ETHER_TYPES.IPv4) {
@@ -443,7 +425,7 @@ export const DAEMON_DHCP_SERVER: Program<DHCPServerData> = {
         }
 
         let iface = data?.iface || proc.device.interfaces.find(f => f.id() == ifid);
-        if (!iface || !(iface instanceof EthernetInterface)) {
+        if (!iface || iface.header !== ETHERNET_HEADER) {
             // no iface found
             return ProcessSignal.ERROR;
         }

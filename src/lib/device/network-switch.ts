@@ -75,6 +75,12 @@ const testing_switch_stuff: Program = {
             if (!(data.rcvif instanceof EthernetInterface)) return;
             let etherheader = ETHERNET_HEADER.from(data.buffer);
 
+            // forward only if destination is not unicast and is has destination set
+            let is_unicast = !(data.broadcast || data.multicast);
+            if (is_unicast && data.destination) {
+                return; // do not forward packet is for host and host only
+            }
+
             function forward(iface: BaseInterface) {
                 iface.output({
                     ...data,
@@ -102,7 +108,7 @@ const testing_switch_stuff: Program = {
             }
 
             forward(iface);
-        });
+        }, { promiscuous: true });
 
         proc.handle(proc, () => contact.close(contact))
 
