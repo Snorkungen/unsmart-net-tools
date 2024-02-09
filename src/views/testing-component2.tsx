@@ -1,7 +1,6 @@
 import { Component, createEffect } from "solid-js";
 import Terminal, { TerminalRenderer } from "../lib/terminal/terminal";
 import { uint8_concat, uint8_fromNumber, uint8_fromString, uint8_mutateSet, uint8_readUint32BE } from "../lib/binary/uint8-array";
-import { ASCIICodes, CSI } from "../lib/terminal/shared";
 import { formatTable } from "../lib/device/program/helpers";
 import { Device, ProcessSignal, Program } from "../lib/device/device";
 import { ICMPV4_TYPES, ICMPV6_TYPES, ICMP_HEADER, ICMP_ECHO_HEADER } from "../lib/header/icmp";
@@ -67,10 +66,8 @@ export const TestingComponent2: Component = () => {
     loopbackiface.start()
     newdevice.interface_add(loopbackiface)
 
-    let etherinterface_1 = new EthernetInterface(newdevice, new MACAddress("fa-ff-0f-00-00-0c"));
-    newdevice.interface_add(etherinterface_1);
-    let etherinterface_3 = new EthernetInterface(newdevice, new MACAddress("fa-ff-0f-00-33-ee"));
-    newdevice.interface_add(etherinterface_3);
+    let etherinterface_1 = newdevice.interface_add(new EthernetInterface(newdevice, new MACAddress("fa-ff-0f-00-00-0c")));
+    let etherinterface_3 = newdevice.interface_add(new EthernetInterface(newdevice, new MACAddress("fa-ff-0f-00-33-ee")));
     // testing of adding an address to an interface
 
     let etherinterface_1_ipv4_address = new IPV4Address("192.168.1.10")
@@ -78,14 +75,12 @@ export const TestingComponent2: Component = () => {
     newdevice.interface_set_address(etherinterface_1, etherinterface_1_ipv4_address, createMask(IPV4Address, 24));
     newdevice.interface_set_address(etherinterface_1, etherinterface_1_ipv6_address, createMask(IPV6Address, 8));
 
-    let etherinterface_2 = new EthernetInterface(newdevice2, new MACAddress("fa-ff-0f-00-00-0d"));
-    newdevice2.interface_add(etherinterface_2)
+    let etherinterface_2 = newdevice2.interface_add(new EthernetInterface(newdevice2, new MACAddress("fa-ff-0f-00-00-0d")))
     let etherinterface_2_ipv4_address = new IPV4Address("192.168.1.20")
     let etherinterface_2_ipv6_address = new IPV6Address("fe80::faff:0f00:000d:b778")
     newdevice2.interface_set_address(etherinterface_2, etherinterface_2_ipv4_address, createMask(IPV4Address, 24));
     newdevice2.interface_set_address(etherinterface_2, etherinterface_2_ipv6_address, createMask(IPV4Address, 8));
-    let etherinterface_4 = new EthernetInterface(newdevice2, new MACAddress("fa-ff-0f-00-44-ee"));
-    newdevice2.interface_add(etherinterface_4);
+    let etherinterface_4 = newdevice2.interface_add(new EthernetInterface(newdevice2, new MACAddress("fa-ff-0f-00-44-ee")));
 
     etherinterface_1.connect(etherinterface_2);
     etherinterface_3.connect(etherinterface_4);
