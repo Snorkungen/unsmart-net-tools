@@ -3,12 +3,13 @@ import { IPV4Address } from "../lib/address/ipv4";
 import { createMask } from "../lib/address/mask";
 import { NetworkSwitch2 } from "../lib/device/network-switch";
 import Terminal from "../lib/terminal/terminal";
-import { Device2, EthernetInterface } from "../lib/device/device2";
+import { Device2, EthernetInterface, ProcessSignal, VlanInterface } from "../lib/device/device2";
 import { DAEMON_SHELL } from "../lib/device/program/shell2";
 import { DAEMON_ECHO_REPLIER } from "../lib/device/program/echo-replier";
-import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_HELP } from "../lib/device/program/program2";
+import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_HELP } from "../lib/device/program/program2";
 import { DEVICE_PROGRAM_PING } from "../lib/device/program/ping2";
 import { DEVICE_PROGRAM_IFINFO } from "../lib/device/program/ifinfo2";
+import { DAEMON_ROUTING } from "../lib/device/program/routing";
 
 class NetworkMapInterface {
     iface: EthernetInterface;
@@ -311,6 +312,7 @@ function init_programs(device: Device2) {
         DEVICE_PROGRAM_HELP,
         DEVICE_PROGRAM_CLEAR,
         DEVICE_PROGRAM_PING,
+        DEVICE_PROGRAM_DOWNLOAD
     ]
 }
 
@@ -319,15 +321,32 @@ let networkSwitch2 = new NetworkSwitch2();
 networkSwitch.name = "SW1"
 networkSwitch2.name = "SW2"
 
+let networkRouter = new NetworkSwitch2(); networkRouter.name = "R1"
+networkRouter.processes.forEach(p => p && networkRouter.process_close(p, ProcessSignal.EXIT));// kill all running proceesses
+
+networkRouter.process_start(DAEMON_ROUTING); // start routing daemon
+
+let rtr_iface = networkRouter.interface_add(new EthernetInterface(networkRouter)); delete rtr_iface.vlan; // remove switch configurations
+let rtr_vlanif10 = networkRouter.interface_add(new VlanInterface(networkRouter, 10));
+let rtr_vlanif20 = networkRouter.interface_add(new VlanInterface(networkRouter, 20));
+
+// configure addresses
+networkRouter.interface_set_address(rtr_vlanif10, new IPV4Address("192.168.1.1"), createMask(IPV4Address, 24))
+networkRouter.interface_set_address(rtr_vlanif20, new IPV4Address("172.16.0.1"), createMask(IPV4Address, 24))
+
+
 let swIface_trunk = networkSwitch.interface_add(new EthernetInterface(networkSwitch));
 let swIface2_trunk = networkSwitch2.interface_add(new EthernetInterface(networkSwitch2));
+
+let swIface_trunk_rtr = networkSwitch.interface_add(new EthernetInterface(networkSwitch));
+
 swIface_trunk.connect(swIface2_trunk);
 
 let swIface_pc1 = networkSwitch.interface_add(new EthernetInterface(networkSwitch));
 let swIface_pc2 = networkSwitch.interface_add(new EthernetInterface(networkSwitch));
 let swIface_pc3 = networkSwitch.interface_add(new EthernetInterface(networkSwitch));
-let swIface_pc4 = networkSwitch.interface_add(new EthernetInterface(networkSwitch));
 
+let swIface_pc4 = networkSwitch2.interface_add(new EthernetInterface(networkSwitch));
 let swIface2_pc5 = networkSwitch2.interface_add(new EthernetInterface(networkSwitch2));
 
 let vlan10: EthernetInterface["vlan"] = {
@@ -352,6 +371,10 @@ swIface2_pc5.vlan = vlan20;
 swIface_trunk.vlan = vlanTrunk;
 swIface2_trunk.vlan = vlanTrunk;
 
+
+swIface_trunk_rtr.vlan_set("trunk", 1, 10, 20);
+swIface_trunk_rtr.connect(rtr_iface)
+
 let pc1 = new Device2(); pc1.name = "PC1";
 let pc2 = new Device2(); pc2.name = "PC2";
 let pc3 = new Device2(); pc3.name = "PC3";
@@ -371,8 +394,16 @@ let iface_pc5 = pc5.interface_add(new EthernetInterface(pc5));
 pc1.interface_set_address(iface_pc1, new IPV4Address("192.168.1.10"), createMask(IPV4Address, 24))
 pc2.interface_set_address(iface_pc2, new IPV4Address("192.168.1.20"), createMask(IPV4Address, 24))
 
+// add default routes
+pc1.routes.push({ destination: new IPV4Address("0.0.0.0"), netmask: createMask(IPV4Address, 0), gateway: new IPV4Address("192.168.1.1"), iface: iface_pc1, f_gateway: true })
+pc2.routes.push({ destination: new IPV4Address("0.0.0.0"), netmask: createMask(IPV4Address, 0), gateway: new IPV4Address("192.168.1.1"), iface: iface_pc2, f_gateway: true })
+
 pc4.interface_set_address(iface_pc4, new IPV4Address("172.16.0.40"), createMask(IPV4Address, 24))
 pc5.interface_set_address(iface_pc5, new IPV4Address("172.16.0.50"), createMask(IPV4Address, 24))
+
+// add default routes
+pc4.routes.push({ destination: new IPV4Address("0.0.0.0"), netmask: createMask(IPV4Address, 0), gateway: new IPV4Address("172.16.0.1"), iface: iface_pc4, f_gateway: true })
+pc5.routes.push({ destination: new IPV4Address("0.0.0.0"), netmask: createMask(IPV4Address, 0), gateway: new IPV4Address("172.16.0.1"), iface: iface_pc5, f_gateway: true })
 
 swIface_pc1.connect(iface_pc1);
 swIface_pc2.connect(iface_pc2);
@@ -383,6 +414,7 @@ swIface2_pc5.connect(iface_pc5)
 
 init_programs(networkSwitch)
 init_programs(networkSwitch2)
+init_programs(networkRouter)
 init_programs(pc1)
 init_programs(pc2)
 init_programs(pc3)
@@ -394,8 +426,10 @@ let nmDevice_pc1 = new NetworkMapDevice(150, 50, pc1);
 let nmDevice_pc2 = new NetworkMapDevice(220, 50, pc2);
 let nmDevice_pc3 = new NetworkMapDevice(290, 50, pc3);
 
-let nmDevice_pc4 = new NetworkMapDevice(400, 50, pc4);
-let nmDevice_pc5 = new NetworkMapDevice(400, 350, pc5);
+let nmDevice_rtr = new NetworkMapDevice(100, 270, networkRouter);
+
+let nmDevice_pc4 = new NetworkMapDevice(220, 350, pc4);
+let nmDevice_pc5 = new NetworkMapDevice(290, 350, pc5);
 let nmDevice_sw2 = new NetworkMapDevice(100, 350, networkSwitch2);
 
 let terminalOwner = pc1;
@@ -412,6 +446,8 @@ export default function NetworkMapViewer(): JSX.Element {
     nmap.addDevice(nmDevice_pc4)
     nmap.addDevice(nmDevice_pc5)
     nmap.addDevice(nmDevice_sw2)
+
+    nmap.addDevice(nmDevice_rtr)
 
     return <div style={{ width: "100%" }} >
 

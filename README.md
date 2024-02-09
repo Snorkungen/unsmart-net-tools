@@ -3,15 +3,15 @@
 ## Tasks
 
 - Develop on device logic
-  - [ ] Overhaul Device
-    - [ ] add teardown method for `BaseInterface`
+  - [ ] add teardown method for `BaseInterface`
+  - [x] Overhaul Device
     - [x] Integrate Device2 into Contact "Infrastructure"
-    - [ ] flesh out the functionality
-      - [ ] output_ip check that the destination is not source then loopback etc.
-      - [ ] input_ip verify that daddr is for the device
+    - [x] flesh out the functionality
+      - [x] output_ip check that the destination is not source then loopback etc.
+      - [x] input_ip verify that daddr is for the device
     - [x] migrate all previous programs and services to Device2 system
     - [x] implement vlan aware switch
-    - [ ] implement router & vlanif logic
+    - [x] implement router & vlanif logic
     - [x] move views to exlusively use Device2
   - [ ] Device -> contact
     - [x] UDP protocol support
@@ -23,12 +23,7 @@
     - [ ] Tab completion
   - [ ] Enviroment Variables & Variable expansion `Shell.promptBuffer`
 - [x] Remove `Buffer` from client build
-  - [x] Remove `buffer` polyfill
-  - [x] remove dependence on `Buffer` from lib/address
-  - [x] lib/binary/struct remove all references of `Buffer`
-  - [x] Remove uses of `Buffer` from lib/binary/*
-  - [x] Remove uses of `Buffer` from lib/header/*
-  - [x] Remove uses of `Buffer` from lib/packet-capture/*
-  - [x] Remove references to `Buffer` from lib/device/*
 - [ ] Logically separate the code
   - [x] Seperate Address class from struct-type
+
+![a picture of the view network-map.tsx](./src/assets/Screenshot_20240209_124926.png)
