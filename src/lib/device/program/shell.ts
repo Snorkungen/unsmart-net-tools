@@ -94,8 +94,8 @@ function lazywriter_write_options(proc: Process<string>, options: string[], i: n
     let option = options[i];
 
     const MAX_OPTIONS_WIDTH = 34;
+    // !TODO: make the options scrollable, first attempt was did not work well
 
-    // !TODO: make the options scrollable
 
     // move cursor & clear the row
     proc.term_write(CSI(...numbertonumbers(1), ASCIICodes.G, ...CSI(ASCIICodes.Two, ASCIICodes.K)))
@@ -129,19 +129,46 @@ const lazywriter: Program<string> = {
             return ProcessSignal.EXIT;
         }
 
+        let root = "";
+
         if (proc.data) {
             options = options.filter(n => n.startsWith(proc.data));
             if (options.length == 1) {
                 proc.data = options[0];
                 return ProcessSignal.EXIT;
             } else if (options.length == 0) {
+                let [name] = proc.data.split(" ");
+                let subp = proc.data.substring(name.length + 1);
+                let program = proc.device.programs.find(p => p.name == name);
+                while (program && program.sub && program.sub.length) {
+                    options = program.sub.map(p => p.name)
 
-                // !TODO: auto complete for sub programs
-                // check if this could be sub program
+                    if (subp) {
+                        options = options.filter(n => n.startsWith(subp))
+                    }
 
-                return ProcessSignal.EXIT;
+                    if (options.length === 0) {
+                        root = root + name + " ";
+                        [name] = subp.split(" ");
+                        subp = subp.substring(name.length + 1);
+                        program = program.sub.find(p => p.name == name);
+                        continue
+                    }
+                    
+                    if (options.length == 1) {
+                        proc.data = program.name + " " + options[0]
+                        return ProcessSignal.EXIT;
+                    } else {
+                        root = root + name + " ";
+                        break
+                    }
+                }
             }
         }
+
+        if (options.length == 0) {
+            return ProcessSignal.EXIT;
+        } 
 
         let selected_option_idx = 0;
         proc.term_write(new Uint8Array([ASCIICodes.NewLine]));
@@ -152,7 +179,7 @@ const lazywriter: Program<string> = {
             let byte = bytes[0];
 
             if (byte === ASCIICodes.NewLine || byte === ASCIICodes.CarriageReturn) {
-                proc.data = options[selected_option_idx]
+                proc.data = root + options[selected_option_idx]
                 // move cursor to start clear line and go up on line
                 proc.term_write(CSI(...numbertonumbers(1), ASCIICodes.G, ...CSI(ASCIICodes.Two, ASCIICodes.K), ...CSI(ASCIICodes.A)));
                 proc.close(proc, ProcessSignal.EXIT);

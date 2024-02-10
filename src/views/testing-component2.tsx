@@ -2,7 +2,7 @@ import { Component, createEffect } from "solid-js";
 import Terminal, { TerminalRenderer } from "../lib/terminal/terminal";
 import { uint8_concat, uint8_fromNumber, uint8_fromString, uint8_mutateSet, uint8_readUint32BE } from "../lib/binary/uint8-array";
 import { formatTable } from "../lib/device/program/helpers";
-import { Device, ProcessSignal, Program } from "../lib/device/device";
+import { Device, Process, ProcessSignal, Program } from "../lib/device/device";
 import { ICMPV4_TYPES, ICMPV6_TYPES, ICMP_HEADER, ICMP_ECHO_HEADER } from "../lib/header/icmp";
 import { IPV4Address } from "../lib/address/ipv4";
 import { calculateChecksum } from "../lib/binary/checksum";
@@ -21,6 +21,21 @@ import { LoopbackInterface, EthernetInterface } from "../lib/device/interface";
 
 export const TestingComponent2: Component = () => {
     let terminal: Terminal;
+
+    let program : Program = {
+        name: "",
+        init: function (proc: Process<any>, args: string[], data?: Partial<any> | undefined): ProcessSignal {
+            throw new Error("Function not implemented.");
+        }
+    }
+
+    let program2 : Program = {
+        name: "heeee",
+        init: function (proc: Process<any>, args: string[], data?: Partial<any> | undefined): ProcessSignal {
+            throw new Error("Function not implemented.");
+        },
+        sub: [{...program, name: "testr"},{...program, name: "te2str"} ]
+    }
 
     let test_program: Program<number> = {
         name: "test",
@@ -46,6 +61,7 @@ export const TestingComponent2: Component = () => {
 
             return ProcessSignal.__EXPLICIT__;
         },
+        sub : [{...program, name : "haha"}, {...program, name : "heaha"},program2]
     }
 
     createEffect(() => {
