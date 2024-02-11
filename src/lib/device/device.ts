@@ -307,7 +307,7 @@ export class Device {
             }
             this.process_close(this.processes[i]!, init_sig);
             return;
-        } else if (!this.processes[i]?.data && !program.__NODATA__) {
+        } else if (typeof this.processes[i] === "undefined"  && !program.__NODATA__) {
             // check that data is defined but there needs to be away to silence the message if program does not use data.
             console.warn(program.name, "data not defined! to silence warning set __NODATA__ ")
         }

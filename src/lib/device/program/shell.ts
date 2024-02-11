@@ -96,11 +96,56 @@ function lazywriter_write_options(proc: Process<string>, options: string[], i: n
     const MAX_OPTIONS_WIDTH = 34;
     // !TODO: make the options scrollable, first attempt was did not work well
 
+    let offsets = new Array<number>(options.length);
+    let text_length = 0;
+    for (let j = 0; j < options.length; j++) {
+        offsets[j] = text_length;
+        text_length += options[j].length + 1; // account for padding "Space"
+    }
+    text_length -= 1;
+
+
+    let options_start = 0, options_end = options.length - 1;
+
+    if (MAX_OPTIONS_WIDTH < text_length) {
+        // strategy for now is to create chunks
+
+        let chunks: number[][] = [[]], k = 0;
+        let visible_chunk = 0;
+        let chunkbase = 0;
+        for (let j = 0; j < offsets.length; j++) {
+            if ((offsets[j] + options[j].length - chunkbase) >= MAX_OPTIONS_WIDTH) {
+                chunks[++k] = [j];
+                chunkbase = offsets[j];
+            } else {
+                chunks[k].push(j)
+            }
+
+            if (j === i) {
+                visible_chunk = k;
+            }
+        }
+
+        // modify values for the term_write loop
+        options_start = chunks[visible_chunk][0];
+        options_end = chunks[visible_chunk][chunks[visible_chunk].length - 1];
+    }
 
     // move cursor & clear the row
     proc.term_write(CSI(...numbertonumbers(1), ASCIICodes.G, ...CSI(ASCIICodes.Two, ASCIICodes.K)))
 
-    for (let j = 0; j < options.length; j++) {
+    // display marker that there is more to the left
+    if (options_start > 0) {
+        proc.term_write(uint8_concat([
+            CSI(ASCIICodes.Six + 1, ASCIICodes.m), // invert colours
+            uint8_fromString("<"),
+            CSI(ASCIICodes.Zero, ASCIICodes.m), // resset
+        ])); /** the `TerminalRenderer` does not do the color properly at the moment */
+
+        cursorX += 1;
+    }
+
+    for (let j = options_start; j <= options_end; j++) {
         option = options[j]
         if (j < i) {
             cursorX += option.length + 1;
@@ -108,6 +153,17 @@ function lazywriter_write_options(proc: Process<string>, options: string[], i: n
 
         proc.term_write(uint8_fromString(option + " "))
         // !TODO: make the cursor more obvious
+    }
+
+    if (options_end < options.length - 1) {
+        // indicate that there is more to the right
+        proc.term_write(uint8_concat([
+            CSI(...numbertonumbers(MAX_OPTIONS_WIDTH + 1), ASCIICodes.G), // move the cursor
+            CSI(ASCIICodes.Six + 1, ASCIICodes.m), // invert colours
+            uint8_fromString(">"),
+            CSI(ASCIICodes.Zero, ASCIICodes.m), // resset
+        ])); /** the `TerminalRenderer` does not do the color properly at the moment */
+
     }
 
     proc.term_write(CSI(...numbertonumbers(cursorX + 1), ASCIICodes.G))
@@ -154,7 +210,7 @@ const lazywriter: Program<string> = {
                         program = program.sub.find(p => p.name == name);
                         continue
                     }
-                    
+
                     if (options.length == 1) {
                         proc.data = program.name + " " + options[0]
                         return ProcessSignal.EXIT;
@@ -168,7 +224,7 @@ const lazywriter: Program<string> = {
 
         if (options.length == 0) {
             return ProcessSignal.EXIT;
-        } 
+        }
 
         let selected_option_idx = 0;
         proc.term_write(new Uint8Array([ASCIICodes.NewLine]));
@@ -178,17 +234,50 @@ const lazywriter: Program<string> = {
         proc.term_read(proc, (_, bytes) => {
             let byte = bytes[0];
 
-            if (byte === ASCIICodes.NewLine || byte === ASCIICodes.CarriageReturn) {
+            if (byte === ASCIICodes.Space) {
+                options[selected_option_idx] += " ";
+            }
+
+            if (
+                byte === ASCIICodes.Space ||
+                byte === ASCIICodes.NewLine ||
+                byte === ASCIICodes.CarriageReturn
+            ) {
                 proc.data = root + options[selected_option_idx]
                 // move cursor to start clear line and go up on line
                 proc.term_write(CSI(...numbertonumbers(1), ASCIICodes.G, ...CSI(ASCIICodes.Two, ASCIICodes.K), ...CSI(ASCIICodes.A)));
                 proc.close(proc, ProcessSignal.EXIT);
+                return true;
+            }
+
+            if (
+                byte === ASCIICodes.Escape && bytes.length === 1 ||
+                byte === 3
+            ) {
+                proc.term_write(CSI(...numbertonumbers(1), ASCIICodes.G, ...CSI(ASCIICodes.Two, ASCIICodes.K), ...CSI(ASCIICodes.A)));
+                proc.close(proc, ProcessSignal.EXIT);
+                return true;
             }
 
 
+            if (byte === ASCIICodes.Escape && bytes[1] === ASCIICodes.OpenSquareBracket) {
+                let finalByte = bytes[bytes.length - 1];
+
+                if (finalByte === ASCIICodes.D) { // ArrowLeft
+                    if (selected_option_idx === 0)
+                        selected_option_idx = options.length - 1;
+                    else
+                        selected_option_idx = selected_option_idx - 1;
+                } else {
+                    selected_option_idx = (selected_option_idx + 1) % options.length;
+                }
+
+                lazywriter_write_options(proc, options, selected_option_idx)
+                return true;
+            }
+
             selected_option_idx = (selected_option_idx + 1) % options.length;
             lazywriter_write_options(proc, options, selected_option_idx)
-
             return true;
         })
 
@@ -244,9 +333,9 @@ function read(proc: Process<ShellData>, bytes: Uint8Array) {
             } else if (byte == ASCIICodes.Tab) {
                 console.log("[TAB] Pressed")
                 proc.spawn(proc, lazywriter, undefined, proc.data.promptBuffer, (sproc) => {
-                    if (sproc.data) {
-                        replacePromptBuffer(proc, sproc.data)
-                    }
+                    if (sproc.data === undefined)
+                        return;
+                    replacePromptBuffer(proc, sproc.data)
                 });
 
             } else if (byte == ASCIICodes.CarriageReturn || byte == ASCIICodes.NewLine) {

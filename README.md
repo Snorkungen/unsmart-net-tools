@@ -13,10 +13,12 @@
     - [ ] TCP protocol support
 - [ ] Terminal & Shell
   - [ ] batch rendering for more efficient rendering
+  - [ ] `TerminalRenderer` make rendering faster
   - [ ] *Auto resize `TerminaleRenderer` View* haven't decided on what this means
-  - [ ] Feature parity with previous "tty"
-    - [ ] Tab completion
+  - [x] Feature parity with previous "tty"
+    - [x] Tab completion
   - [ ] Enviroment Variables & Variable expansion `Shell.promptBuffer`
+- [ ] visualize `Struct`
 - [x] Remove `Buffer` from client build
 - [ ] Logically separate the code
   - [x] Seperate Address class from struct-type
