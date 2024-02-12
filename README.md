@@ -8,7 +8,9 @@
   - [ ] IPC, create a way for processes to send messages between each other
   - programs
     - [ ] UDP/DNS server and client
-    - [ ] program for interacting with `Device.routes`, "routeman"
+    - [ ] routeinfo
+      - [ ] add a route
+      - [ ] remove a route
   - [ ] Device -> contact
     - [x] UDP protocol support
     - [ ] TCP protocol support

@@ -11,6 +11,7 @@ import { DEVICE_PROGRAM_PING } from "../lib/device/program/ping";
 import { DEVICE_PROGRAM_IFINFO } from "../lib/device/program/ifinfo";
 import { DAEMON_ROUTING } from "../lib/device/program/routing";
 import { EthernetInterface, VlanInterface } from "../lib/device/interface";
+import { DEVICE_PROGRAM_ROUTEINFO } from "../lib/device/program/routeinfo";
 
 class NetworkMapInterface {
     iface: EthernetInterface;
@@ -310,6 +311,7 @@ function init_programs(device: Device) {
     device.programs = [
         DEVICE_PROGRAM_ECHO,
         DEVICE_PROGRAM_IFINFO,
+        DEVICE_PROGRAM_ROUTEINFO,
         DEVICE_PROGRAM_HELP,
         DEVICE_PROGRAM_CLEAR,
         DEVICE_PROGRAM_PING,

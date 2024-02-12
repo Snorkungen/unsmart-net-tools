@@ -18,6 +18,7 @@ import { DAEMON_ECHO_REPLIER } from "../lib/device/program/echo-replier";
 import { DEVICE_PROGRAM_DHCP_CLIENT } from "../lib/device/program/dhcp-client";
 import { DAEMON_DHCP_SERVER } from "../lib/device/program/dhcp-server";
 import { LoopbackInterface, EthernetInterface } from "../lib/device/interface";
+import { DEVICE_PROGRAM_ROUTEINFO } from "../lib/device/program/routeinfo";
 
 export const TestingComponent2: Component = () => {
     let terminal: Terminal;
@@ -73,7 +74,7 @@ export const TestingComponent2: Component = () => {
     // add all my programs to the device
     newdevice.programs.push(
         test_program, DEVICE_PROGRAM_PING, DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_HELP,
-        DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_IFINFO
+        DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_IFINFO, DEVICE_PROGRAM_ROUTEINFO
     )
     newdevice.name = "FIRETTE"
     let newdevice2 = new Device();
