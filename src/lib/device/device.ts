@@ -307,7 +307,7 @@ export class Device {
             }
             this.process_close(this.processes[i]!, init_sig);
             return;
-        } else if (typeof this.processes[i] === "undefined"  && !program.__NODATA__) {
+        } else if (typeof this.processes[i] === "undefined" && !program.__NODATA__) {
             // check that data is defined but there needs to be away to silence the message if program does not use data.
             console.warn(program.name, "data not defined! to silence warning set __NODATA__ ")
         }
@@ -674,7 +674,7 @@ export class Device {
 
         if (data.loopback) {
             data.destination = true; // it is looped back IT IS for this device
-        } if (data.multicast) {
+        } else if (data.multicast) {
             // !TODO: add a more generic way of checking multicast subscriptions
             // for now assume that all multicasts are FF01:0:0:0:0:0:0:1 A.K.A. ALL_NODES
             data.destination = true; // REMEMBER, THIS IS TEMPORARY
@@ -682,8 +682,10 @@ export class Device {
             data.destination = false; // this could have been set by lower level things
             daddr_check: for (let iface of this.interfaces) for (let source of iface.addresses) {
                 if (source.address.constructor != daddr.constructor) continue;
-                if (uint8_equals(source.address.buffer, daddr.buffer))
-                    data.destination = true; break daddr_check;
+                if (uint8_equals(source.address.buffer, daddr.buffer)) {
+                    data.destination = true;
+                    break daddr_check;
+                }
             }
         }
 
