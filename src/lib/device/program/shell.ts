@@ -93,8 +93,7 @@ function lazywriter_write_options(proc: Process<string>, options: string[], i: n
     let cursorX = 0;
     let option = options[i];
 
-    const MAX_OPTIONS_WIDTH = 34;
-    // !TODO: make the options scrollable, first attempt was did not work well
+    const MAX_OPTIONS_WIDTH = 48; // !TODO: make querying terminal data a possibility
 
     let offsets = new Array<number>(options.length);
     let text_length = 0;
@@ -139,7 +138,7 @@ function lazywriter_write_options(proc: Process<string>, options: string[], i: n
         proc.term_write(uint8_concat([
             CSI(ASCIICodes.Six + 1, ASCIICodes.m), // invert colours
             uint8_fromString("<"),
-            CSI(ASCIICodes.Zero, ASCIICodes.m), // resset
+            CSI(ASCIICodes.Zero, ASCIICodes.m), // reset
         ])); /** the `TerminalRenderer` does not do the color properly at the moment */
 
         cursorX += 1;
@@ -151,8 +150,16 @@ function lazywriter_write_options(proc: Process<string>, options: string[], i: n
             cursorX += option.length + 1;
         }
 
-        proc.term_write(uint8_fromString(option + " "))
-        // !TODO: make the cursor more obvious
+        if (j === i) {
+            proc.term_write(uint8_concat([
+                CSI(ASCIICodes.Six + 1, ASCIICodes.m), // invert colours
+                uint8_fromString(option),
+                CSI(ASCIICodes.Zero, ASCIICodes.m), // reset
+                CSI(ASCIICodes.C)
+            ]));
+        } else {
+            proc.term_write(uint8_fromString(option + " "))
+        }
     }
 
     if (options_end < options.length - 1) {
@@ -161,7 +168,7 @@ function lazywriter_write_options(proc: Process<string>, options: string[], i: n
             CSI(...numbertonumbers(MAX_OPTIONS_WIDTH + 1), ASCIICodes.G), // move the cursor
             CSI(ASCIICodes.Six + 1, ASCIICodes.m), // invert colours
             uint8_fromString(">"),
-            CSI(ASCIICodes.Zero, ASCIICodes.m), // resset
+            CSI(ASCIICodes.Zero, ASCIICodes.m), // reset
         ])); /** the `TerminalRenderer` does not do the color properly at the moment */
 
     }
@@ -263,7 +270,7 @@ const lazywriter: Program<string> = {
             if (byte === ASCIICodes.Escape && bytes[1] === ASCIICodes.OpenSquareBracket) {
                 let finalByte = bytes[bytes.length - 1];
 
-                if (finalByte === ASCIICodes.D) { // ArrowLeft
+                if (finalByte === ASCIICodes.D || finalByte === ASCIICodes.B) { // ArrowLeft
                     if (selected_option_idx === 0)
                         selected_option_idx = options.length - 1;
                     else

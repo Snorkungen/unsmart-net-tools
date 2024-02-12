@@ -5,9 +5,10 @@
 - Device
   - [ ] add teardown method for `BaseInterface`
   - [ ] spawned programs able to return values to parent
+  - [ ] IPC, create a way for processes to send messages between each other
   - programs
     - [ ] UDP/DNS server and client
-    - [ ] program for interacting with `Device.routes`
+    - [ ] program for interacting with `Device.routes`, "routeman"
   - [ ] Device -> contact
     - [x] UDP protocol support
     - [ ] TCP protocol support
@@ -15,8 +16,6 @@
   - [ ] batch rendering for more efficient rendering
   - [ ] `TerminalRenderer` make rendering faster
   - [ ] *Auto resize `TerminaleRenderer` View* haven't decided on what this means
-  - [x] Feature parity with previous "tty"
-    - [x] Tab completion
   - [ ] Enviroment Variables & Variable expansion `Shell.promptBuffer`
 - [ ] visualize `Struct`
 - [x] Remove `Buffer` from client build
