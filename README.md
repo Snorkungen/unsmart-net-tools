@@ -6,6 +6,7 @@
   - [ ] add teardown method for `BaseInterface`
   - [ ] spawned programs able to return values to parent
   - [ ] IPC, create a way for processes to send messages between each other
+  - [ ] Investigate improving the device scheduler
   - programs
     - [ ] UDP/DNS server and client
     - [ ] routeinfo
@@ -16,7 +17,7 @@
     - [ ] TCP protocol support
 - [ ] Terminal & Shell
   - [ ] batch rendering for more efficient rendering
-  - [ ] `TerminalRenderer` make rendering faster
+  - [x] `TerminalRenderer` make rendering faster
   - [ ] *Auto resize `TerminaleRenderer` View* haven't decided on what this means
   - [ ] Enviroment Variables & Variable expansion `Shell.promptBuffer`
 - [ ] visualize `Struct`

@@ -1,4 +1,4 @@
-import { uint8_concat } from "../binary/uint8-array";
+import { uint8_concat, uint8_mutateSet, uint8_set } from "../binary/uint8-array";
 import { ASCIICodes, CSI, readParams } from "./shared";
 export default class Terminal {
     private renderer: TerminalRenderer;
@@ -152,10 +152,41 @@ export default class Terminal {
     read?: (bytes: Uint8Array) => void;
 
     // this is a temporary implementation
-    write(bytes: Uint8Array) {
-        // this is the issue
-        this.renderer.buffer = uint8_concat([this.renderer.buffer, bytes]); // this copies to much theres no need for ram
+    write_buffer = new Uint8Array(100);
+    write_buffer_length = 0;
+    write_waiting = false;
+    write_timeout = 50;
+    write_timeout_callback = (() => {
+        if (!this.write_waiting) return;
+        this.renderer.buffer = this.write_buffer.subarray(0, this.write_buffer_length);
+        this.write_buffer_length = 0;
         this.renderer.render();
+        this.write_waiting = false;
+    }).bind(this)
+    write(bytes: Uint8Array, fast = true) {
+        if (fast || (bytes.byteLength + this.write_buffer_length) > this.write_buffer.byteLength) {
+            // do some special logic
+            if (this.write_buffer_length === 0)
+                this.renderer.buffer = bytes;
+            else {
+                this.renderer.buffer = uint8_concat([this.write_buffer, bytes]);
+                this.write_buffer_length = 0;
+            }
+
+            this.renderer.render()
+            this.write_waiting = false;
+            return;
+        }
+
+        uint8_mutateSet(this.write_buffer, bytes, this.write_buffer_length);
+        this.write_buffer_length += bytes.byteLength;
+
+        // create timeout that checks that the data is the
+        if (this.write_waiting)
+            return;
+
+        this.write_waiting = true;
+        setTimeout(this.write_timeout_callback, this.write_timeout)
     }
 
     flush() {
@@ -168,12 +199,11 @@ type TerminalRendererCursor = {
     y: number;
 }
 
+/** i want to make this just a linear Uint8Array */
 type TerminalRendererCell = {
-    content?: string;
-
+    byte: number;
     fg: number;
     bg: number;
-
     // space for future
 }
 export class TerminalRenderer {
@@ -198,6 +228,7 @@ export class TerminalRenderer {
 
     EMPTY_CHAR = "&nbsp;"
     EMPTY_CELL = {
+        byte: 0,
         fg: this.COLOR_FG,
         bg: this.COLOR_BG,
     };
@@ -209,12 +240,16 @@ export class TerminalRenderer {
     canvas: HTMLCanvasElement;
     ctx: CanvasRenderingContext2D;
 
-
-    private cell_dimensions(): [width: number, height: number, number, number] {
+    private cell_dimensions_cached?: [width: number, height: number];
+    private cell_dimensions(): [width: number, height: number] {
+        if (this.cell_dimensions_cached) {
+            return this.cell_dimensions_cached;
+        }
         this.ctx.textBaseline = "top"
         this.ctx.font = "18px monospace";
-        let mt = this.ctx.measureText("_")
-        return [Math.ceil(mt.width) || 11, Math.ceil(mt.fontBoundingBoxDescent) || 20, mt.width, mt.actualBoundingBoxDescent]
+        let mt = this.ctx.measureText("_");
+        this.cell_dimensions_cached = [Math.ceil(mt.width) || 11, Math.ceil(mt.fontBoundingBoxDescent + mt.fontBoundingBoxAscent) || 23];
+        return this.cell_dimensions_cached;
     }
 
     private cell_draw_background(x: number, y: number, color: number) {
@@ -223,30 +258,30 @@ export class TerminalRenderer {
         this.ctx.fillRect(x * width + this.cell_xpad, y * height + this.cell_ypad, width, height)
     }
 
-    private cell_draw_text(byte: number | undefined, x: number, y: number, fg: number = this.COLOR_FG, bg: number = this.COLOR_BG) {
+    private cell_draw_text(byte: number, x: number, y: number, fg: number = this.COLOR_FG, bg: number = this.COLOR_BG) {
         this.cell_draw_background(x, y, bg);
-        let [width, height, rh] = this.cell_dimensions();
-        if (typeof byte != "number") return; this.ctx.fillStyle = this.color(fg)
-        this.ctx.fillText(String.fromCharCode(byte), x * width + this.cell_xpad, y * height + Math.floor((height - rh) / 5) + this.cell_ypad)
+        let [width, height] = this.cell_dimensions();
+        if (byte <= 0) return; this.ctx.fillStyle = this.color(fg)
+        this.ctx.textBaseline = "top"
+        this.ctx.font = "18px monospace";
+        this.ctx.fillText(String.fromCharCode(byte), x * width + this.cell_xpad, y * height + (width / 5) + this.cell_ypad)
     }
 
     private cell_xpad = 0;
     private cell_ypad = 0;
 
-    // some bullshit redraw
-
     draw() {
         for (let y = this.yOffset; y < this.rows.length; y++) {
             for (let x = 0; x < this.rows[y].length; x++) {
                 let cell = this.rows[y][x];
-                this.cell_draw_text(cell.content?.charCodeAt(0), x, y, cell.fg, cell.bg)
+                this.cell_draw_text(cell.byte, x, y, cell.fg, cell.bg)
             }
         }
 
         // draw cursor
         let cury = this.cursor.y - this.yOffset, curx = this.cursor.x;
         let cell = this.rows[this.cursor.y][this.cursor.x];
-        this.cell_draw_text(cell.content?.charCodeAt(0), curx, cury, cell.bg, cell.fg)
+        this.cell_draw_text(cell.byte, curx, cury, cell.bg, cell.fg)
     }
 
     constructor(canvas: HTMLCanvasElement) {
@@ -293,8 +328,10 @@ export class TerminalRenderer {
         this.handleScroll();
         if (y - this.yOffset < 0) return;
 
-        if (this.rows[y] && this.rows[y][x]) this.rows[y][x] = {
-            fg: this.COLOR_FG, bg: this.COLOR_BG
+        if (this.rows[y] && this.rows[y][x]) {
+            this.rows[y][x].bg = this.COLOR_BG;
+            this.rows[y][x].fg = this.COLOR_FG;
+            this.rows[y][x].byte = 0;
         }
     }
 
@@ -626,7 +663,7 @@ export class TerminalRenderer {
 
             this.rows[this.cursor.y][this.cursor.x].bg = this.COLOR_BG;
             this.rows[this.cursor.y][this.cursor.x].fg = this.COLOR_FG;
-            this.rows[this.cursor.y][this.cursor.x].content = String.fromCharCode(byte);
+            this.rows[this.cursor.y][this.cursor.x].byte = byte;
 
             // advance cursor
             this.cursor.x += 1;
@@ -641,7 +678,7 @@ export class TerminalRenderer {
         this.handleScroll();
 
         let cy = this.cursor.y - this.yOffset, cx = this.cursor.x;
-        let cursorbyte = this.rows[this.cursor.y][this.cursor.x].content?.charCodeAt(0);
+        let cursorbyte = this.rows[this.cursor.y][this.cursor.x].byte;
         this.cell_draw_text(cursorbyte, cx, cy, this.COLOR_BG, this.COLOR_FG)
 
         // clear previous cursor
@@ -651,7 +688,7 @@ export class TerminalRenderer {
             // figure out what goes here
             if (this.rows[this.prevCursor.y]) {
                 let cell = this.rows[this.prevCursor.y][this.prevCursor.x];
-                this.cell_draw_text(cell.content?.charCodeAt(0), cx, cy, cell.fg, cell.bg);
+                this.cell_draw_text(cell.byte, cx, cy, cell.fg, cell.bg);
             };
         }
 
@@ -699,7 +736,7 @@ export class TerminalRenderer {
                 let cellData = this.rows[j + this.yOffset][i];
                 let cy = j, cx = i;
 
-                this.cell_draw_text(cellData.content?.charCodeAt(0), cx, cy, cellData.fg, cellData.bg)
+                this.cell_draw_text(cellData.byte, cx, cy, cellData.fg, cellData.bg)
             }
         }
 
