@@ -93,7 +93,7 @@ function lazywriter_write_options(proc: Process<string>, options: string[], i: n
     let cursorX = 0;
     let option = options[i];
 
-    const MAX_OPTIONS_WIDTH = 48; // !TODO: make querying terminal data a possibility
+    const MAX_OPTIONS_WIDTH = 38; // !TODO: make querying terminal data a possibility
 
     let offsets = new Array<number>(options.length);
     let text_length = 0;
@@ -139,9 +139,10 @@ function lazywriter_write_options(proc: Process<string>, options: string[], i: n
             CSI(ASCIICodes.Six + 1, ASCIICodes.m), // invert colours
             uint8_fromString("<"),
             CSI(ASCIICodes.Zero, ASCIICodes.m), // reset
+            new Uint8Array([32])
         ])); /** the `TerminalRenderer` does not do the color properly at the moment */
 
-        cursorX += 1;
+        cursorX += 2;
     }
 
     for (let j = options_start; j <= options_end; j++) {
