@@ -186,12 +186,43 @@ export class TerminalRenderer {
     private yOffset: number = 0;
 
     container: HTMLElement;
+    canvas: HTMLCanvasElement;
+    ctx: CanvasRenderingContext2D;
 
-    constructor(container: HTMLElement) {
+
+    private cell_dimensions(): [width: number, height: number] {
+        this.ctx.textBaseline = "top"
+        this.ctx.font = "1em monospace";
+        let mt = this.ctx.measureText("X")
+
+        return [Math.ceil(mt.width), Math.ceil(mt.fontBoundingBoxDescent)]
+    }
+
+    constructor(container: HTMLElement, canvas?: HTMLCanvasElement) {
         this.container = container;
-
         this.container.style.fontFamily = "monospace";
-        // this.container.style.backgroundColor = this.color(this.COLOR_BG);
+
+
+        this.canvas = document.createElement("canvas")
+        this.container.parentElement?.append(this.canvas)
+        this.ctx = this.canvas.getContext("2d")!;
+        this.canvas.style.marginTop = "2px"
+
+        this.ctx.textBaseline = "top"
+        this.ctx.font = "1em monospace";
+
+        this.canvas.width = this.COLUMN_WIDTH * 10; // !TODO: dynamically set the witdth of the canvas
+        this.canvas.height = this.ROW_HEIGHT * 18; // thees values are hardcoded
+
+        window.setTimeout(() => {
+            let [width, height] = this.cell_dimensions();
+            console.log(width, height)
+        }, 1)
+
+        this.ctx.fillStyle = "black"
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+        this.container.style.backgroundColor = this.color(this.COLOR_BG);
 
         // init rows
         this.rows = new Array<TerminalRendererCell[]>(this.ROW_HEIGHT);
@@ -232,6 +263,10 @@ export class TerminalRenderer {
     }
 
     private _eraseCell(x: number, y: number) {
+        let [width, height] = this.cell_dimensions();
+        this.ctx.fillStyle = this.color(this.COLOR_BG);
+        this.ctx.fillRect(x * width, (y - this.yOffset) * height, width, height);
+
         this.handleScroll();
         if (y - this.yOffset < 0) return;
 
@@ -466,8 +501,8 @@ export class TerminalRenderer {
                 case ASCIICodes.S + 1: { // T
                     // Scroll Down
                     let [n] = readParams(rawParams, 1, 1);
-                    
-                    
+
+
                     let tmp = this.ROW_HEIGHT - 1;
                     this.cursor.y = (Math.floor(this.cursor.y / this.ROW_HEIGHT) + n) * this.ROW_HEIGHT + tmp;
 
@@ -571,6 +606,16 @@ export class TerminalRenderer {
             // draw character and move cursor position
             let activeElement = this.container.children[this.cursor.y - this.yOffset].children[this.cursor.x] as HTMLElement;
 
+            let cy = this.cursor.y - this.yOffset, cx = this.cursor.x;
+            let [width, height] = this.cell_dimensions();
+
+            // draw background first
+            this.ctx.fillStyle = this.color(this.COLOR_BG);
+            this.ctx.fillRect(cx * width, cy * height, width, height)
+
+            this.ctx.fillStyle = this.color(this.COLOR_FG)
+            this.ctx.fillText(String.fromCharCode(byte), cx * width, cy * height)
+
             // hacky fix
             if (byte == ASCIICodes.Space) {
                 activeElement.innerHTML = "&nbsp"
@@ -608,6 +653,32 @@ export class TerminalRenderer {
             cursorElement.style.color = this.color(this.COLOR_FG)
         }
 
+
+        let cy = this.cursor.y - this.yOffset, cx = this.cursor.x;
+        let [width, height] = this.cell_dimensions();
+
+        this.ctx.fillStyle = this.color(this.COLOR_FG);
+        this.ctx.fillRect(cx * width, cy * height, width, height)
+
+        // clear previous cursor
+        if ((this.prevCursor.y >= this.yOffset)) {
+            cy = this.prevCursor.y - this.yOffset, cx = this.prevCursor.x;
+            this.ctx.fillStyle = this.color(this.COLOR_BG);
+            this.ctx.fillRect(cx * width, cy * height, width, height)
+
+            // figure out what goes here
+            if (this.rows[this.prevCursor.y]) {
+                let cell = this.rows[this.prevCursor.y][this.prevCursor.x];
+                if (cell) {
+                    this.ctx.fillStyle = this.color(cell.bg);
+                    this.ctx.fillRect(cx * width, cy * height, width, height)
+                    if (cell.content) {
+                        this.ctx.fillStyle = this.color(cell.fg)
+                        this.ctx.fillText(cell.content, cx * width, cy * height);
+                    }
+                }
+            };
+        }
 
         // draw current cursor
         cursorElement = this.container.children[this.cursor.y - this.yOffset].children[this.cursor.x] as HTMLElement;
@@ -647,10 +718,24 @@ export class TerminalRenderer {
             return;
         }
 
+        let [width, height] = this.cell_dimensions();
+
+        this.ctx.fillStyle = this.color(this.COLOR_BG_DEFAULT);
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height)
+
         // shift container rows
         for (let j = 0; j < this.container.children.length; j++) {
             for (let i = 0; i < this.container.children[j].children.length; i++) {
                 let cellData = this.rows[j + this.yOffset][i], cellElem = this.container.children[j].children[i] as HTMLElement;
+
+
+                let cy = j, cx = i;
+                this.ctx.fillStyle = this.color(cellData.bg);
+                this.ctx.fillRect(cx * width, cy * height, width, height);
+                this.ctx.fillStyle = this.color(cellData.fg);
+                if (cellData.content) {
+                    this.ctx.fillText(cellData.content, cx * width, cy * height)
+                }
 
                 cellElem.style.backgroundColor = this.color(cellData.bg)
                 cellElem.style.color = this.color(cellData.fg)

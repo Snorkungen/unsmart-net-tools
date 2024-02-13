@@ -66,6 +66,7 @@ export const TestingComponent2: Component = () => {
     }
 
     createEffect(() => {
+        terminal.write(uint8_fromString("Hello wte"))
         newdevice.terminal_attach(terminal);
         newdevice.process_start(DAEMON_SHELL, []);
     });
@@ -204,7 +205,6 @@ export const TestingComponent2: Component = () => {
             <div ref={(el) => {
                 terminal = new Terminal(el)
             }}></div>
-
         </div>
     )
 }
