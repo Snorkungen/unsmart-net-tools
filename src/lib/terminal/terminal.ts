@@ -6,9 +6,30 @@ export default class Terminal {
 
     constructor(container: HTMLElement) {
         this.container = container;
-        this.renderer = new TerminalRenderer(container);
 
+        let canvas = document.createElement("canvas");
+        this.container.appendChild(canvas)
         this.container.tabIndex = 0;
+
+        /**
+         * The following is a work-around because chromium based browswers be havin' issues 
+         */
+        if (!navigator.userAgent.includes("Chrome")) {
+            this.renderer = new TerminalRenderer(canvas);
+        } else {
+            this.renderer = new TerminalRenderer(canvas);
+            /*
+                work-around for chromium based browsers that i was having issues with 
+            */
+            setTimeout(() => {
+                this.renderer.draw();
+            }, 4)
+
+            window.addEventListener("hashchange", () => {
+                if (!this.container.isConnected) return;
+                this.renderer.draw()
+            })
+        }
 
         this.container.addEventListener("click", (event) => {
             (event.currentTarget instanceof HTMLElement) && event.currentTarget.focus()
@@ -185,44 +206,59 @@ export class TerminalRenderer {
     private rows: TerminalRendererCell[][];
     private yOffset: number = 0;
 
-    container: HTMLElement;
     canvas: HTMLCanvasElement;
     ctx: CanvasRenderingContext2D;
 
 
-    private cell_dimensions(): [width: number, height: number] {
+    private cell_dimensions(): [width: number, height: number, number, number] {
         this.ctx.textBaseline = "top"
-        this.ctx.font = "1em monospace";
-        let mt = this.ctx.measureText("X")
-
-        return [Math.ceil(mt.width), Math.ceil(mt.fontBoundingBoxDescent)]
+        this.ctx.font = "18px monospace";
+        let mt = this.ctx.measureText("_")
+        return [Math.ceil(mt.width) || 11, Math.ceil(mt.fontBoundingBoxDescent) || 20, mt.width, mt.actualBoundingBoxDescent]
     }
 
-    constructor(container: HTMLElement, canvas?: HTMLCanvasElement) {
-        this.container = container;
-        this.container.style.fontFamily = "monospace";
+    private cell_draw_background(x: number, y: number, color: number) {
+        let [width, height] = this.cell_dimensions();
+        this.ctx.fillStyle = this.color(color);
+        this.ctx.fillRect(x * width + this.cell_xpad, y * height + this.cell_ypad, width, height)
+    }
 
+    private cell_draw_text(byte: number | undefined, x: number, y: number, fg: number = this.COLOR_FG, bg: number = this.COLOR_BG) {
+        this.cell_draw_background(x, y, bg);
+        let [width, height, rh] = this.cell_dimensions();
+        if (typeof byte != "number") return; this.ctx.fillStyle = this.color(fg)
+        this.ctx.fillText(String.fromCharCode(byte), x * width + this.cell_xpad, y * height + Math.floor((height - rh) / 5) + this.cell_ypad)
+    }
 
-        this.canvas = document.createElement("canvas")
-        this.container.parentElement?.append(this.canvas)
+    private cell_xpad = 0;
+    private cell_ypad = 0;
+
+    // some bullshit redraw
+
+    draw() {
+        for (let y = this.yOffset; y < this.rows.length; y++) {
+            for (let x = 0; x < this.rows[y].length; x++) {
+                let cell = this.rows[y][x];
+                this.cell_draw_text(cell.content?.charCodeAt(0), x, y, cell.fg, cell.bg)
+            }
+        }
+
+        // draw cursor
+        let cury = this.cursor.y - this.yOffset, curx = this.cursor.x;
+        let cell = this.rows[this.cursor.y][this.cursor.x];
+        this.cell_draw_text(cell.content?.charCodeAt(0), curx, cury, cell.bg, cell.fg)
+    }
+
+    constructor(canvas: HTMLCanvasElement) {
+        this.canvas = canvas;
         this.ctx = this.canvas.getContext("2d")!;
-        this.canvas.style.marginTop = "2px"
 
-        this.ctx.textBaseline = "top"
-        this.ctx.font = "1em monospace";
-
-        this.canvas.width = this.COLUMN_WIDTH * 10; // !TODO: dynamically set the witdth of the canvas
-        this.canvas.height = this.ROW_HEIGHT * 18; // thees values are hardcoded
-
-        window.setTimeout(() => {
-            let [width, height] = this.cell_dimensions();
-            console.log(width, height)
-        }, 1)
+        let [width, height] = this.cell_dimensions();
+        this.canvas.width = this.COLUMN_WIDTH * width + this.cell_xpad * 2;
+        this.canvas.height = this.ROW_HEIGHT * height + this.cell_ypad * 2;
 
         this.ctx.fillStyle = "black"
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-        this.container.style.backgroundColor = this.color(this.COLOR_BG);
 
         // init rows
         this.rows = new Array<TerminalRendererCell[]>(this.ROW_HEIGHT);
@@ -231,23 +267,12 @@ export class TerminalRenderer {
         for (let i = 0; i < this.ROW_HEIGHT; i++) {
             // duplicate state
             this.rows[i] = new Array<TerminalRendererCell>(this.COLUMN_WIDTH);
-
-            let row = document.createElement("div")
-            row.style.padding = "0";
-            row.style.margin = "0";
-            row.style.lineHeight = "normal";
-            row.style.backgroundColor = this.color(this.COLOR_BG);
             for (let j = 0; j < this.COLUMN_WIDTH; j++) {
-                let p = document.createElement("span")
-                p.innerHTML = this.EMPTY_CHAR
-                row.append(p)
-
                 // duplicate state
                 this.rows[i][j] = {
                     ...this.EMPTY_CELL
                 }
             }
-            this.container.append(row)
         }
     }
 
@@ -263,17 +288,10 @@ export class TerminalRenderer {
     }
 
     private _eraseCell(x: number, y: number) {
-        let [width, height] = this.cell_dimensions();
-        this.ctx.fillStyle = this.color(this.COLOR_BG);
-        this.ctx.fillRect(x * width, (y - this.yOffset) * height, width, height);
+        this.cell_draw_background(x, y - this.yOffset, this.COLOR_BG)
 
         this.handleScroll();
         if (y - this.yOffset < 0) return;
-
-        let cell = this.container.children[y - this.yOffset].children[x];
-        cell.innerHTML = this.EMPTY_CHAR;
-        (cell as HTMLElement).style.backgroundColor = this.color(this.COLOR_BG);
-        (cell as HTMLElement).style.color = this.color(this.COLOR_FG);
 
         if (this.rows[y] && this.rows[y][x]) this.rows[y][x] = {
             fg: this.COLOR_FG, bg: this.COLOR_BG
@@ -527,7 +545,7 @@ export class TerminalRenderer {
     }
 
     render() {
-        if (!this.container) {
+        if (!this.canvas) {
             throw new Error("container missing can't render")
         }
 
@@ -603,30 +621,9 @@ export class TerminalRenderer {
 
             this.handleScroll();
 
-            // draw character and move cursor position
-            let activeElement = this.container.children[this.cursor.y - this.yOffset].children[this.cursor.x] as HTMLElement;
-
             let cy = this.cursor.y - this.yOffset, cx = this.cursor.x;
-            let [width, height] = this.cell_dimensions();
+            this.cell_draw_text(byte, cx, cy, this.COLOR_FG, this.COLOR_BG);
 
-            // draw background first
-            this.ctx.fillStyle = this.color(this.COLOR_BG);
-            this.ctx.fillRect(cx * width, cy * height, width, height)
-
-            this.ctx.fillStyle = this.color(this.COLOR_FG)
-            this.ctx.fillText(String.fromCharCode(byte), cx * width, cy * height)
-
-            // hacky fix
-            if (byte == ASCIICodes.Space) {
-                activeElement.innerHTML = "&nbsp"
-            } else {
-                activeElement.innerHTML = String.fromCharCode(byte);
-            }
-
-            activeElement.style.backgroundColor = this.color(this.COLOR_BG);
-            activeElement.style.color = this.color(this.COLOR_FG);
-
-            // pararell state
             this.rows[this.cursor.y][this.cursor.x].bg = this.COLOR_BG;
             this.rows[this.cursor.y][this.cursor.x].fg = this.COLOR_FG;
             this.rows[this.cursor.y][this.cursor.x].content = String.fromCharCode(byte);
@@ -643,47 +640,22 @@ export class TerminalRenderer {
 
         this.handleScroll();
 
-        let cursorElement: HTMLElement;
-
-        // clear previous cursor
-        // ignore prev cursor if prevcursor not in view
-        if (this.container.children[this.prevCursor.y - this.yOffset]) {
-            cursorElement = this.container.children[this.prevCursor.y - this.yOffset].children[this.prevCursor.x] as HTMLElement;
-            cursorElement.style.backgroundColor = this.color(this.COLOR_BG)
-            cursorElement.style.color = this.color(this.COLOR_FG)
-        }
-
-
         let cy = this.cursor.y - this.yOffset, cx = this.cursor.x;
-        let [width, height] = this.cell_dimensions();
-
-        this.ctx.fillStyle = this.color(this.COLOR_FG);
-        this.ctx.fillRect(cx * width, cy * height, width, height)
+        let cursorbyte = this.rows[this.cursor.y][this.cursor.x].content?.charCodeAt(0);
+        this.cell_draw_text(cursorbyte, cx, cy, this.COLOR_BG, this.COLOR_FG)
 
         // clear previous cursor
         if ((this.prevCursor.y >= this.yOffset)) {
             cy = this.prevCursor.y - this.yOffset, cx = this.prevCursor.x;
-            this.ctx.fillStyle = this.color(this.COLOR_BG);
-            this.ctx.fillRect(cx * width, cy * height, width, height)
 
             // figure out what goes here
             if (this.rows[this.prevCursor.y]) {
                 let cell = this.rows[this.prevCursor.y][this.prevCursor.x];
-                if (cell) {
-                    this.ctx.fillStyle = this.color(cell.bg);
-                    this.ctx.fillRect(cx * width, cy * height, width, height)
-                    if (cell.content) {
-                        this.ctx.fillStyle = this.color(cell.fg)
-                        this.ctx.fillText(cell.content, cx * width, cy * height);
-                    }
-                }
+                this.cell_draw_text(cell.content?.charCodeAt(0), cx, cy, cell.fg, cell.bg);
             };
         }
 
         // draw current cursor
-        cursorElement = this.container.children[this.cursor.y - this.yOffset].children[this.cursor.x] as HTMLElement;
-        cursorElement.style.backgroundColor = this.color(this.COLOR_FG)
-        cursorElement.style.color = this.color(this.COLOR_BG)
         this.prevCursor.x = this.cursor.x;
         this.prevCursor.y = this.cursor.y;
 
@@ -718,28 +690,16 @@ export class TerminalRenderer {
             return;
         }
 
-        let [width, height] = this.cell_dimensions();
-
         this.ctx.fillStyle = this.color(this.COLOR_BG_DEFAULT);
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height)
 
         // shift container rows
-        for (let j = 0; j < this.container.children.length; j++) {
-            for (let i = 0; i < this.container.children[j].children.length; i++) {
-                let cellData = this.rows[j + this.yOffset][i], cellElem = this.container.children[j].children[i] as HTMLElement;
-
-
+        for (let j = 0; j < this.ROW_HEIGHT; j++) {
+            for (let i = 0; i < this.COLUMN_WIDTH; i++) {
+                let cellData = this.rows[j + this.yOffset][i];
                 let cy = j, cx = i;
-                this.ctx.fillStyle = this.color(cellData.bg);
-                this.ctx.fillRect(cx * width, cy * height, width, height);
-                this.ctx.fillStyle = this.color(cellData.fg);
-                if (cellData.content) {
-                    this.ctx.fillText(cellData.content, cx * width, cy * height)
-                }
 
-                cellElem.style.backgroundColor = this.color(cellData.bg)
-                cellElem.style.color = this.color(cellData.fg)
-                cellElem.innerHTML = cellData.content || this.EMPTY_CHAR;
+                this.cell_draw_text(cellData.content?.charCodeAt(0), cx, cy, cellData.fg, cellData.bg)
             }
         }
 
