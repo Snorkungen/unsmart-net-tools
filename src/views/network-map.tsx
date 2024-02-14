@@ -349,7 +349,7 @@ let swIface_pc1 = networkSwitch.interface_add(new EthernetInterface(networkSwitc
 let swIface_pc2 = networkSwitch.interface_add(new EthernetInterface(networkSwitch));
 let swIface_pc3 = networkSwitch.interface_add(new EthernetInterface(networkSwitch));
 
-let swIface_pc4 = networkSwitch2.interface_add(new EthernetInterface(networkSwitch));
+let swIface2_pc4 = networkSwitch2.interface_add(new EthernetInterface(networkSwitch2));
 let swIface2_pc5 = networkSwitch2.interface_add(new EthernetInterface(networkSwitch2));
 
 let vlan10: EthernetInterface["vlan"] = {
@@ -368,7 +368,7 @@ swIface_pc2.vlan = vlan10;
 swIface_pc3.vlan = vlan10;
 
 // vlan test
-swIface_pc4.vlan = vlan20;
+swIface2_pc4.vlan = vlan20;
 swIface2_pc5.vlan = vlan20;
 
 swIface_trunk.vlan = vlanTrunk;
@@ -411,7 +411,7 @@ pc5.routes.push({ destination: new IPV4Address("0.0.0.0"), netmask: createMask(I
 swIface_pc1.connect(iface_pc1);
 swIface_pc2.connect(iface_pc2);
 swIface_pc3.connect(iface_pc3);
-swIface_pc4.connect(iface_pc4);
+swIface2_pc4.connect(iface_pc4);
 
 swIface2_pc5.connect(iface_pc5)
 
