@@ -10,7 +10,7 @@ import { IPV4_HEADER, IPV4_PSEUDO_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTO
 import { ARP_HEADER, ARP_OPCODES, createARPHeader } from "../header/arp";
 import { PacketCaptureHFormat, PacketCaptureNFormat, PacketCaptureRecordReader } from "../packet-capture/reader";
 import { calculateChecksum } from "../binary/checksum";
-import { ICMPV6_TYPES, ICMP_HEADER, ICMP_NDP_HEADER } from "../header/icmp";
+import { ICMPV4_TYPES, ICMPV6_TYPES, ICMP_HEADER, ICMP_NDPFLAG_SOLICITED, ICMP_NDP_HEADER } from "../header/icmp";
 import { UDP_HEADER } from "../header/udp";
 import { BaseInterface, VlanInterface, EthernetInterface } from "./interface";
 
@@ -426,196 +426,6 @@ export class Device {
     private process_term_flush() { (this.terminal) && this.terminal.flush(); }
     private process_term_flushblackhole() { }
 
-    /** data.buffer contains the pseudo_header followed by the udp header */
-    output_udp(data: NetworkData, destination: BaseAddress, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
-        if (!route && !(route = this.route_resolve(destination))) return {
-            success: false,
-            error: "HOSTUNREACH",
-            message: "No outgoing route found"
-        }
-
-        let source = route.iface.addresses.find(value => value.address.constructor == destination.constructor);
-
-        if (destination instanceof IPV4Address) {
-            let pseudo_header = IPV4_PSEUDO_HEADER.from(data.buffer.subarray(0, IPV4_PSEUDO_HEADER.size)),
-                udphdr = UDP_HEADER.from(data.buffer.slice(pseudo_header.size));
-
-            if (uint8_readUint32BE(pseudo_header.get("saddr").buffer) === 0) {
-                if (!source) return {
-                    success: false,
-                    error: "HOSTUNREACH",
-                    message: "no source address for interface found"
-                }
-
-                pseudo_header.set("saddr", source.address);
-            }
-
-            if (uint8_readUint32BE(pseudo_header.get("daddr").buffer) === 0)
-                pseudo_header.set("daddr", destination);
-
-            pseudo_header.set("proto", PROTOCOLS.UDP);
-            pseudo_header.set("len", udphdr.size);
-            udphdr.set("length", udphdr.size);
-
-            udphdr.set("csum", calculateChecksum(uint8_concat([pseudo_header.getBuffer(), udphdr.getBuffer()])) || 0xffff);
-
-            return this.output_ipv4({
-                ...data, buffer: IPV4_HEADER.create({
-                    daddr: pseudo_header.get("daddr"),
-                    saddr: pseudo_header.get("saddr"),
-                    proto: pseudo_header.get("proto"),
-                    payload: udphdr.getBuffer()
-                }).getBuffer()
-            }, destination, route);
-        }
-
-        if (destination instanceof IPV6Address) {
-            let pseudo_header = IPV6_PSEUDO_HEADER.from(data.buffer.subarray(0, IPV6_PSEUDO_HEADER.size)),
-                udphdr = UDP_HEADER.from(data.buffer.slice(pseudo_header.size));
-
-            if (pseudo_header.get("saddr").toString(4) == "::") {
-                if (!source) return {
-                    success: false,
-                    error: "HOSTUNREACH",
-                    message: "no source address for interface found"
-                }
-
-                pseudo_header.set("saddr", source.address.buffer);
-            }
-
-            if (pseudo_header.get("daddr").toString(4) == "::")
-                pseudo_header.set("daddr", destination);
-
-            pseudo_header.set("proto", PROTOCOLS.UDP);
-            pseudo_header.set("len", udphdr.size);
-
-
-            udphdr.set("csum", calculateChecksum(uint8_concat([pseudo_header.getBuffer(), udphdr.getBuffer()])));
-
-            return this.output_ipv6({
-                ...data, buffer: IPV6_HEADER.create({
-                    daddr: pseudo_header.get("daddr"),
-                    saddr: pseudo_header.get("saddr"),
-                    nextHeader: pseudo_header.get("proto"),
-                    payload: udphdr.getBuffer()
-                }).getBuffer()
-            }, destination, route);
-        }
-        return { success: false, error: "HOSTUNREACH", message: "destination MUST be an ip address" };
-    }
-
-    input_ipv4(iphdr: typeof IPV4_HEADER, data: NetworkData) {
-        if (!data.rcvif) { console.warn("rcvif missing"); return }
-        if (calculateChecksum(iphdr.getBuffer().slice(0, iphdr.get("ihl") << 2)) != 0) {
-            // checksum failed
-            console.warn("input_ipv4: [bad checksum]")
-            return;
-        }
-
-        if ((iphdr.get("flags") & (1 << 2)) < 0) {
-            throw "ipv4 fragments not supported"
-        }
-
-
-        let daddr = iphdr.get("daddr")
-        if (data.loopback) {
-            data.destination = true; // it is looped back IT IS for this device
-        } else if (daddr.toString() == "255.255.255.255") { // all hosts broadcst
-            data.broadcast = true;
-            data.destination = true;
-        } else if (false) {
-            // something something  multicast
-        } else {
-            data.destination = false; // this could have been set by lower level things
-            daddr_check: for (let iface of this.interfaces) for (let source of iface.addresses) {
-                if (source.address.constructor != daddr.constructor)
-                    continue
-
-                if (uint8_equals(source.address.buffer, daddr.buffer)) {
-                    data.destination = true;
-                    break daddr_check;
-                }
-
-                if (uint8_equals(
-                    or(source.address.buffer, not(source.netmask.buffer)), // subnet broadcast address
-                    daddr.buffer
-                )) {
-                    data.broadcast = true;
-                    data.destination = true;
-                    break daddr_check;
-                }
-            }
-        }
-
-        this.contact_input_raw("IPv4", { ...data, buffer: iphdr.getBuffer() });
-
-        if (iphdr.get("proto") == PROTOCOLS.UDP) {
-            this.input_udp4(iphdr, data)
-        }
-    }
-
-    output_ipv4(data: NetworkData, destination: IPV4Address, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
-        /** So the thinking is that the user would construct the iphdr */
-
-        // Select route
-        if (!route && !(route = this.route_resolve(destination))) return {
-            success: false,
-            error: "HOSTUNREACH",
-            message: "No outgoing route found"
-        }
-        // select an address from the outgoing interface
-        let source = route.iface.addresses.find(value => value.address.constructor == destination.constructor);
-        if (!source) return {
-            success: false,
-            error: "HOSTUNREACH",
-            message: "no source address for intreface found"
-        }
-        //  I'm unsure of how i want to access the outgoing data and if the iphdr has all the requisite data
-        if (data.buffer.length < IPV4_HEADER.getMinSize()) return { success: false, error: "ERROR", message: "bad header" };
-        let iphdr = IPV4_HEADER.from(data.buffer);
-
-        iphdr.set("version", 4);
-        iphdr.set("ihl", iphdr.get("ihl") || iphdr.getMinSize() >> 2); // the user can set the ihl
-        iphdr.set("tos", 0);
-        const DEFAULT_TTL = 64; iphdr.set("ttl", iphdr.get("ttl") || DEFAULT_TTL);
-        iphdr.set("len", iphdr.getBuffer().byteLength);
-
-        if (uint8_readUint32BE(iphdr.get("daddr").buffer) === 0)
-            iphdr.set("daddr", destination);
-        if (uint8_readUint32BE(iphdr.get("saddr").buffer) === 0)
-            iphdr.set("saddr", source.address); // if there's no source set; use the outgoing interfaces ip address
-
-        if (iphdr.get("len") > route.iface.mtu) {
-            return {
-                success: false,
-                error: "ERROR",
-                message: "i do not support fragmentation"
-            }
-        }
-
-        iphdr.set("csum", 0);
-        iphdr.set("csum", calculateChecksum(iphdr.getBuffer().slice(0, iphdr.get("ihl") << 2)));
-
-        data.buffer = iphdr.getBuffer()
-
-        // put some thinking to if the destination is a broadcast address
-        let broadcast = uint8_readUint32BE(not(or(source.netmask.buffer, iphdr.get("daddr").buffer))) === 0;
-        if (broadcast) { data.broadcast = broadcast }
-
-        // !TODO: this could check all addresses on the device if its for the device
-        if (route.iface.addresses.find(a => uint8_equals(a.address.buffer, destination.buffer))) {
-            return this.output_loopback(data, destination, route);
-        }
-
-        let res = route.iface.output(data, destination, route);
-
-        return {
-            success: res.success,
-            error: res.error ? "ERROR" : undefined,
-            data: res.data
-        }
-    }
-
     input_udp4(iphdr: typeof IPV4_HEADER, data: NetworkData) {
         if (!data.destination)
             return; // if it is not the destination then this is an unnecessary check
@@ -666,107 +476,7 @@ export class Device {
         });
     }
 
-    input_ipv6(iphdr: typeof IPV6_HEADER, data: NetworkData) {
-        if (!data.rcvif) { console.warn("rcvif missing"); return }
-
-        let daddr = iphdr.get("daddr")
-        data.multicast = daddr.isMulticast();
-
-        if (data.loopback) {
-            data.destination = true; // it is looped back IT IS for this device
-        } else if (data.multicast) {
-            // !TODO: add a more generic way of checking multicast subscriptions
-            // for now assume that all multicasts are FF01:0:0:0:0:0:0:1 A.K.A. ALL_NODES
-            data.destination = true; // REMEMBER, THIS IS TEMPORARY
-        } else {
-            data.destination = false; // this could have been set by lower level things
-            daddr_check: for (let iface of this.interfaces) for (let source of iface.addresses) {
-                if (source.address.constructor != daddr.constructor) continue;
-                if (uint8_equals(source.address.buffer, daddr.buffer)) {
-                    data.destination = true;
-                    break daddr_check;
-                }
-            }
-        }
-
-        if (iphdr.get("nextHeader") === PROTOCOLS.IPV6_ICMP) {
-            return this.input_icmp6(iphdr, data);
-        } else if (iphdr.get("nextHeader") === PROTOCOLS.UDP) {
-            return this.input_udp6(iphdr, data);
-        } else {
-            this.contact_input_raw("IPv6", { ...data, buffer: iphdr.getBuffer() });
-        }
-    }
-
-    output_ipv6(data: NetworkData, destination: IPV6Address, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
-        // Select route
-        if (!route && !(route = this.route_resolve(destination))) return {
-            success: false,
-            error: "HOSTUNREACH",
-            message: "No outgoing route found"
-        }
-
-        // select an address from the outgoing interface
-        let source = route.iface.addresses.find(value => value.address.constructor == destination.constructor);
-        if (!source) return {
-            success: false,
-            error: "HOSTUNREACH",
-            message: "no source address for intreface found"
-        }
-
-        if (data.buffer.length < IPV6_HEADER.getMinSize()) return { success: false, error: "ERROR", message: "bad header" };
-        let iphdr = IPV6_HEADER.from(data.buffer);
-
-        iphdr.set("version", 6);
-        // flow label something maybe i don't know
-        const DEFAULT_TTL = 64; iphdr.set("hopLimit", iphdr.get("hopLimit") || DEFAULT_TTL);
-        iphdr.set("payloadLength", iphdr.get("payload").byteLength);
-
-        if (iphdr.get("daddr").toString(4) == "::")
-            iphdr.set("daddr", destination);
-        if (iphdr.get("saddr").toString(4) == "::")
-            iphdr.set("saddr", source.address as IPV6Address); // if there's no source set; use the outgoing interfaces ip address
-
-        if (iphdr.get("payloadLength") > route.iface.mtu) {
-            return {
-                success: false,
-                error: "ERROR",
-                "message": "i do not support fragmentation"
-            }
-        }
-
-        data.buffer = iphdr.getBuffer();
-
-        let broadcast = destination.isMulticast();
-        if (broadcast) { data.broadcast = broadcast }
-
-        // !TODO: this could check all addresses on the device if its for the device
-        if (route.iface.addresses.find(a => uint8_equals(a.address.buffer, destination.buffer))) {
-            return this.output_loopback(data, destination, route);
-        }
-
-        let res = route.iface.output(data, destination, route);
-        return {
-            success: res.success,
-            error: res.error ? "ERROR" : undefined,
-            data: res.data
-        }
-    }
-
-    input_icmp6(iphdr: typeof IPV6_HEADER, data: NetworkData) {
-        let icmphdr = ICMP_HEADER.from(iphdr.get("payload"));
-        switch (icmphdr.get("type")) {
-            case ICMPV6_TYPES.NEIGHBOR_ADVERTISMENT:
-                this.input_ndp_advertisment(iphdr, data); break;
-            case ICMPV6_TYPES.NEIGHBOR_SOLICITATION:
-                this.input_ndp_solicitation(iphdr, data); break;
-            default: {
-                this.contact_input_raw("IPv6", { ...data, buffer: iphdr.getBuffer() });
-            }
-        }
-    }
-
-    input_ndp_advertisment(iphdr: typeof IPV6_HEADER, data: NetworkData) {
+    input_ndp(iphdr: typeof IPV6_HEADER, data: NetworkData) {
         if (!data.rcvif || data.loopback || data.rcvif.header != ETHERNET_HEADER || !(data.rcvif_hwaddress instanceof MACAddress)) {
             return;
         }
@@ -775,40 +485,42 @@ export class Device {
             ndphdr = ICMP_NDP_HEADER.from(icmphdr.get("data")),
             ethhdr = ETHERNET_HEADER.from(data.buffer);
 
-        this.arp_cache_entry(ndphdr.get("targetAddress"), {
-            neighbor: iphdr.get("saddr"),
-            iface: data.rcvif,
-            macAddress: ethhdr.get("smac"),
-            createdAt: Date.now()
-        });
-    }
-
-    input_ndp_solicitation(iphdr: typeof IPV6_HEADER, data: NetworkData) {
-        if (!data.rcvif || data.loopback || data.rcvif.header != ETHERNET_HEADER || !(data.rcvif_hwaddress instanceof MACAddress)) {
+        if (icmphdr.get("type") === ICMPV6_TYPES.NEIGHBOR_ADVERTISMENT) {
+            this.arp_cache_entry(ndphdr.get("targetAddress"), {
+                neighbor: iphdr.get("saddr"),
+                iface: data.rcvif,
+                macAddress: ethhdr.get("smac"),
+                createdAt: Date.now()
+            });
             return;
+        } else if (icmphdr.get("type") !== ICMPV6_TYPES.NEIGHBOR_SOLICITATION) {
+            return; // this check is redundant but here to signal that the following text is handling NDP SOLICITATION
         }
 
-        let icmphdr = ICMP_HEADER.from(iphdr.get("payload")),
-            ndphdr = ICMP_NDP_HEADER.from(icmphdr.get("data")),
-            ethhdr = ETHERNET_HEADER.from(data.buffer);
+        if (!data.destination)
+            return; // this device is not the final destination
 
         let iface = this.interfaces.find(({ addresses }) => addresses.find(({ address }) => uint8_equals(address.buffer, ndphdr.get("targetAddress").buffer)))
         if (!iface) {
             return
         }
-        let saddr = iface.addresses.find(({ address }) => uint8_equals(address.buffer, ndphdr.get("targetAddress").buffer))?.address, daddr = iphdr.get("saddr");
+        let saddr = iface.addresses.find(({ address }) => uint8_equals(address.buffer, ndphdr.get("targetAddress").buffer))?.address,
+            daddr = iphdr.get("saddr");
         if (!saddr) return; // this should not happen due to the previous check
 
+
         // this might not be the correct way of doing this but in fantasy-land this goes
-        this.arp_cache_entry(iphdr.get("saddr"), {
-            neighbor: saddr, // i do not know what this value is doing
-            iface: data.rcvif,
-            macAddress: ethhdr.get("smac"),
-            createdAt: Date.now()
-        });
+        if (true) {  // optimisation to set an entry for the requester
+            this.arp_cache_entry(iphdr.get("saddr"), {
+                neighbor: ndphdr.get("targetAddress"),
+                iface: data.rcvif,
+                macAddress: ethhdr.get("smac"),
+                createdAt: Date.now()
+            });
+        }
 
         // reply to ndp Request
-        // !TODO: add the solicited flag
+        ndphdr.set("reserved", ICMP_NDPFLAG_SOLICITED); // Solicited flag set
         let replyIcmpHdr = ICMP_HEADER.create({
             type: ICMPV6_TYPES.NEIGHBOR_ADVERTISMENT,
             data: ndphdr.getBuffer()
@@ -840,6 +552,135 @@ export class Device {
             smac: data.rcvif_hwaddress,
             ethertype: ETHER_TYPES.IPv6
         }).getBuffer()))
+    }
+
+    input_icmp6(iphdr: typeof IPV6_HEADER, data: NetworkData) {
+        let icmphdr = ICMP_HEADER.from(iphdr.get("payload"));
+
+        let pseudohdr = IPV6_PSEUDO_HEADER.create({
+            saddr: iphdr.get("saddr"), daddr: iphdr.get("daddr"), len: iphdr.size, proto: PROTOCOLS.IPV6_ICMP,
+        });
+
+        if (calculateChecksum(uint8_concat([pseudohdr.getBuffer(), icmphdr.getBuffer()])) !== 0) {
+            console.warn("input_icmp6: [bad checksum]")
+            return;
+        }
+
+        if (icmphdr.get("type") < 128) {
+            // this is an error 
+            // do some stuff
+        }
+
+        switch (icmphdr.get("type")) {
+            case ICMPV6_TYPES.NEIGHBOR_ADVERTISMENT:
+            case ICMPV6_TYPES.NEIGHBOR_SOLICITATION:
+                this.input_ndp(iphdr, data); break;
+        }
+    }
+
+    input_icmp4(iphdr: typeof IPV4_HEADER, data: NetworkData) {
+        let icmphdr = ICMP_HEADER.from(iphdr.get("payload"));
+
+        if (calculateChecksum(icmphdr.getBuffer()) !== 0) {
+            // checksum failed
+            console.warn("input_icmp4: [bad checksum]")
+            return;
+        }
+
+        // !TODO: demultiplex
+
+        if (
+            icmphdr.get("type") === ICMPV4_TYPES.DESTINATION_UNREACHABLE ||
+            icmphdr.get("type") === ICMPV4_TYPES.TIME_EXCEEDED ||
+            icmphdr.get("type") === ICMPV4_TYPES.PARAMETER_PROBLEM
+        ) {
+
+            // !TODO: handle errors and pass to interested parties
+        }
+
+    }
+
+    input_ipv6(iphdr: typeof IPV6_HEADER, data: NetworkData) {
+        if (!data.rcvif) { console.warn("rcvif missing"); return }
+
+        let daddr = iphdr.get("daddr")
+        data.multicast = daddr.isMulticast();
+
+        if (data.loopback) {
+            data.destination = true; // it is looped back IT IS for this device
+        } else if (data.multicast) {
+            // !TODO: add a more generic way of checking multicast subscriptions
+            // for now assume that all multicasts are FF01:0:0:0:0:0:0:1 A.K.A. ALL_NODES
+            data.destination = true; // REMEMBER, THIS IS TEMPORARY
+        } else {
+            data.destination = false; // this could have been set by lower level things
+            daddr_check: for (let iface of this.interfaces) for (let source of iface.addresses) {
+                if (source.address.constructor != daddr.constructor) continue;
+                if (uint8_equals(source.address.buffer, daddr.buffer)) {
+                    data.destination = true;
+                    break daddr_check;
+                }
+            }
+        }
+
+        this.contact_input_raw("IPv6", { ...data, buffer: iphdr.getBuffer() });
+
+        switch (iphdr.get("nextHeader")) {
+            case PROTOCOLS.IPV6_ICMP: return this.input_icmp6(iphdr, data);
+            case PROTOCOLS.UDP: return this.input_udp6(iphdr, data);
+        }
+    }
+
+    input_ipv4(iphdr: typeof IPV4_HEADER, data: NetworkData) {
+        if (!data.rcvif) { console.warn("rcvif missing"); return }
+        if (calculateChecksum(iphdr.getBuffer().slice(0, iphdr.get("ihl") << 2)) != 0) {
+            // checksum failed
+            console.warn("input_ipv4: [bad checksum]")
+            return;
+        }
+
+        if ((iphdr.get("flags") & (1 << 2)) < 0) {
+            throw "ipv4 fragments not supported"
+        }
+
+
+        let daddr = iphdr.get("daddr")
+        if (data.loopback) {
+            data.destination = true; // it is looped back IT IS for this device
+        } else if (daddr.toString() == "255.255.255.255") { // all hosts broadcst
+            data.broadcast = true;
+            data.destination = true;
+        } else if (false) {
+            // something something  multicast
+        } else {
+            data.destination = false; // this could have been set by lower level things
+            daddr_check: for (let iface of this.interfaces) for (let source of iface.addresses) {
+                if (source.address.constructor != daddr.constructor)
+                    continue
+
+                if (uint8_equals(source.address.buffer, daddr.buffer)) {
+                    data.destination = true;
+                    break daddr_check;
+                }
+
+                if (uint8_equals(
+                    or(source.address.buffer, not(source.netmask.buffer)), // subnet broadcast address
+                    daddr.buffer
+                )) {
+                    data.broadcast = true;
+                    data.destination = true;
+                    break daddr_check;
+                }
+            }
+        }
+
+        this.contact_input_raw("IPv4", { ...data, buffer: iphdr.getBuffer() });
+        switch (iphdr.get("proto")) {
+            case PROTOCOLS.ICMP:
+                return this.input_icmp4(iphdr, data);
+            case PROTOCOLS.UDP:
+                return this.input_udp4(iphdr, data);
+        }
     }
 
     input_arp(etherheader: typeof ETHERNET_HEADER, data: NetworkData) {
@@ -949,6 +790,199 @@ export class Device {
             this.input_vlan(etherframe, data)
         }
 
+    }
+
+    /** data.buffer contains the pseudo_header followed by the udp header */
+    output_udp(data: NetworkData, destination: BaseAddress, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
+        if (!route && !(route = this.route_resolve(destination))) return {
+            success: false,
+            error: "HOSTUNREACH",
+            message: "No outgoing route found"
+        }
+
+        let source = route.iface.addresses.find(value => value.address.constructor == destination.constructor);
+
+        if (destination instanceof IPV4Address) {
+            let pseudo_header = IPV4_PSEUDO_HEADER.from(data.buffer.subarray(0, IPV4_PSEUDO_HEADER.size)),
+                udphdr = UDP_HEADER.from(data.buffer.slice(pseudo_header.size));
+
+            if (uint8_readUint32BE(pseudo_header.get("saddr").buffer) === 0) {
+                if (!source) return {
+                    success: false,
+                    error: "HOSTUNREACH",
+                    message: "no source address for interface found"
+                }
+
+                pseudo_header.set("saddr", source.address);
+            }
+
+            if (uint8_readUint32BE(pseudo_header.get("daddr").buffer) === 0)
+                pseudo_header.set("daddr", destination);
+
+            pseudo_header.set("proto", PROTOCOLS.UDP);
+            pseudo_header.set("len", udphdr.size);
+            udphdr.set("length", udphdr.size);
+
+            udphdr.set("csum", calculateChecksum(uint8_concat([pseudo_header.getBuffer(), udphdr.getBuffer()])) || 0xffff);
+
+            return this.output_ipv4({
+                ...data, buffer: IPV4_HEADER.create({
+                    daddr: pseudo_header.get("daddr"),
+                    saddr: pseudo_header.get("saddr"),
+                    proto: pseudo_header.get("proto"),
+                    payload: udphdr.getBuffer()
+                }).getBuffer()
+            }, destination, route);
+        }
+
+        if (destination instanceof IPV6Address) {
+            let pseudo_header = IPV6_PSEUDO_HEADER.from(data.buffer.subarray(0, IPV6_PSEUDO_HEADER.size)),
+                udphdr = UDP_HEADER.from(data.buffer.slice(pseudo_header.size));
+
+            if (pseudo_header.get("saddr").toString(4) == "::") {
+                if (!source) return {
+                    success: false,
+                    error: "HOSTUNREACH",
+                    message: "no source address for interface found"
+                }
+
+                pseudo_header.set("saddr", source.address.buffer);
+            }
+
+            if (pseudo_header.get("daddr").toString(4) == "::")
+                pseudo_header.set("daddr", destination);
+
+            pseudo_header.set("proto", PROTOCOLS.UDP);
+            pseudo_header.set("len", udphdr.size);
+            udphdr.set("csum", calculateChecksum(uint8_concat([pseudo_header.getBuffer(), udphdr.getBuffer()])));
+
+            return this.output_ipv6({
+                ...data, buffer: IPV6_HEADER.create({
+                    daddr: pseudo_header.get("daddr"),
+                    saddr: pseudo_header.get("saddr"),
+                    nextHeader: pseudo_header.get("proto"),
+                    payload: udphdr.getBuffer()
+                }).getBuffer()
+            }, destination, route);
+        }
+        return { success: false, error: "HOSTUNREACH", message: "destination MUST be an ip address" };
+    }
+
+    output_ipv6(data: NetworkData, destination: IPV6Address, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
+        // Select route
+        if (!route && !(route = this.route_resolve(destination))) return {
+            success: false,
+            error: "HOSTUNREACH",
+            message: "No outgoing route found"
+        }
+
+        // select an address from the outgoing interface
+        let source = route.iface.addresses.find(value => value.address.constructor == destination.constructor);
+        if (!source) return {
+            success: false,
+            error: "HOSTUNREACH",
+            message: "no source address for intreface found"
+        }
+
+        if (data.buffer.length < IPV6_HEADER.getMinSize()) return { success: false, error: "ERROR", message: "bad header" };
+        let iphdr = IPV6_HEADER.from(data.buffer);
+
+        iphdr.set("version", 6);
+        // flow label something maybe i don't know
+        const DEFAULT_TTL = 64; iphdr.set("hopLimit", iphdr.get("hopLimit") || DEFAULT_TTL);
+        iphdr.set("payloadLength", iphdr.get("payload").byteLength);
+
+        if (iphdr.get("daddr").toString(4) == "::")
+            iphdr.set("daddr", destination);
+        if (iphdr.get("saddr").toString(4) == "::")
+            iphdr.set("saddr", source.address as IPV6Address); // if there's no source set; use the outgoing interfaces ip address
+
+        if (iphdr.get("payloadLength") > route.iface.mtu) {
+            return {
+                success: false,
+                error: "ERROR",
+                "message": "i do not support fragmentation"
+            }
+        }
+
+        data.buffer = iphdr.getBuffer();
+
+        let broadcast = destination.isMulticast();
+        if (broadcast) { data.broadcast = broadcast }
+
+        // !TODO: this could check all addresses on the device if its for the device
+        if (route.iface.addresses.find(a => uint8_equals(a.address.buffer, destination.buffer))) {
+            return this.output_loopback(data, destination, route);
+        }
+
+        let res = route.iface.output(data, destination, route);
+        return {
+            success: res.success,
+            error: res.error ? "ERROR" : undefined,
+            data: res.data
+        }
+    }
+
+    output_ipv4(data: NetworkData, destination: IPV4Address, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
+        /** So the thinking is that the user would construct the iphdr */
+
+        // Select route
+        if (!route && !(route = this.route_resolve(destination))) return {
+            success: false,
+            error: "HOSTUNREACH",
+            message: "No outgoing route found"
+        }
+        // select an address from the outgoing interface
+        let source = route.iface.addresses.find(value => value.address.constructor == destination.constructor);
+        if (!source) return {
+            success: false,
+            error: "HOSTUNREACH",
+            message: "no source address for intreface found"
+        }
+        //  I'm unsure of how i want to access the outgoing data and if the iphdr has all the requisite data
+        if (data.buffer.length < IPV4_HEADER.getMinSize()) return { success: false, error: "ERROR", message: "bad header" };
+        let iphdr = IPV4_HEADER.from(data.buffer);
+
+        iphdr.set("version", 4);
+        iphdr.set("ihl", iphdr.get("ihl") || iphdr.getMinSize() >> 2); // the user can set the ihl
+        iphdr.set("tos", 0);
+        const DEFAULT_TTL = 64; iphdr.set("ttl", iphdr.get("ttl") || DEFAULT_TTL);
+        iphdr.set("len", iphdr.getBuffer().byteLength);
+
+        if (uint8_readUint32BE(iphdr.get("daddr").buffer) === 0)
+            iphdr.set("daddr", destination);
+        if (uint8_readUint32BE(iphdr.get("saddr").buffer) === 0)
+            iphdr.set("saddr", source.address); // if there's no source set; use the outgoing interfaces ip address
+
+        if (iphdr.get("len") > route.iface.mtu) {
+            return {
+                success: false,
+                error: "ERROR",
+                message: "i do not support fragmentation"
+            }
+        }
+
+        iphdr.set("csum", 0);
+        iphdr.set("csum", calculateChecksum(iphdr.getBuffer().slice(0, iphdr.get("ihl") << 2)));
+
+        data.buffer = iphdr.getBuffer()
+
+        // put some thinking to if the destination is a broadcast address
+        let broadcast = uint8_readUint32BE(not(or(source.netmask.buffer, iphdr.get("daddr").buffer))) === 0;
+        if (broadcast) { data.broadcast = broadcast }
+
+        // !TODO: this could check all addresses on the device if its for the device
+        if (route.iface.addresses.find(a => uint8_equals(a.address.buffer, destination.buffer))) {
+            return this.output_loopback(data, destination, route);
+        }
+
+        let res = route.iface.output(data, destination, route);
+
+        return {
+            success: res.success,
+            error: res.error ? "ERROR" : undefined,
+            data: res.data
+        }
     }
 
     output_loopback(data: NetworkData, destination: BaseAddress, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {

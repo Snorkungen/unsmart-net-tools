@@ -29,7 +29,9 @@ export const ICMP_DESTINATION_UNREACHABLE = defineStruct({
     data: SLICE
 })
 
-
+export const ICMP_NDPFLAG_ROUTER = (1 << 31);
+export const ICMP_NDPFLAG_SOLICITED = (1 << 30);
+export const ICMP_NDPFLAG_OVERRIDE = (1 << 29);
 export const ICMP_NDP_HEADER = defineStruct({
     reserved: UINT32,
     targetAddress: IPV6_ADDRESS,
