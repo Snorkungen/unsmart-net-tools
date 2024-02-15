@@ -558,7 +558,7 @@ export class Device {
         let icmphdr = ICMP_HEADER.from(iphdr.get("payload"));
 
         let pseudohdr = IPV6_PSEUDO_HEADER.create({
-            saddr: iphdr.get("saddr"), daddr: iphdr.get("daddr"), len: iphdr.size, proto: PROTOCOLS.IPV6_ICMP,
+            saddr: iphdr.get("saddr"), daddr: iphdr.get("daddr"), len: icmphdr.size, proto: PROTOCOLS.IPV6_ICMP,
         });
 
         if (calculateChecksum(uint8_concat([pseudohdr.getBuffer(), icmphdr.getBuffer()])) !== 0) {
