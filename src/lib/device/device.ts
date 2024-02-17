@@ -13,6 +13,7 @@ import { calculateChecksum } from "../binary/checksum";
 import { ICMPV4_TYPES, ICMPV6_TYPES, ICMP_HEADER, ICMP_NDPFLAG_SOLICITED, ICMP_NDP_HEADER } from "../header/icmp";
 import { UDP_HEADER } from "../header/udp";
 import { BaseInterface, VlanInterface, EthernetInterface } from "./interface";
+import { TCP_HEADER } from "../header/tcp";
 
 // source <https://stackoverflow.com/a/63029283>
 type DropFirst<T extends unknown[]> = T extends [any, ...infer U] ? U : never;
@@ -203,6 +204,41 @@ export function __find_best_caddr_match<CR extends ({ contact: Contact } | undef
     }
 
     return best;
+}
+
+/** this function modifies the data etcetera */
+export function __output_protocol_fill_in_addresses(pseudo_header: typeof IPV4_PSEUDO_HEADER | typeof IPV6_PSEUDO_HEADER, destination: BaseAddress, route: DeviceRoute) {
+    let source = route.iface.addresses.find(value => value.address.constructor == destination.constructor);
+
+    if (destination instanceof IPV4Address) {
+        if (uint8_readUint32BE(pseudo_header.get("saddr").buffer) === 0) {
+            if (!(source)) return {
+                success: false,
+                error: "HOSTUNREACH",
+                message: "no source address for interface found"
+            }
+
+            pseudo_header.set("saddr", source.address as any);
+        }
+
+        if (uint8_readUint32BE(pseudo_header.get("daddr").buffer) === 0)
+            pseudo_header.set("daddr", destination as any);
+    }
+
+    if (destination instanceof IPV6Address) {
+        if (pseudo_header.get("saddr").toString(4) == "::") {
+            if (!source) return {
+                success: false,
+                error: "HOSTUNREACH",
+                message: "no source address for interface found"
+            }
+
+            pseudo_header.set("saddr", source.address.buffer);
+        }
+
+        if (pseudo_header.get("daddr").toString(4) == "::")
+            pseudo_header.set("daddr", destination);
+    }
 }
 
 export class Device {
@@ -793,6 +829,64 @@ export class Device {
     }
 
     /** data.buffer contains the pseudo_header followed by the udp header */
+    output_tcp(data: NetworkData, destination: BaseAddress, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
+        if (!route && !(route = this.route_resolve(destination))) return {
+            success: false,
+            error: "HOSTUNREACH",
+            message: "No outgoing route found"
+        }
+
+        let pseudo_header: typeof IPV4_PSEUDO_HEADER | typeof IPV6_PSEUDO_HEADER, tcphdr: typeof TCP_HEADER;
+
+        if (destination instanceof IPV4Address) {
+            pseudo_header = IPV4_PSEUDO_HEADER.from(data.buffer.subarray(0, IPV4_PSEUDO_HEADER.size));
+            tcphdr = TCP_HEADER.from(data.buffer.slice(pseudo_header.size));
+            __output_protocol_fill_in_addresses(pseudo_header, destination, route);
+        } else if (destination instanceof IPV6Address) {
+            pseudo_header = IPV6_PSEUDO_HEADER.from(data.buffer.subarray(0, IPV6_PSEUDO_HEADER.size));
+            tcphdr = TCP_HEADER.from(data.buffer.slice(pseudo_header.size));
+            __output_protocol_fill_in_addresses(pseudo_header, destination, route);
+
+        } else {
+            return { success: false, error: "ERROR" }
+        }
+
+        // !TODO: does this layer do the tcp timing logic or is th      tcphdr.set("doffset", tcphdr.size >> 2);e contact
+        // i think it is the contact layer that does the stateful thinking
+
+        // !NOTE: the following cannot know about options options would be,
+        // so i'm assuming that options would already be set so setting the "doffset" would be unnescecary
+        if (tcphdr.get("doffset") === 0) { tcphdr.set("doffset", TCP_HEADER.size >> 2) };
+
+        // !TODO: think about setting options because now i know the cababilities of the outgoing interface
+
+        pseudo_header.set("proto", PROTOCOLS.TCP);
+        pseudo_header.set("len", tcphdr.size);
+
+        tcphdr.set("csum", 0);
+        tcphdr.set("csum", calculateChecksum(uint8_concat([pseudo_header.getBuffer(), tcphdr.getBuffer()])));
+
+        if (destination instanceof IPV4Address) return this.output_ipv4({
+            ...data, buffer: IPV4_HEADER.create({
+                daddr: pseudo_header.get("daddr"),
+                saddr: pseudo_header.get("saddr"),
+                proto: pseudo_header.get("proto"),
+                payload: tcphdr.getBuffer()
+            }).getBuffer()
+        }, destination, route);
+
+        if (destination instanceof IPV6Address) return this.output_ipv6({
+            ...data, buffer: IPV6_HEADER.create({
+                daddr: pseudo_header.get("daddr") as typeof destination,
+                saddr: pseudo_header.get("saddr") as typeof destination,
+                nextHeader: pseudo_header.get("proto"),
+                payload: tcphdr.getBuffer()
+            }).getBuffer()
+        }, destination, route);
+
+        return { success: false, error: "ERROR" };
+    }
+    /** data.buffer contains the pseudo_header followed by the udp header */
     output_udp(data: NetworkData, destination: BaseAddress, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
         if (!route && !(route = this.route_resolve(destination))) return {
             success: false,
@@ -806,18 +900,7 @@ export class Device {
             let pseudo_header = IPV4_PSEUDO_HEADER.from(data.buffer.subarray(0, IPV4_PSEUDO_HEADER.size)),
                 udphdr = UDP_HEADER.from(data.buffer.slice(pseudo_header.size));
 
-            if (uint8_readUint32BE(pseudo_header.get("saddr").buffer) === 0) {
-                if (!source) return {
-                    success: false,
-                    error: "HOSTUNREACH",
-                    message: "no source address for interface found"
-                }
-
-                pseudo_header.set("saddr", source.address);
-            }
-
-            if (uint8_readUint32BE(pseudo_header.get("daddr").buffer) === 0)
-                pseudo_header.set("daddr", destination);
+            __output_protocol_fill_in_addresses(pseudo_header, destination, route);
 
             pseudo_header.set("proto", PROTOCOLS.UDP);
             pseudo_header.set("len", udphdr.size);
@@ -839,18 +922,7 @@ export class Device {
             let pseudo_header = IPV6_PSEUDO_HEADER.from(data.buffer.subarray(0, IPV6_PSEUDO_HEADER.size)),
                 udphdr = UDP_HEADER.from(data.buffer.slice(pseudo_header.size));
 
-            if (pseudo_header.get("saddr").toString(4) == "::") {
-                if (!source) return {
-                    success: false,
-                    error: "HOSTUNREACH",
-                    message: "no source address for interface found"
-                }
-
-                pseudo_header.set("saddr", source.address.buffer);
-            }
-
-            if (pseudo_header.get("daddr").toString(4) == "::")
-                pseudo_header.set("daddr", destination);
+            __output_protocol_fill_in_addresses(pseudo_header, destination, route);
 
             pseudo_header.set("proto", PROTOCOLS.UDP);
             pseudo_header.set("len", udphdr.size);

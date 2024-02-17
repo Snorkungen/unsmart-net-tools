@@ -1,9 +1,10 @@
 import { describe, expect, test } from "vitest";
-import { Contact, Device, __find_best_caddr_match } from "../../lib/device/device";
+import { Contact, Device, DeviceRoute, __find_best_caddr_match, __output_protocol_fill_in_addresses } from "../../lib/device/device";
 import { IPV4Address } from "../../lib/address/ipv4";
 import { createMask } from "../../lib/address/mask";
 import { IPV6Address } from "../../lib/address/ipv6";
 import { LoopbackInterface } from "../../lib/device/interface";
+import { IPV4_PSEUDO_HEADER, IPV6_PSEUDO_HEADER } from "../../lib/header/ip";
 
 let device = new Device();
 let lb_iface = new LoopbackInterface(device);
@@ -14,7 +15,7 @@ let lb_address4 = new IPV4Address("127.0.0.1"),
     lb_address6 = new IPV6Address("::1"),
     lb_netmask6 = createMask(IPV6Address, IPV6Address.ADDRESS_LENGTH)
 
-describe("Device2 route_resolve", () => {
+describe("Device route_resolve", () => {
 
     test("host", () => {
         device.routes = [{
@@ -77,7 +78,7 @@ describe("Device2 route_resolve", () => {
     })
 })
 
-describe("Device2 interface_set_address", () => {
+describe("Device interface_set_address", () => {
     device.routes = [];
 
     test("reuse entry & set new entry", () => {
@@ -113,7 +114,7 @@ describe("Device2 interface_set_address", () => {
     })
 })
 
-describe("Device2 contact_bind", () => {
+describe("Device contact_bind", () => {
     let contact = device.contact_create("IPv4", "UDP").data!;
 
     test("successful bind", () => {
@@ -161,7 +162,7 @@ describe("Device2 contact_bind", () => {
     })
 });
 
-describe("Devic2 __find_best_caddr_match", () => {
+describe("Device __find_best_caddr_match", () => {
 
     let dev = new Device();
     let unset = new IPV4Address("0.0.0.0"), default_caddr = {
@@ -245,4 +246,38 @@ describe("Devic2 __find_best_caddr_match", () => {
         sport: 10,
         dport: 20
     }, crecivers)?.idx).eq(3_000))
+})
+
+describe("Device __output_protocol_fill_in_addresses", () => {
+    let route6: DeviceRoute = {
+        destination: lb_address6,
+        netmask: lb_netmask6,
+        gateway: new IPV6Address("::"),
+        iface: lb_iface
+    }, route4: DeviceRoute = {
+        destination: lb_address4,
+        netmask: lb_netmask4,
+        gateway: new IPV4Address("0.0.0.0"),
+        iface: lb_iface
+    }
+
+    test("ipv4", () => {
+        let destination = new IPV4Address("10.1.1.12")
+        let pseudohdr = IPV4_PSEUDO_HEADER.create({});
+
+        __output_protocol_fill_in_addresses(pseudohdr, destination, route4);
+
+        expect(pseudohdr.get("daddr").toString()).eq(destination.toString());
+        expect(pseudohdr.get("saddr").toString()).eq(lb_address4.toString());
+    })
+
+    test("ipv6", () => {
+        let destination = new IPV6Address("fe08::faff:2ff")
+        let pseudohdr = IPV6_PSEUDO_HEADER.create({});
+
+        __output_protocol_fill_in_addresses(pseudohdr, destination, route6);
+
+        expect(pseudohdr.get("daddr").toString()).eq(destination.toString());
+        expect(pseudohdr.get("saddr").toString()).eq(lb_address6.toString());
+    })
 })
