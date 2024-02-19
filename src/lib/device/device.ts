@@ -14,6 +14,7 @@ import { ICMPV4_TYPES, ICMPV6_TYPES, ICMP_HEADER, ICMP_NDPFLAG_SOLICITED, ICMP_N
 import { UDP_HEADER } from "../header/udp";
 import { BaseInterface, VlanInterface, EthernetInterface } from "./interface";
 import { TCP_HEADER } from "../header/tcp";
+import { TCPConnection, TCPState, tcp_connection_id } from "./internals/tcp";
 
 // source <https://stackoverflow.com/a/63029283>
 type DropFirst<T extends unknown[]> = T extends [any, ...infer U] ? U : never;
@@ -71,13 +72,13 @@ export type DeviceRoute<AddrType extends typeof BaseAddress = typeof BaseAddress
 }
 
 
-type ContactAF = "RAW" | "IPv4" | "IPv6";
-type ContactProto = "RAW" | "UDP";
-export type ContactReceiver = (contact: Contact, data: NetworkData, caddr?: ContactAddress2<BaseAddress>) => void;
+export type ContactAF = "RAW" | "IPv4" | "IPv6";
+export type ContactProto = "RAW" | "UDP" | "TCP";
+export type ContactReceiver = (contact: Contact, data: NetworkData, caddr?: ContactAddress<BaseAddress>) => void;
 export type ContactReceiveOptions = { promiscuous?: true };
 type ContactError = unknown; // !TODO: conjure up some type of problems that might occur
 
-type ContactAddress2<Addr extends BaseAddress> = {
+type ContactAddress<Addr extends BaseAddress> = {
     sport: number;
     dport: number;
     saddr: Addr;
@@ -91,18 +92,19 @@ export interface Contact<AF extends ContactAF = ContactAF, Proto extends Contact
     proto: Proto;
 
     /** address naming is just a placeholder */
-    address?: ContactAddress2<Addr>;
+    address?: ContactAddress<Addr>;
 
     /* Methods */
     close(contact: Contact<AF, Proto, AT, Addr>): DeviceResult<ContactError>;
-    bind(contact: Contact<AF, Proto, AT, Addr>, caddr: ContactAddress2<Addr>): DeviceResult<ContactError, typeof caddr>;
+    bind(contact: Contact<AF, Proto, AT, Addr>, caddr: ContactAddress<Addr>): DeviceResult<ContactError, typeof caddr>;
 
     receive(contact: Contact, receiver: ContactReceiver, options?: ContactReceiveOptions): DeviceResult<ContactError>;
-    receiveFrom(contact: Contact, receiver: ContactReceiver, caddr: Partial<ContactAddress2<Addr>>, options?: ContactReceiveOptions): DeviceResult<ContactError>;
+    receiveFrom(contact: Contact, receiver: ContactReceiver, caddr: Partial<ContactAddress<Addr>>, options?: ContactReceiveOptions): DeviceResult<ContactError>;
 
     send(contact: Contact<AF, Proto, AT, Addr>, data: NetworkData, destination?: Addr, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
-    sendTo(contact: Contact<AF, Proto, AT, Addr>, data: NetworkData, caddr?: Partial<ContactAddress2<Addr>>, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
+    sendTo(contact: Contact<AF, "UDP", AT, Addr>, data: NetworkData, caddr?: Partial<ContactAddress<Addr>>, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
 
+    connect(contact: Contact<AF, "TCP", AT, Addr>, data: NetworkData, caddr?: Omit<ContactAddress<Addr>, "saddr" | "sport">, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>
 }
 
 export type Program<DT = any> = {
@@ -166,7 +168,7 @@ function __address_is_unset(address: BaseAddress): boolean {
     return sum === 0;
 }
 
-export function __find_best_caddr_match<CR extends ({ contact: Contact } | undefined)>(af: ContactAF, input_caddr: ContactAddress2<BaseAddress>, creceivers: CR[]): CR | undefined {
+export function __find_best_caddr_match<CR extends ({ contact: Contact } | undefined)>(af: ContactAF, input_caddr: ContactAddress<BaseAddress>, creceivers: CR[]): CR | undefined {
     let best: CR | undefined = undefined;
     for (let creceiver of creceivers) {
         if (!creceiver || creceiver.contact.addressFamily != af || creceiver.contact.proto != "UDP") {
@@ -461,6 +463,55 @@ export class Device {
     private process_term_writeblackhole(_: Uint8Array) { }
     private process_term_flush() { (this.terminal) && this.terminal.flush(); }
     private process_term_flushblackhole() { }
+
+    input_tcp4(iphdr: typeof IPV4_HEADER, data: NetworkData) {
+        if (!data.destination || data.multicast || data.broadcast)
+            return;
+
+        let tcphdr = TCP_HEADER.from(iphdr.get("payload"));
+        let pseudohdr = IPV4_PSEUDO_HEADER.create({
+            saddr: iphdr.get("saddr"),
+            daddr: iphdr.get("daddr"),
+            proto: PROTOCOLS.TCP,
+            len: tcphdr.size
+        });
+
+        if (calculateChecksum(uint8_concat([pseudohdr.getBuffer(), tcphdr.getBuffer()])) !== 0) {
+            console.warn("input_tcp4: [bad checksum]")
+            return;
+        }
+
+        this.contact_input_tcp("IPv4", { ...data, buffer: tcphdr.get("payload") }, {
+            saddr: iphdr.get("daddr"),
+            daddr: iphdr.get("saddr"),
+            sport: tcphdr.get("dport"),
+            dport: tcphdr.get("sport")
+        });
+    }
+    input_tcp6(iphdr: typeof IPV6_HEADER, data: NetworkData) {
+        if (!data.destination || data.multicast || data.broadcast)
+            return;
+
+        let tcphdr = TCP_HEADER.from(iphdr.get("payload"));
+        let pseudohdr = IPV6_PSEUDO_HEADER.create({
+            saddr: iphdr.get("saddr"),
+            daddr: iphdr.get("daddr"),
+            proto: PROTOCOLS.TCP,
+            len: tcphdr.size
+        });
+
+        if (calculateChecksum(uint8_concat([pseudohdr.getBuffer(), tcphdr.getBuffer()])) !== 0) {
+            console.warn("input_tcp6: [bad checksum]")
+            return;
+        }
+
+        this.contact_input_tcp("IPv6", { ...data, buffer: tcphdr.get("payload") }, {
+            saddr: iphdr.get("daddr"),
+            daddr: iphdr.get("saddr"),
+            sport: tcphdr.get("dport"),
+            dport: tcphdr.get("sport")
+        });
+    }
 
     input_udp4(iphdr: typeof IPV4_HEADER, data: NetworkData) {
         if (!data.destination)
@@ -1323,18 +1374,28 @@ export class Device {
         }
 
         // methods for sending and doing stuff
-        let m_send: Contact["send"],
+        let m_close: Contact["close"],
+            m_send: Contact["send"],
             m_sendTo: Contact["sendTo"],
-            m_receiveFrom: Contact["receiveFrom"];
+            m_receiveFrom: Contact["receiveFrom"],
+            m_connect: Contact["connect"];
 
+        m_connect = this.contact_method_not_supported;
         if (proto == "RAW") {
+            m_close = this.contact_close;
             m_send = this.contact_m_send_raw;
             m_sendTo = this.contact_method_not_supported;
             m_receiveFrom = this.contact_method_not_supported;
         } else if (proto == "UDP") {
+            m_close = this.contact_close;
             m_send = this.contact_m_send_udp;
             m_sendTo = this.contact_m_sendTo_udp;
             m_receiveFrom = this.contact_m_receiveFrom_udp;
+        } else if (proto == "TCP") {
+            m_close = this.contact_m_close_tcp;
+            m_send = this.contact_m_send_tcp;
+            m_sendTo = this.contact_method_not_supported;
+            m_receiveFrom = this.contact_method_not_supported;
         } else {
             return { success: false, error: undefined, message: "could not determine methods based on ContactProto: " + proto };
         }
@@ -1345,14 +1406,15 @@ export class Device {
             addressFamily: addressFamily,
             proto: proto,
 
-            close: this.contact_close.bind(this),
+            close: m_close.bind(this),
             bind: this.contact_bind.bind(this),
 
             receive: this.contact_receive.bind(this),
             receiveFrom: m_receiveFrom.bind(this),
 
             send: m_send.bind(this),
-            sendTo: m_sendTo.bind(this)
+            sendTo: m_sendTo.bind(this),
+            connect: m_connect.bind(this)
         };
 
         return { success: true, data: this.contacts[i] as Contact<CAF, CProto> };
@@ -1380,7 +1442,7 @@ export class Device {
 
         return { success: false, error: undefined, message: "could not locate contact" }
     }
-    contact_bind<Addr extends BaseAddress = BaseAddress>(contact: Contact, caddr: ContactAddress2<Addr>): DeviceResult<ContactError, ContactAddress2<Addr>> {
+    contact_bind<Addr extends BaseAddress = BaseAddress>(contact: Contact, caddr: ContactAddress<Addr>): DeviceResult<ContactError, ContactAddress<Addr>> {
         __contact_throw_if_closed(contact);
         if (contact.addressFamily == "RAW" || contact.proto == "RAW") {
             return { success: false, error: undefined, message: "cannot bind a RAW contact" };
@@ -1459,6 +1521,49 @@ export class Device {
         return { success: false, error: undefined, message: "method not supported for protocol" }
     }
 
+    /** START OF TCP STUFF */
+    private tcpconnections = new Map<string, TCPConnection>(); // !TODO: do some stuff the key can be the address stuff
+    private contact_input_tcp(af: ContactAF, ...receiver_params: DropFirst<Parameters<ContactReceiver>>) {
+        let input_caddr = receiver_params[1];
+        if (!input_caddr) return;
+        let best = __find_best_caddr_match(af, input_caddr, this.contact_receivers);
+        if (!best) return;
+        
+        let contact = best.contact;
+        let connection = this.tcpconnections.get(tcp_connection_id(contact));
+        if (!connection) return;
+
+        // !TODO: do some stuff i do not know what
+
+    }
+    private contact_m_close_tcp: Contact["close"] = (contact) => {
+        let connection = this.tcpconnections.get(tcp_connection_id(contact));
+        if (!connection) return this.contact_close(contact);
+
+        // !TODO: close connection
+
+        return this.contact_close(contact);
+        return { data: undefined, success: true, };
+    }
+
+    private contact_m_send_tcp: Contact["send"] = (contact, data, _, rtentry) => {
+        if (contact.addressFamily == "RAW")
+            return { success: false, error: undefined, message: "cannot send incorrect \"address family\": " + contact.addressFamily }
+        if (!contact.address)
+            return { success: false, error: undefined, message: "contact must be bound" };
+
+        let connection = this.tcpconnections.get(tcp_connection_id(contact));
+        if (!connection || connection.state !== TCPState.ESTABLISHED)
+            return { success: false, error: undefined, message: "No connection established for contact" }
+
+        // do some logic stuff 
+        // queue some data for transport
+        // could have some optimisations but first version is just going to be dumb
+        // data storage could do some clever stuff maybe IDK
+
+        // let res = this.output_tcp(data, contact.address.daddr, rtentry);
+        return { success: false, error: undefined, message: "method not implemented yet" }
+    }
     private contact_m_send_raw: Contact["send"] = (contact, data, destination, rtentry) => {
         __contact_throw_if_closed(contact);
 
@@ -1544,7 +1649,7 @@ export class Device {
             caddr.sport = this.contact_ephemport = Math.max(10_011, ((this.contact_ephemport + 5)) % 0xffff);
         }
 
-        let bres = this.contact_bind(contact, caddr as ContactAddress2<BaseAddress>);
+        let bres = this.contact_bind(contact, caddr as ContactAddress<BaseAddress>);
         if (!bres.success) {
             return { success: false, error: bres.error, message: bres.message };
         }
