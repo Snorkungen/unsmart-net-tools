@@ -1,4 +1,4 @@
-import type { Contact, ContactAF } from "../device";
+import type { Contact } from "../device";
 
 export enum TCPState {
     CLOSED,
@@ -18,12 +18,19 @@ export enum TCPState {
 export type TCPConnection = {
     state: TCPState;
     out_data: Uint8Array[];
-    in_data:  Uint8Array[];
+    in_data: Uint8Array[];
+
 
     sequence_number: number;
+    ack_number: number;
+
+    /** max window size */
+    window: number;
+    /** max segments size */
+    mss: number;
 };
 
-export function tcp_connection_id(contact: Contact): string  {
+export function tcp_connection_id(contact: Contact): string {
     if (!contact.address)
         return ""; // empty string
     return `${contact.address.daddr.toString()}${contact.address.saddr.toString()}${contact.address.dport}${contact.address.sport}`;
