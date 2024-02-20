@@ -212,35 +212,35 @@ describe("Device __find_best_caddr_match", () => {
         }, idx: 3_000
     }].sort(() => Math.random() - 0.5)
 
-    test("default", () => expect(__find_best_caddr_match("IPv4", {
+    test("default", () => expect(__find_best_caddr_match("IPv4", "UDP", {
         saddr: new IPV4Address("255.255.255.255"),
         daddr: unset,
         sport: 0xff1f,
         dport: 1000
     }, crecivers)?.idx).eq(1_000_000_000))
 
-    test("sport", () => expect(__find_best_caddr_match("IPv4", {
+    test("sport", () => expect(__find_best_caddr_match("IPv4", "UDP", {
         saddr: new IPV4Address("255.255.255.255"),
         daddr: unset,
         sport: 10,
         dport: 1000
     }, crecivers)?.idx).eq(10))
 
-    test("dport", () => expect(__find_best_caddr_match("IPv4", {
+    test("dport", () => expect(__find_best_caddr_match("IPv4", "UDP", {
         saddr: new IPV4Address("255.255.255.255"),
         daddr: unset,
         sport: 10,
         dport: 20
     }, crecivers)?.idx).eq(20))
 
-    test("saddr", () => expect(__find_best_caddr_match("IPv4", {
+    test("saddr", () => expect(__find_best_caddr_match("IPv4", "UDP", {
         daddr: new IPV4Address("255.255.255.255"),
         saddr: lb_address4,
         sport: 10,
         dport: 20
     }, crecivers)?.idx).eq(2_000))
 
-    test("dport", () => expect(__find_best_caddr_match("IPv4", {
+    test("dport", () => expect(__find_best_caddr_match("IPv4", "UDP", {
         saddr: lb_address4,
         daddr: lb_address4,
         sport: 10,

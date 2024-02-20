@@ -13,7 +13,7 @@ import { calculateChecksum } from "../binary/checksum";
 import { ICMPV4_TYPES, ICMPV6_TYPES, ICMP_HEADER, ICMP_NDPFLAG_SOLICITED, ICMP_NDP_HEADER } from "../header/icmp";
 import { UDP_HEADER } from "../header/udp";
 import { BaseInterface, VlanInterface, EthernetInterface } from "./interface";
-import { TCP_HEADER } from "../header/tcp";
+import { TCP_FLAGS, TCP_HEADER } from "../header/tcp";
 import { TCPConnection, TCPState, tcp_connection_id } from "./internals/tcp";
 
 // source <https://stackoverflow.com/a/63029283>
@@ -104,7 +104,8 @@ export interface Contact<AF extends ContactAF = ContactAF, Proto extends Contact
     send(contact: Contact<AF, Proto, AT, Addr>, data: NetworkData, destination?: Addr, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
     sendTo(contact: Contact<AF, "UDP", AT, Addr>, data: NetworkData, caddr?: Partial<ContactAddress<Addr>>, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
 
-    connect(contact: Contact<AF, "TCP", AT, Addr>, data: NetworkData, caddr?: Omit<ContactAddress<Addr>, "saddr" | "sport">, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>
+    connect(contact: Contact<AF, "TCP", AT, Addr>, caddr?: Partial<ContactAddress<Addr>>, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>
+    listen(contact: Contact<AF, "TCP", AT, Addr>, receiver?: ContactReceiver, options?: ContactReceiveOptions): DeviceResult<ContactError>
 }
 
 export type Program<DT = any> = {
@@ -168,10 +169,10 @@ function __address_is_unset(address: BaseAddress): boolean {
     return sum === 0;
 }
 
-export function __find_best_caddr_match<CR extends ({ contact: Contact } | undefined)>(af: ContactAF, input_caddr: ContactAddress<BaseAddress>, creceivers: CR[]): CR | undefined {
+export function __find_best_caddr_match<CR extends ({ contact: Contact } | undefined)>(af: ContactAF, proto: ContactProto, input_caddr: ContactAddress<BaseAddress>, creceivers: CR[]): CR | undefined {
     let best: CR | undefined = undefined;
     for (let creceiver of creceivers) {
-        if (!creceiver || creceiver.contact.addressFamily != af || creceiver.contact.proto != "UDP") {
+        if (!creceiver || creceiver.contact.addressFamily != af || creceiver.contact.proto != proto) {
             continue;
         }
 
@@ -481,7 +482,7 @@ export class Device {
             return;
         }
 
-        this.contact_input_tcp("IPv4", { ...data, buffer: tcphdr.get("payload") }, {
+        this.contact_input_tcp("IPv4", { ...data, buffer: tcphdr.getBuffer() }, {
             saddr: iphdr.get("daddr"),
             daddr: iphdr.get("saddr"),
             sport: tcphdr.get("dport"),
@@ -505,7 +506,7 @@ export class Device {
             return;
         }
 
-        this.contact_input_tcp("IPv6", { ...data, buffer: tcphdr.get("payload") }, {
+        this.contact_input_tcp("IPv6", { ...data, buffer: tcphdr.getBuffer() }, {
             saddr: iphdr.get("daddr"),
             daddr: iphdr.get("saddr"),
             sport: tcphdr.get("dport"),
@@ -715,6 +716,7 @@ export class Device {
         switch (iphdr.get("nextHeader")) {
             case PROTOCOLS.IPV6_ICMP: return this.input_icmp6(iphdr, data);
             case PROTOCOLS.UDP: return this.input_udp6(iphdr, data);
+            case PROTOCOLS.TCP: return this.input_tcp6(iphdr, data);
         }
     }
 
@@ -767,6 +769,8 @@ export class Device {
                 return this.input_icmp4(iphdr, data);
             case PROTOCOLS.UDP:
                 return this.input_udp4(iphdr, data);
+            case PROTOCOLS.TCP:
+                return this.input_tcp4(iphdr, data);
         }
     }
 
@@ -1378,24 +1382,27 @@ export class Device {
             m_send: Contact["send"],
             m_sendTo: Contact["sendTo"],
             m_receiveFrom: Contact["receiveFrom"],
-            m_connect: Contact["connect"];
+            m_connect: Contact["connect"],
+            m_listen: Contact["listen"];
 
+        m_close = this.contact_close;
         m_connect = this.contact_method_not_supported;
+        m_listen = this.contact_method_not_supported;
+
+        m_sendTo = this.contact_method_not_supported;
+        m_receiveFrom = this.contact_method_not_supported;
+
         if (proto == "RAW") {
-            m_close = this.contact_close;
             m_send = this.contact_m_send_raw;
-            m_sendTo = this.contact_method_not_supported;
-            m_receiveFrom = this.contact_method_not_supported;
         } else if (proto == "UDP") {
-            m_close = this.contact_close;
             m_send = this.contact_m_send_udp;
             m_sendTo = this.contact_m_sendTo_udp;
             m_receiveFrom = this.contact_m_receiveFrom_udp;
         } else if (proto == "TCP") {
             m_close = this.contact_m_close_tcp;
             m_send = this.contact_m_send_tcp;
-            m_sendTo = this.contact_method_not_supported;
-            m_receiveFrom = this.contact_method_not_supported;
+            m_connect = this.contact_m_connect_tcp;
+            m_listen = this.contact_m_listen_tcp;
         } else {
             return { success: false, error: undefined, message: "could not determine methods based on ContactProto: " + proto };
         }
@@ -1414,7 +1421,9 @@ export class Device {
 
             send: m_send.bind(this),
             sendTo: m_sendTo.bind(this),
-            connect: m_connect.bind(this)
+
+            connect: m_connect.bind(this),
+            listen: m_listen.bind(this)
         };
 
         return { success: true, data: this.contacts[i] as Contact<CAF, CProto> };
@@ -1511,7 +1520,7 @@ export class Device {
     private contact_input_udp(af: ContactAF, ...receiver_params: DropFirst<Parameters<ContactReceiver>>) {
         let input_caddr = receiver_params[1];
         if (!input_caddr) return;
-        let best = __find_best_caddr_match(af, input_caddr, this.contact_receivers);
+        let best = __find_best_caddr_match(af, "UDP", input_caddr, this.contact_receivers);
         if (!best) return;
         best.receiver(best.contact, ...receiver_params);
     }
@@ -1522,30 +1531,212 @@ export class Device {
     }
 
     /** START OF TCP STUFF */
+    private tcpseqnum = Math.floor(Math.random() * 2 ** 32); // set a random seed
     private tcpconnections = new Map<string, TCPConnection>(); // !TODO: do some stuff the key can be the address stuff
     private contact_input_tcp(af: ContactAF, ...receiver_params: DropFirst<Parameters<ContactReceiver>>) {
         let input_caddr = receiver_params[1];
         if (!input_caddr) return;
-        let best = __find_best_caddr_match(af, input_caddr, this.contact_receivers);
-        if (!best) return;
-        
+        let best = __find_best_caddr_match(af, "TCP", input_caddr, this.contact_receivers);
+
+        if (!best) {
+            // !TODO: there is a segment that should be sent but i do not know what a.t.m.
+            return;
+        };
+
         let contact = best.contact;
         let connection = this.tcpconnections.get(tcp_connection_id(contact));
         if (!connection) return;
 
-        // !TODO: do some stuff i do not know what
+        let tcphdr = TCP_HEADER.from(receiver_params[0].buffer);
 
+
+        // !TODO: first data handling is done, then other stuff could get done for the vibes
+
+        if (tcphdr.get("flags") & TCP_FLAGS.FIN) {
+            let close_contact_hard = false;
+            let close_contact_soft = false;
+            // do something
+            let flags = 0;
+            if (connection.state === TCPState.ESTABLISHED) {
+                connection.state = TCPState.LAST_ACK; // skip CLOSING state
+                this.tcpconnections.set(tcp_connection_id(contact), connection);
+
+                // send ack
+                flags = TCP_FLAGS.ACK;
+                close_contact_soft = true;
+            } else if (connection.state === TCPState.FIN_WAIT_1) {
+                if (tcphdr.get("flags") & TCP_FLAGS.ACK) {
+                    connection.state = TCPState.TIME_WAIT;
+                    close_contact_hard = true;
+                } else {
+                    connection.state = TCPState.CLOSING; // simultaneous close
+                }
+                this.tcpconnections.set(tcp_connection_id(contact), connection);
+                // send ack
+                flags = TCP_FLAGS.ACK;
+            } else if (connection.state === TCPState.FIN_WAIT_2) {
+                flags = TCP_FLAGS.ACK;
+                connection.state = TCPState.TIME_WAIT;
+                this.tcpconnections.set(tcp_connection_id(contact), connection);
+                close_contact_hard = true;
+            } else {
+                return;
+            }
+
+            // set the state to 
+
+            tcphdr = TCP_HEADER.create({
+                sport: contact.address!.sport,
+                dport: contact.address!.dport,
+                seqnum: connection.sequence_number,
+                flags: flags,
+                window: 0xffff,
+            });
+
+            let pseudohdr = IPV4_PSEUDO_HEADER.create({ saddr: contact.address!.saddr, daddr: contact.address!.daddr });
+            this.output_tcp({ buffer: uint8_concat([pseudohdr.getBuffer(), tcphdr.getBuffer()]) }, contact.address!.daddr);
+
+            if (close_contact_hard)
+                return this.contact_close(contact);
+
+            if (close_contact_soft) {
+                tcphdr = TCP_HEADER.create({
+                    sport: contact.address!.sport,
+                    dport: contact.address!.dport,
+                    seqnum: connection.sequence_number,
+                    flags: TCP_FLAGS.FIN,
+                    window: 0xffff,
+                });
+                this.output_tcp({ buffer: uint8_concat([pseudohdr.getBuffer(), tcphdr.getBuffer()]) }, contact.address!.daddr);
+            }
+        }
+
+        // !TODO: redo the following below is just a way to get the three way handshake done
+
+        if (connection.state === TCPState.LISTEN) {
+            if ((tcphdr.get("flags") & TCP_FLAGS.SYN) == 0)
+                return; // ignore, only accepting syn requests
+
+            // !TODO: check that it is possible to create a more specific contact binding
+
+            // create new contact
+            contact = this.contact_create(contact.addressFamily, "TCP").data!; // ".data!" is annoying but necessary because it could fail
+            let bind_result = this.contact_bind(contact, input_caddr);
+            if (!bind_result.success)
+                return; // drop segment 
+            // !TODO: there must be a better way, could then have methods that control for the state the contact is in IDK
+            this.contact_receive(contact, (() => undefined));
+
+            // configure contact
+            let connection_id = tcp_connection_id(contact);
+            this.tcpconnections.set(connection_id, {
+                state: TCPState.SYN_RCVD,
+                in_data: [],
+                out_data: [],
+                sequence_number: tcphdr.get("seqnum")
+            });
+            let connection = this.tcpconnections.get(connection_id);
+            if (!connection || !contact.address) return; // something went wrong
+
+            // reply with a syn+ack
+            tcphdr = TCP_HEADER.create({
+                sport: contact.address.sport,
+                dport: contact.address.dport,
+                seqnum: connection.sequence_number,
+                flags: TCP_FLAGS.SYN | TCP_FLAGS.ACK,
+                window: 0xffff,
+            });
+
+            let pseudohdr = IPV4_PSEUDO_HEADER.create({ saddr: contact.address.saddr, daddr: contact.address.daddr });
+            this.output_tcp({ buffer: uint8_concat([pseudohdr.getBuffer(), tcphdr.getBuffer()]) }, contact.address.daddr)
+            return;
+        } else if (connection.state === TCPState.SYN_SENT) {
+            if ((tcphdr.get("flags") & TCP_FLAGS.SYN) == 0)
+                return; // !TODO: remove this could receive only a sync then this would do something different
+
+            if ((tcphdr.get("flags") & TCP_FLAGS.ACK) == 0)
+                return; // expecting ack
+
+            // !TODO: very sequence number, atm i do not know how the acknum works
+
+            // change state and reply with an  ack
+            let connection_id = tcp_connection_id(contact);
+            if (!connection_id || !contact.address) return; // address is going to defined because it must be otherwise this logic would not be called
+            connection.state = TCPState.ESTABLISHED;
+            this.tcpconnections.set(connection_id, connection)
+
+            tcphdr = TCP_HEADER.create({
+                sport: contact.address.sport,
+                dport: contact.address.dport,
+                seqnum: connection.sequence_number,
+                flags: TCP_FLAGS.ACK,
+                window: 0xffff,
+            });
+
+            let pseudohdr = IPV4_PSEUDO_HEADER.create({ saddr: contact.address.saddr, daddr: contact.address.daddr });
+            this.output_tcp({ buffer: uint8_concat([pseudohdr.getBuffer(), tcphdr.getBuffer()]) }, contact.address.daddr)
+            return;
+        } else if (connection.state === TCPState.SYN_RCVD) {
+            if ((tcphdr.get("flags") & TCP_FLAGS.ACK) == 0)
+                return; // expecting ack
+
+            // change state and do nothing
+            let connection_id = tcp_connection_id(contact);
+            if (!connection_id || !contact.address) return; // address is going to defined because it must be otherwise this logic would not be called
+            connection.state = TCPState.ESTABLISHED;
+            this.tcpconnections.set(connection_id, connection)
+
+            return;
+        } else if (connection.state === TCPState.FIN_WAIT_1) {
+            // assume that fin+ack is handled earlier, "but what about the data"
+            if ((tcphdr.get("flags") & TCP_FLAGS.ACK) == 0)
+                return; // segment must ack
+
+            // set state
+            connection.state = TCPState.FIN_WAIT_2;
+            this.tcpconnections.set(tcp_connection_id(contact), connection);
+            return;
+        } else if (connection.state === TCPState.LAST_ACK) {
+            if ((tcphdr.get("flags") & TCP_FLAGS.ACK) == 0)
+                return; // segment must ack
+
+            connection.state = TCPState.CLOSED; // !TBD: maybe remove connnection
+            this.tcpconnections.set(tcp_connection_id(contact), connection);
+
+            this.contact_close(contact);
+        }
+
+        // do the state machine stuff right now  i'm going to get connecting to work
+
+        // !TODO: do some stuff i do not know what
+        console.info("RECEIVED TCP segment", contact, connection, tcphdr)
     }
     private contact_m_close_tcp: Contact["close"] = (contact) => {
-        let connection = this.tcpconnections.get(tcp_connection_id(contact));
-        if (!connection) return this.contact_close(contact);
+        let connection_id = tcp_connection_id(contact);
+        let connection = this.tcpconnections.get(connection_id);
+        if (!connection_id || !connection || !contact.address) return this.contact_close(contact);
 
         // !TODO: close connection
 
-        return this.contact_close(contact);
-        return { data: undefined, success: true, };
-    }
+        // change state
+        connection.state = TCPState.FIN_WAIT_1;
+        this.tcpconnections.set(connection_id, connection);
 
+        // send fin
+        let tcphdr = TCP_HEADER.create({
+            sport: contact.address.sport,
+            dport: contact.address.dport,
+            seqnum: connection.sequence_number,
+            flags: TCP_FLAGS.FIN,
+            window: 0xffff,
+        });
+
+        console.log("closing   sending fin")
+
+        let pseudohdr = IPV4_PSEUDO_HEADER.create({ saddr: contact.address.saddr, daddr: contact.address.daddr });
+        let res = this.output_tcp({ buffer: uint8_concat([pseudohdr.getBuffer(), tcphdr.getBuffer()]) }, contact.address.daddr)
+        return { success: res.success, error: undefined, data: res.data, message: res.message }
+    }
     private contact_m_send_tcp: Contact["send"] = (contact, data, _, rtentry) => {
         if (contact.addressFamily == "RAW")
             return { success: false, error: undefined, message: "cannot send incorrect \"address family\": " + contact.addressFamily }
@@ -1564,6 +1755,102 @@ export class Device {
         // let res = this.output_tcp(data, contact.address.daddr, rtentry);
         return { success: false, error: undefined, message: "method not implemented yet" }
     }
+    private contact_m_connect_tcp: Contact["connect"] = (contact, caddr) => {
+        if (!contact.address && !caddr)
+            return { success: false, error: undefined, message: "contact not bound" }
+
+        if (!contact.address) {
+            if (!caddr?.dport || !caddr.daddr)
+                return { success: false, error: undefined, message: "destination_port and destination_address must be defined" }
+
+            if (!caddr.sport) {
+                caddr.sport = this.contact_ephemport = Math.max(10_011, ((this.contact_ephemport + 5)) % 0xffff);
+            }
+
+            // !TODO: configure source addresss
+            if (!caddr.saddr) {
+                if (contact.addressFamily == "IPv4") {
+                    caddr.saddr = _UNSET_ADDRESS_IPV4
+                } else if (contact.addressFamily == "IPv6") {
+                    caddr.saddr = _UNSET_ADDRESS_IPV6;
+                } else {
+                    throw "unsupported address family"
+                }
+            }
+
+            let bind_result = this.contact_bind(contact, {
+                saddr: caddr.saddr,
+                daddr: caddr.daddr,
+                dport: caddr.dport,
+                sport: caddr.sport,
+            });
+
+            if (!bind_result.success)
+                return bind_result as ReturnType<Contact["connect"]>;
+        } else {
+            if (__address_is_unset(contact.address.daddr) || contact.address.dport || contact.address.sport)
+                return { success: false, error: undefined, message: "source_port, destination_port and destination_address must be defined" }
+        }
+
+        // !TODO: ensure that the source address and port are set
+
+        let connection_id = tcp_connection_id(contact);
+        if (!connection_id || this.tcpconnections.get(connection_id))
+            return { success: false, error: undefined, message: "contact already has a connection object defined" };
+
+        // set the initial connection object
+        this.tcpconnections.set(connection_id, {
+            state: TCPState.SYN_SENT,
+            in_data: [],
+            out_data: [],
+            sequence_number: ((this.tcpseqnum * (this.tcpconnections.size + 1)) & 0x7fffffff), // !NOTE: i do not what the spec is for the initialisation for the sequence number
+            // !TODO: do better to ensure that the number is a positive integer because i have no faith in javascript numbers
+            // !TODO: other initial information goes here
+        });
+
+
+        let connection = this.tcpconnections.get(connection_id);
+        if (!connection || !contact.address) return { success: false, error: undefined, message: "something that should not happen happened" };
+
+        // !TODO: there must be a better way, could then have methods that control for the state the contact is in IDK
+        this.contact_receive(contact, (() => undefined));
+
+        // send first tcp syn packet
+        let tcphdr = TCP_HEADER.create({
+            sport: contact.address.sport,
+            dport: contact.address.dport,
+            seqnum: connection.sequence_number,
+            flags: TCP_FLAGS.SYN,
+            window: 0xffff,
+        });
+
+        let pseudohdr = IPV4_PSEUDO_HEADER.create({ saddr: contact.address.saddr, daddr: contact.address.daddr });
+        let res = this.output_tcp({ buffer: uint8_concat([pseudohdr.getBuffer(), tcphdr.getBuffer()]) }, contact.address.daddr)
+        return { success: res.success, error: undefined, data: res.data, message: res.message }
+    }
+    private contact_m_listen_tcp: Contact["listen"] = (contact, receiver, roptions) => {
+        if (!contact.address)
+            return { success: false, error: undefined, message: "contact must be bound, contact not bound" };
+
+        let connection_id = tcp_connection_id(contact);
+        if (!connection_id || this.tcpconnections.get(connection_id))
+            return { success: false, error: undefined, message: "contact already has a connection object defined" };
+
+        this.tcpconnections.set(connection_id, {
+            state: TCPState.LISTEN,
+            in_data: [],
+            out_data: [],
+            sequence_number: 0,
+            // !TODO: other initial information goes here
+        });
+
+        // think about how i want to handle receiver and roptions
+        // use the current methods and not reinvent the wheel for some reason
+        // !TODO: there must be a better way
+        this.contact_receive(contact, receiver || (() => undefined), roptions);
+        return { success: true, data: undefined, message: "contact listening" };
+    }
+
     private contact_m_send_raw: Contact["send"] = (contact, data, destination, rtentry) => {
         __contact_throw_if_closed(contact);
 

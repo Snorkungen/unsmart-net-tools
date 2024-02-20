@@ -9,10 +9,7 @@ import { DAEMON_ECHO_REPLIER } from "../lib/device/program/echo-replier";
 import { LoopbackInterface, EthernetInterface } from "../lib/device/interface";
 import { DEVICE_PROGRAM_ROUTEINFO } from "../lib/device/program/routeinfo";
 import { uint8_concat, uint8_fromString } from "../lib/binary/uint8-array";
-import { TCP_FLAGS, TCP_HEADER } from "../lib/header/tcp";
 import { IPV4Address } from "../lib/address/ipv4";
-import { IPV4_HEADER, IPV4_PSEUDO_HEADER, PROTOCOLS } from "../lib/header/ip";
-import { calculateChecksum } from "../lib/binary/checksum";
 
 export const TestingComponent2: Component = () => {
     let terminal: Terminal;
@@ -36,149 +33,31 @@ export const TestingComponent2: Component = () => {
     newdevice.process_start(DAEMON_ECHO_REPLIER, [])
 
     const address = new IPV4Address("127.0.0.100");
-    const ISN = 1_111_111 % 0xffffffff; // 32 bits
-    const SPORT = 9009;
-    const DPORT = 7007;
+    const DPORT = 5005;
+    let tcp_server_contact = newdevice.contact_create("IPv4", "TCP").data!;
+    let tcp_client_contact = newdevice.contact_create("IPv4", "TCP").data!;
 
-    enum TCPState {
-        CLOSED,
-        LISTEN,
-        SYN_RCVD,
-        SYN_SENT,
-        ESTABLISHED,
-        FIN_WAIT_1,
-        FIN_WAIT_2,
-        CLOSING,
-        TIME_WAIT,
+    tcp_server_contact.bind(tcp_server_contact, {
+        saddr: new IPV4Address("0.0.0.0"),
+        daddr: new IPV4Address("0.0.0.0"),
+        sport: DPORT,
+        dport: 0
+    });
 
-        CLOSE_WAIT,
-        LAST_ACK,
-    }
-
-    let tcp_server_contact = newdevice.contact_create("IPv4", "RAW").data!;
-    let tcp_client_contact = newdevice.contact_create("IPv4", "RAW").data!;
-    let tcp_server_seqnum = 0;
-    let tcp_client_seqnum = ISN;
-
-    let tcp_server_state = TCPState.LISTEN;
-    let tcp_client_state = TCPState.CLOSED;
-
-    function ipout(tcphdr: typeof TCP_HEADER) {
-        let pseudohdr = IPV4_PSEUDO_HEADER.create({});
-        newdevice.output_tcp({ buffer: uint8_concat([pseudohdr.getBuffer(), tcphdr.getBuffer()]) }, address)
-    }
+    tcp_server_contact.listen(tcp_server_contact)
 
     function send_tcp4_syn() {
-        let tcphdr = TCP_HEADER.create({
-            sport: SPORT,
-            dport: DPORT,
-            seqnum: tcp_client_seqnum++,
-            flags: TCP_FLAGS.SYN,
-            window: 0xffff,
+        tcp_client_contact.connect(tcp_client_contact, {
+            daddr: address,
+            dport: DPORT
+        })
 
-        });
-
-        tcp_client_state = TCPState.SYN_SENT;
-
-        ipout(tcphdr)
+        console.log(newdevice, tcp_client_contact)
     }
 
     function send_tcp4_fin() {
-        let tcphdr = TCP_HEADER.create({
-            sport: SPORT,
-            dport: DPORT,
-            seqnum: tcp_client_seqnum,
-            flags: TCP_FLAGS.FIN,
-            window: 0xffff,
-        });
-
-        tcp_client_state = TCPState.FIN_WAIT_1;
-        ipout(tcphdr)
+        tcp_client_contact.close(tcp_client_contact)
     }
-
-    // !TODO: next do an active close
-
-
-    tcp_server_contact.receive(tcp_server_contact, (_, data) => {
-        let iphdr = IPV4_HEADER.from(data.buffer);
-        if (iphdr.get("proto") != PROTOCOLS.TCP) return;
-
-        let tcphdr = TCP_HEADER.from(iphdr.get("payload"));
-
-        if (tcphdr.get("dport") != DPORT) return;
-
-        let flags: number = 0;
-        if (tcp_server_state == TCPState.LISTEN) {
-            // reply with a syn+ack
-            flags = TCP_FLAGS.SYN | TCP_FLAGS.ACK;
-            tcp_server_state = TCPState.SYN_RCVD;
-        } else if (tcp_server_state == TCPState.SYN_RCVD) {
-            tcp_server_state = TCPState.ESTABLISHED;
-            return;
-        } else if (tcp_server_state == TCPState.ESTABLISHED) {
-            flags = TCP_FLAGS.FIN | TCP_FLAGS.ACK;
-            tcp_server_state = TCPState.LAST_ACK;
-        } else if (tcp_server_state == TCPState.LAST_ACK) {
-            // in actuality this should go into TIME_WAIT state
-            tcp_client_state = TCPState.CLOSED;
-            return;
-        }
-        tcphdr = tcphdr.create({
-            sport: tcphdr.get("dport"),
-            dport: tcphdr.get("sport"), // swap port numbers
-            acknum: tcp_server_seqnum = (tcphdr.get("seqnum") + 1),
-            flags: flags,
-        })
-        ipout(tcphdr)
-    })
-
-    tcp_client_contact.receive(tcp_client_contact, (_, data) => {
-        let iphdr = IPV4_HEADER.from(data.buffer);
-        if (iphdr.get("proto") != PROTOCOLS.TCP) return;
-
-        let tcphdr = TCP_HEADER.from(iphdr.get("payload"));
-
-        if (tcphdr.get("dport") != SPORT) return;
-        let flags = 0;
-
-        if (tcp_client_state == TCPState.SYN_SENT) {
-            flags = TCP_FLAGS.ACK;
-            tcp_client_state = TCPState.ESTABLISHED;
-            // when i'm in the future send queued data
-        }
-
-        if (tcp_client_state == TCPState.FIN_WAIT_1) {
-            if (tcphdr.get("flags") & TCP_FLAGS.FIN) {
-                flags = TCP_FLAGS.ACK;
-                if (tcphdr.get("flags") & TCP_FLAGS.ACK) {
-                    // in actuality this should go into TIME_WAIT state
-                    tcp_client_state = TCPState.CLOSED;
-                } else {
-                    tcp_client_state = TCPState.CLOSING;
-                }
-
-            } else if (tcphdr.get("flags") & TCP_FLAGS.ACK) {
-                tcp_client_state = TCPState.FIN_WAIT_2;
-                return;
-            }
-        } else if (tcp_client_state == TCPState.FIN_WAIT_2) {
-            flags = TCP_FLAGS.ACK;
-            // in actuality this should go into TIME_WAIT state
-            tcp_client_state = TCPState.CLOSED;
-        }
-
-
-
-        // send an ack 
-        tcphdr = tcphdr.create({
-            sport: tcphdr.get("dport"),
-            dport: tcphdr.get("sport"), // swap port numbers
-            acknum: tcp_client_seqnum = (tcphdr.get("seqnum") + 1),
-            flags: flags,
-        })
-        ipout(tcphdr)
-    })
-
 
     return (
         <div>
