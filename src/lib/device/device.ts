@@ -1678,11 +1678,9 @@ export class Device {
     }
     private contact_input_tcp_fin_wait_1(contact: Contact, connection: TCPConnection, tcphdr: typeof TCP_HEADER) {
         if (tcphdr.get("flags") & TCP_FLAGS.FIN) {
-            let close_contact_hard = false;
 
             if (tcphdr.get("flags") & TCP_FLAGS.ACK) {
-                connection.state = TCPState.TIME_WAIT;
-                close_contact_hard = true;
+                return this.contact_m_close_tcp(contact);
             } else {
                 connection.state = TCPState.CLOSING; // simultaneous close
             }
@@ -1691,12 +1689,6 @@ export class Device {
             this.contact_output_tcp(contact, connection, TCP_HEADER.create({
                 flags: TCP_FLAGS.ACK
             }))// send ack
-
-            if (close_contact_hard) {
-                // !TODO: subscribe to remove TIME_WAIT connection
-                this.contact_close(contact);
-            }
-
             return
         }
 
@@ -1709,33 +1701,17 @@ export class Device {
     private contact_input_tcp_fin_wait_2(contact: Contact, connection: TCPConnection, tcphdr: typeof TCP_HEADER) {
         if ((tcphdr.get("flags") & TCP_FLAGS.FIN) == 0)
             return;
-
-        connection.state = TCPState.TIME_WAIT;
-        this.tcpconnections.set(tcp_connection_id(contact), connection);
-
-        this.contact_output_tcp(contact, connection, TCP_HEADER.create({
-            flags: TCP_FLAGS.ACK
-        }))// send ack
-
-        // !TODO: subscribe to remove TIME_WAIT connection
-        this.contact_close(contact);
+        this.contact_m_close_tcp(contact);
     }
     private contact_input_tcp_closing(contact: Contact, connection: TCPConnection, tcphdr: typeof TCP_HEADER) {
         if ((tcphdr.get("flags") & TCP_FLAGS.ACK) == 0)
             return;
-
-        // !TODO: the contact_m_close_tcp should be smarter
-        // !TODO: subscribe to remove TIME_WAIT connection
-        this.contact_close(contact);
+        this.contact_m_close_tcp(contact);
     }
     private contact_input_tcp_last_ack(contact: Contact, connection: TCPConnection, tcphdr: typeof TCP_HEADER) {
         if ((tcphdr.get("flags") & TCP_FLAGS.ACK) == 0)
             return; // segment must ack
-
-        connection.state = TCPState.CLOSED;
-        this.tcpconnections.set(tcp_connection_id(contact), connection);
-        // !TODO: subscribe to remove TIME_WAIT connection
-        this.contact_close(contact);
+        this.contact_m_close_tcp(contact);
     }
     private contact_input_tcp_established(contact: Contact, connection: TCPConnection, tcphdr: typeof TCP_HEADER) {
         if (tcphdr.get("flags") & TCP_FLAGS.FIN) {
@@ -1765,11 +1741,54 @@ export class Device {
         // !TODO: check the state of the connection and do what is necessary
         // for the current connection state
         // change state
-        connection.state = TCPState.FIN_WAIT_1;
-        this.tcpconnections.set(connection_id, connection);
 
-        let res = this.contact_output_tcp(contact, connection, TCP_HEADER.create({ flags: TCP_FLAGS.FIN | TCP_FLAGS.ACK }))
-        connection.sequence_number = (connection.sequence_number + 1)// increment sequence number
+        let flags = 0;
+        let send = false;
+
+        switch (connection.state) {
+            case TCPState.SYN_RCVD:
+            case TCPState.ESTABLISHED: {
+                connection.state = TCPState.FIN_WAIT_1;
+                flags = TCP_FLAGS.FIN | TCP_FLAGS.ACK;
+                send = true;
+            }; break;
+            case TCPState.FIN_WAIT_1:
+            case TCPState.FIN_WAIT_2: {
+                flags = TCP_FLAGS.ACK;
+                send = true;
+                connection.state = TCPState.TIME_WAIT;
+            }; break;
+            case TCPState.CLOSE_WAIT: {
+                connection.state = TCPState.LAST_ACK;
+                flags = TCP_FLAGS.FIN | TCP_FLAGS.ACK;
+                send = true;
+            }; break;
+            case TCPState.CLOSING: {
+                connection.state = TCPState.TIME_WAIT;
+            };
+            case TCPState.LAST_ACK: {
+                connection.state = TCPState.CLOSED;
+                this.tcpconnections.delete(connection_id);
+                return this.contact_close(contact);
+            }
+        }
+
+        this.tcpconnections.set(connection_id, connection);
+        let res: DeviceResult<ContactError> = { success: true, data: undefined };
+        if (send) {
+            res = this.contact_output_tcp(contact, connection, TCP_HEADER.create({ flags }))
+            connection.sequence_number = (connection.sequence_number + 1)// increment sequence number
+        }
+
+        if (connection.state === TCPState.TIME_WAIT) {
+            connection.state = TCPState.CLOSED;
+
+            // in this case the contact actuallly closes
+            // !TODO: remove connection after some time
+            window.setTimeout(() => this.tcpconnections.delete(connection_id), 20); // !TODO: the time waiting should be variable
+            return this.contact_close(contact)
+        }
+
         return res;
     }
     private contact_m_send_tcp: Contact["send"] = (contact, data, _, rtentry) => {
