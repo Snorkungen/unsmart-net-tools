@@ -1577,6 +1577,13 @@ export class Device {
 
         let tcphdr = TCP_HEADER.from(receiver_params[0].buffer);
 
+        // increment ack number, just hacky wayt to make things work i guess
+        if ((tcphdr.get("doffset") << 2) == tcphdr.size) { // header contains no data
+            if ((tcphdr.get("seqnum")) === connection.ack_number + 1) { // sequence number has been incremented
+                connection.ack_number = connection.ack_number + 1;
+            }
+        }
+
         // !TODO: verify ack number
 
         switch (connection.state) {
@@ -1584,6 +1591,7 @@ export class Device {
             case TCPState.SYN_RCVD: this.contact_input_tcp_syn_rcvd(contact, connection, tcphdr); break;
             case TCPState.LISTEN: this.contact_input_tcp_listen(contact, connection, tcphdr, input_caddr); break;
             case TCPState.FIN_WAIT_1: this.contact_input_tcp_fin_wait_1(contact, connection, tcphdr); break;
+            case TCPState.CLOSING: this.contact_input_tcp_closing(contact, connection, tcphdr); break;
             case TCPState.FIN_WAIT_2: this.contact_input_tcp_fin_wait_2(contact, connection, tcphdr); break;
             case TCPState.LAST_ACK: this.contact_input_tcp_last_ack(contact, connection, tcphdr); break;
             case TCPState.ESTABLISHED: this.contact_input_tcp_established(contact, connection, tcphdr); break;
@@ -1664,7 +1672,9 @@ export class Device {
 
         // reply with a syn+ack
         tcphdr = TCP_HEADER.create({ flags: TCP_FLAGS.SYN | TCP_FLAGS.ACK });
-        return this.contact_output_tcp(contact, connection, tcphdr);
+        this.contact_output_tcp(contact, connection, tcphdr);
+        // increment sequence number
+        connection.sequence_number = (connection.sequence_number + 1);
     }
     private contact_input_tcp_fin_wait_1(contact: Contact, connection: TCPConnection, tcphdr: typeof TCP_HEADER) {
         if (tcphdr.get("flags") & TCP_FLAGS.FIN) {
@@ -1692,7 +1702,6 @@ export class Device {
 
         if ((tcphdr.get("flags") & TCP_FLAGS.ACK) == 0)
             return; // segment must ack
-
         connection.state = TCPState.FIN_WAIT_2;
         this.tcpconnections.set(tcp_connection_id(contact), connection);
         // wait for fin
@@ -1704,6 +1713,18 @@ export class Device {
         connection.state = TCPState.TIME_WAIT;
         this.tcpconnections.set(tcp_connection_id(contact), connection);
 
+        this.contact_output_tcp(contact, connection, TCP_HEADER.create({
+            flags: TCP_FLAGS.ACK
+        }))// send ack
+
+        // !TODO: subscribe to remove TIME_WAIT connection
+        this.contact_close(contact);
+    }
+    private contact_input_tcp_closing(contact: Contact, connection: TCPConnection, tcphdr: typeof TCP_HEADER) {
+        if ((tcphdr.get("flags") & TCP_FLAGS.ACK) == 0)
+            return;
+
+        // !TODO: the contact_m_close_tcp should be smarter
         // !TODO: subscribe to remove TIME_WAIT connection
         this.contact_close(contact);
     }
@@ -1723,6 +1744,11 @@ export class Device {
 
             // send ack
             this.contact_output_tcp(contact, connection, TCP_HEADER.create({
+                flags: TCP_FLAGS.ACK
+            }));
+            // send fin and close contact, could make contact close smarter
+            // and have it check the connection state for what kind of segment to send
+            this.contact_output_tcp(contact, connection, TCP_HEADER.create({
                 flags: TCP_FLAGS.ACK | TCP_FLAGS.FIN
             }));
             return;
@@ -1736,13 +1762,15 @@ export class Device {
         let connection = this.tcpconnections.get(connection_id);
         if (!connection_id || !connection || !contact.address) return this.contact_close(contact);
 
-        // !TODO: close connection
-
+        // !TODO: check the state of the connection and do what is necessary
+        // for the current connection state
         // change state
         connection.state = TCPState.FIN_WAIT_1;
         this.tcpconnections.set(connection_id, connection);
 
-        return this.contact_output_tcp(contact, connection, TCP_HEADER.create({ flags: TCP_FLAGS.FIN | TCP_FLAGS.ACK }))
+        let res = this.contact_output_tcp(contact, connection, TCP_HEADER.create({ flags: TCP_FLAGS.FIN | TCP_FLAGS.ACK }))
+        connection.sequence_number = (connection.sequence_number + 1)// increment sequence number
+        return res;
     }
     private contact_m_send_tcp: Contact["send"] = (contact, data, _, rtentry) => {
         if (contact.addressFamily == "RAW")
@@ -1830,7 +1858,12 @@ export class Device {
             window: 0xffff,
         });
 
-        return this.contact_output_tcp(contact, connection, tcphdr)
+        let res = this.contact_output_tcp(contact, connection, tcphdr)
+
+        // consume sequence number
+        connection.sequence_number = (connection.sequence_number + 1);
+
+        return res;
     }
     private contact_m_listen_tcp: Contact["listen"] = (contact, receiver, roptions) => {
         if (!contact.address)
