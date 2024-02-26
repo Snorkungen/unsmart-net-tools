@@ -1,6 +1,6 @@
 import { uint8_concat } from "../../binary/uint8-array";
 import { TCP_HEADER, TCP_OPTION_KINDS } from "../../header/tcp";
-import type { Contact } from "../device";
+import type { Contact, DeviceRoute } from "../device";
 
 export enum TCPState {
     CLOSED,
@@ -30,6 +30,9 @@ export type TCPConnection = {
     window: number;
     /** max segments size */
     mss: number;
+
+    /** the initialized route, the purpose for keeping the reference is unknow at the moment */
+    route?: DeviceRoute;
 };
 
 export function tcp_connection_id(contact: Contact): string {

@@ -2,19 +2,19 @@ import { BaseAddress } from "../address/base";
 import { IPV4Address } from "../address/ipv4";
 import { ALL_LINK_LOCAL_NODES_ADDRESSV6, IPV6Address } from "../address/ipv6";
 import { MACAddress } from "../address/mac";
-import { AddressMask, createMask } from "../address/mask";
-import { Struct, StructType, and, not, or } from "../binary";
-import { uint8_concat, uint8_equals, uint8_fromNumber, uint8_matchLength, uint8_readUint32BE } from "../binary/uint8-array";
-import { ETHERNET_DOT1Q_HEADER, ETHERNET_HEADER, ETHER_TYPES, EtherType } from "../header/ethernet";
+import { AddressMask, } from "../address/mask";
+import { and, not, or } from "../binary";
+import { uint8_concat, uint8_equals, uint8_fromNumber, uint8_matchLength, uint8_readUint16BE, uint8_readUint32BE } from "../binary/uint8-array";
+import { ETHERNET_DOT1Q_HEADER, ETHERNET_HEADER, ETHER_TYPES } from "../header/ethernet";
 import { IPV4_HEADER, IPV4_PSEUDO_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../header/ip";
-import { ARP_HEADER, ARP_OPCODES, createARPHeader } from "../header/arp";
+import { ARP_HEADER, ARP_OPCODES } from "../header/arp";
 import { PacketCaptureHFormat, PacketCaptureNFormat, PacketCaptureRecordReader } from "../packet-capture/reader";
 import { calculateChecksum } from "../binary/checksum";
 import { ICMPV4_TYPES, ICMPV6_TYPES, ICMP_HEADER, ICMP_NDPFLAG_SOLICITED, ICMP_NDP_HEADER } from "../header/icmp";
 import { UDP_HEADER } from "../header/udp";
 import { BaseInterface, VlanInterface, EthernetInterface } from "./interface";
-import { TCP_FLAGS, TCP_HEADER } from "../header/tcp";
-import { TCPConnection, TCPState, tcp_connection_id } from "./internals/tcp";
+import { TCP_FLAGS, TCP_HEADER, TCP_OPTION_KINDS } from "../header/tcp";
+import { TCPConnection, TCPState, tcp_connection_id, tcp_read_options, tcp_set_option } from "./internals/tcp";
 
 // source <https://stackoverflow.com/a/63029283>
 type DropFirst<T extends unknown[]> = T extends [any, ...infer U] ? U : never;
@@ -1533,7 +1533,7 @@ export class Device {
     /** START OF TCP STUFF */
     private tcpseqnum = Math.floor(Math.random() * 2 ** 32); // set a random seed
     private tcpconnections = new Map<string, TCPConnection>(); // !TODO: do some stuff the key can be the address stuff
-    private contact_output_tcp(contact: Contact, connection: TCPConnection, tcphdr: typeof TCP_HEADER): DeviceResult<ContactError> {
+    private contact_output_tcp(contact: Contact, connection: TCPConnection, tcphdr: typeof TCP_HEADER, rtentry?: DeviceRoute): DeviceResult<ContactError> {
         if (!contact.address) return { success: false, error: undefined, message: "something not working right" };
 
         let pseudo_header: { getBuffer(): Uint8Array };
@@ -1559,7 +1559,7 @@ export class Device {
 
         tcphdr.set("window", 1024 * 40)
 
-        return this.output_tcp({ buffer: uint8_concat([pseudo_header.getBuffer(), tcphdr.getBuffer()]) }, contact.address.daddr);
+        return this.output_tcp({ buffer: uint8_concat([pseudo_header.getBuffer(), tcphdr.getBuffer()]) }, contact.address.daddr, rtentry);
     }
     private contact_input_tcp(af: ContactAF, ...receiver_params: DropFirst<Parameters<ContactReceiver>>) {
         let input_caddr = receiver_params[1];
@@ -1609,6 +1609,22 @@ export class Device {
         let connection_id = tcp_connection_id(contact);
         if (!connection_id || !contact.address) return; // address is going to defined because it must be otherwise this logic would not be called
 
+        let hdr_options = tcp_read_options(tcphdr);
+
+        let mss = contact.address.daddr instanceof IPV6Address ? 1220 : 536;
+        let mss_opt = hdr_options.get(TCP_OPTION_KINDS.MSS);
+        if (mss_opt && mss_opt.byteLength == 2) {
+            mss = uint8_readUint16BE(mss_opt);
+        }
+        
+        let window = tcphdr.get("window");
+        let wsc_opt = hdr_options.get(TCP_OPTION_KINDS.WSC);
+        if (wsc_opt && wsc_opt.length == 1) {
+            window << (wsc_opt[0])
+        }
+
+        connection.window = window;
+        connection.mss = mss;
         connection.ack_number = tcphdr.get("seqnum"); // save server sequence number
         connection.state = TCPState.ESTABLISHED;
         this.tcpconnections.set(connection_id, connection)
@@ -1644,6 +1660,7 @@ export class Device {
         ) {
             // do nothing
             // a more specific contact can't be created
+            console.warn("THIS LOGIC, is not fully fleshed out, because this should be an error, because the same foreign contact is trying to contact a second time")
         } else {
             contact = this.contact_create(contact.addressFamily, "TCP").data!; // create new contact
             let bind_result = this.contact_bind(contact, input_caddr);
@@ -1654,6 +1671,22 @@ export class Device {
             this.contact_receive(contact, (() => undefined));
         }
 
+        let route = this.route_resolve(contact.address!.daddr);
+        if (!route)
+            return; // no outgoing interface this should not happen but misconfig could cause this
+
+        let mss = route.destination instanceof IPV6Address ? 1220 : 536;
+        let hdr_options = tcp_read_options(tcphdr)
+        let mss_opt = hdr_options.get(TCP_OPTION_KINDS.MSS);
+        if (mss_opt && mss_opt.byteLength == 2) {
+            mss = uint8_readUint16BE(mss_opt);
+        }
+
+        let window = tcphdr.get("window");
+        let wsc_opt = hdr_options.get(TCP_OPTION_KINDS.WSC);
+        if (wsc_opt && wsc_opt.length == 1) {
+            window << (wsc_opt[0])
+        }
 
         // configure contact
         let connection_id = tcp_connection_id(contact);
@@ -1663,8 +1696,9 @@ export class Device {
             out_data: [],
             sequence_number: ((this.tcpseqnum * (this.tcpconnections.size + 1)) & 0x7fffffff), // !NOTE: i do not what the spec is for the initialisation for the sequence number
             ack_number: tcphdr.get("seqnum"),
-            mss: 0, // unknown
-            window: 0, // unknown
+            mss: mss,
+            window: window,
+            route: route
         });
 
         connection = this.tcpconnections.get(connection_id) as TCPConnection;
@@ -1672,6 +1706,9 @@ export class Device {
 
         // reply with a syn+ack
         tcphdr = TCP_HEADER.create({ flags: TCP_FLAGS.SYN | TCP_FLAGS.ACK });
+        mss = route.iface.mtu - (route.destination instanceof IPV6Address ? 60 : 40);
+        tcp_set_option(tcphdr, TCP_OPTION_KINDS.MSS, uint8_fromNumber(mss, 2))
+
         this.contact_output_tcp(contact, connection, tcphdr);
         // increment sequence number
         connection.sequence_number = (connection.sequence_number + 1);
@@ -1852,6 +1889,10 @@ export class Device {
         if (!connection_id || this.tcpconnections.get(connection_id))
             return { success: false, error: undefined, message: "contact already has a connection object defined" };
 
+        let route = this.route_resolve(contact.address!.daddr);
+        if (!route)
+            return { success: false, error: "HOSTUNREACH", message: "an outgoing route could not be found" }
+
         // set the initial connection object
         this.tcpconnections.set(connection_id, {
             state: TCPState.SYN_SENT,
@@ -1861,6 +1902,8 @@ export class Device {
             ack_number: 0, // unknown at this point
             mss: 0, // unknown
             window: 0, // unknown
+
+            route: route // the outgoing route, why i'm saving a reference i do not know
         });
 
         let connection = this.tcpconnections.get(connection_id);
@@ -1876,6 +1919,9 @@ export class Device {
             flags: TCP_FLAGS.SYN,
             window: 0xffff,
         });
+
+        let mss = route.iface.mtu - (route.destination instanceof IPV6Address ? 60 : 40);
+        tcp_set_option(tcphdr, TCP_OPTION_KINDS.MSS, uint8_fromNumber(mss, 2))
 
         let res = this.contact_output_tcp(contact, connection, tcphdr)
 
