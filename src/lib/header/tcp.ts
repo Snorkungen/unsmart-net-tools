@@ -103,52 +103,17 @@ export const TCP_FLAGS = {
     FIN: 0x01
 } as const;
 
-export function createTCPHeader({ sport, dport, seqnum, acknum, flags = [], window, urgpnt, options, data }: {
-    sport: number;
-    dport: number;
-    seqnum?: number;
-    acknum?: number;
-    flags?: (typeof TCP_FLAGS[keyof typeof TCP_FLAGS])[];
-    window?: number;
-    urgpnt?: number;
-    options?: Uint8Array;
-    data: Uint8Array;
-}, pseudoHdr?: typeof IPV4_PSEUDO_HEADER | typeof IPV6_PSEUDO_HEADER): typeof TCP_HEADER {
-    let payload: Uint8Array;
-    let doffset: number = TCP_HEADER.getMinSize() / 4;
-
-    if (options) {
-        // pad options 
-        let bytePadCount = options.byteLength % 4;
-
-        if (bytePadCount > 0) {
-            let tmp = (new Uint8Array(options.byteLength + bytePadCount));
-            tmp.set(options);
-            options = tmp;
-        }
-
-        payload = uint8_concat([options, data]);
-
-        doffset += options.byteLength / 4;
-    } else {
-        payload = data;
-    }
-
-    let tcpHdr = TCP_HEADER.create({
-        sport, dport,
-        seqnum, acknum,
-        doffset,
-        flags: flags.reduce<number>((res, f) => res | f, 0),
-        window, urgpnt,
-        payload
-    });
-
-    if (pseudoHdr) {
-        pseudoHdr.set("proto", PROTOCOLS.TCP);
-        pseudoHdr.set("len", tcpHdr.size);
-
-        tcpHdr.set("csum", calculateChecksum(pseudoHdr.getBuffer()));
-    }
-
-    return tcpHdr;
-}
+export const TCP_OPTION_KINDS = {
+    /** End of options */
+    EOL: 0,
+    /** No operation */
+    NOP: 1,
+    /** Max Segment Size */
+    MSS: 2,
+    /** Window Scaling */
+    WSC: 3,
+    _1:4,
+    _2: 5,
+    /** timestamps */
+    TIMESTAMPS: 8
+} as const;
