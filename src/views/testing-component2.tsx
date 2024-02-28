@@ -1,6 +1,6 @@
 import { Component, createEffect } from "solid-js";
-import Terminal, { TerminalRenderer } from "../lib/terminal/terminal";
-import { Device, Process, ProcessSignal, Program } from "../lib/device/device";
+import Terminal from "../lib/terminal/terminal";
+import { Device } from "../lib/device/device";
 import { DAEMON_SHELL } from "../lib/device/program/shell";
 import { DEVICE_PROGRAM_PING } from "../lib/device/program/ping";
 import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_HELP, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_ECHO } from "../lib/device/program/program";
@@ -8,7 +8,7 @@ import { DEVICE_PROGRAM_IFINFO } from "../lib/device/program/ifinfo";
 import { DAEMON_ECHO_REPLIER } from "../lib/device/program/echo-replier";
 import { LoopbackInterface, EthernetInterface } from "../lib/device/interface";
 import { DEVICE_PROGRAM_ROUTEINFO } from "../lib/device/program/routeinfo";
-import { uint8_concat, uint8_fromString } from "../lib/binary/uint8-array";
+import { uint8_fromString } from "../lib/binary/uint8-array";
 import { IPV4Address } from "../lib/address/ipv4";
 
 export const TestingComponent2: Component = () => {
@@ -58,11 +58,15 @@ export const TestingComponent2: Component = () => {
     function send_tcp4_fin() {
         tcp_client_contact.close(tcp_client_contact)
     }
+    function send_tcp4_send() {
+        tcp_client_contact.send(tcp_client_contact, { buffer: uint8_fromString("Hello, World\n") })
+    }
 
     return (
         <div>
             <button onclick={send_tcp4_syn}>OPEN TCP conn</button>
             <button onclick={send_tcp4_fin}>CLOSE TCP conn</button>
+            <button onclick={send_tcp4_send}>SEND TCP hello world</button>
             <div ref={(el) => {
                 terminal = new Terminal(el)
             }}></div>

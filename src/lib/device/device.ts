@@ -1577,13 +1577,6 @@ export class Device {
 
         let tcphdr = TCP_HEADER.from(receiver_params[0].buffer);
 
-        // increment ack number, just hacky wayt to make things work i guess
-        if ((tcphdr.get("doffset") << 2) == tcphdr.size) { // header contains no data
-            if ((tcphdr.get("seqnum")) === connection.ack_number + 1) { // sequence number has been incremented
-                connection.ack_number = connection.ack_number + 1;
-            }
-        }
-
         // !TODO: verify ack number
 
         switch (connection.state) {
@@ -1594,7 +1587,7 @@ export class Device {
             case TCPState.CLOSING: this.contact_input_tcp_closing(contact, connection, tcphdr); break;
             case TCPState.FIN_WAIT_2: this.contact_input_tcp_fin_wait_2(contact, connection, tcphdr); break;
             case TCPState.LAST_ACK: this.contact_input_tcp_last_ack(contact, connection, tcphdr); break;
-            case TCPState.ESTABLISHED: this.contact_input_tcp_established(contact, connection, tcphdr); break;
+            case TCPState.ESTABLISHED: this.contact_input_tcp_established(contact, connection, tcphdr, best); break;
         }
     }
     /** could make this cooler but i don't feel like it */
@@ -1616,7 +1609,7 @@ export class Device {
         if (mss_opt && mss_opt.byteLength == 2) {
             mss = uint8_readUint16BE(mss_opt);
         }
-        
+
         let window = tcphdr.get("window");
         let wsc_opt = hdr_options.get(TCP_OPTION_KINDS.WSC);
         if (wsc_opt && wsc_opt.length == 1) {
@@ -1738,6 +1731,7 @@ export class Device {
     private contact_input_tcp_fin_wait_2(contact: Contact, connection: TCPConnection, tcphdr: typeof TCP_HEADER) {
         if ((tcphdr.get("flags") & TCP_FLAGS.FIN) == 0)
             return;
+        connection.ack_number += 1; // increment assume that closing consumes one data unit 
         this.contact_m_close_tcp(contact);
     }
     private contact_input_tcp_closing(contact: Contact, connection: TCPConnection, tcphdr: typeof TCP_HEADER) {
@@ -1750,11 +1744,11 @@ export class Device {
             return; // segment must ack
         this.contact_m_close_tcp(contact);
     }
-    private contact_input_tcp_established(contact: Contact, connection: TCPConnection, tcphdr: typeof TCP_HEADER) {
+    private contact_input_tcp_established(contact: Contact, connection: TCPConnection, tcphdr: typeof TCP_HEADER, receive_entry: Device["contact_receivers"][number]) {
         if (tcphdr.get("flags") & TCP_FLAGS.FIN) {
             connection.state = TCPState.LAST_ACK; // skip CLOSING state
+            connection.ack_number += 1; // increment assume that closing consumes one data unit 
             this.tcpconnections.set(tcp_connection_id(contact), connection);
-
             // send ack
             this.contact_output_tcp(contact, connection, TCP_HEADER.create({
                 flags: TCP_FLAGS.ACK
@@ -1767,7 +1761,32 @@ export class Device {
             return;
         }
 
-        // !TODO: do data handling etc
+        if (!receive_entry)
+            return;
+
+        if ((tcphdr.get("flags") & TCP_FLAGS.ACK) === 0)
+            return; // ACK must be set for things to happen
+
+
+        let header_length = (tcphdr.get("doffset") << 2) || 20; // if offset was unset default to 20
+        // check that this packet is acknowledging sent data
+
+        // naive approach doing to much
+
+        // !TODO: handle data being acknowledged
+
+        // check if there is data
+        if (header_length >= tcphdr.size)
+            return;
+
+
+        // there is data in the segment
+        let buffer = tcphdr.getBuffer().subarray(header_length);
+        receive_entry.receiver(contact, { buffer: buffer }); // now user get's data do something with
+        connection.ack_number += buffer.length; // !TODO: this should actually wrap U16
+
+        tcphdr = TCP_HEADER.create({ flags: TCP_FLAGS.ACK });
+        return this.contact_output_tcp(contact, connection, tcphdr);
     }
 
     private contact_m_close_tcp: Contact["close"] = (contact) => {
@@ -1828,23 +1847,47 @@ export class Device {
 
         return res;
     }
-    private contact_m_send_tcp: Contact["send"] = (contact, data, _, rtentry) => {
+    private contact_m_send_tcp: Contact["send"] = (contact, data) => {
         if (contact.addressFamily == "RAW")
             return { success: false, error: undefined, message: "cannot send incorrect \"address family\": " + contact.addressFamily }
         if (!contact.address)
             return { success: false, error: undefined, message: "contact must be bound" };
 
         let connection = this.tcpconnections.get(tcp_connection_id(contact));
-        if (!connection || connection.state !== TCPState.ESTABLISHED)
-            return { success: false, error: undefined, message: "No connection established for contact" }
+        if (!connection)
+            return { success: false, error: undefined, message: "connection missing" }
 
-        // do some logic stuff 
-        // queue some data for transport
-        // could have some optimisations but first version is just going to be dumb
-        // data storage could do some clever stuff maybe IDK
 
-        // let res = this.output_tcp(data, contact.address.daddr, rtentry);
-        return { success: false, error: undefined, message: "method not implemented yet" }
+
+        if (connection.state != TCPState.ESTABLISHED) {
+            if (!connection.out_data[0]) {
+                connection.out_data[0] = [connection.sequence_number, new Uint8Array(0)];
+            }
+            connection.out_data[0][1] = uint8_concat([connection.out_data[0][1], data.buffer]); // queue data for sending when connected
+            return { success: true, data: undefined };
+        }
+
+        if (connection.out_data[0] && connection.out_data[0][0] === connection.sequence_number) {
+            connection.out_data[0][1] = uint8_concat([connection.out_data[0][1], data.buffer]);
+        } else {
+            connection.out_data.push([connection.sequence_number, data.buffer]);
+        }
+
+        let buffer = uint8_concat(connection.out_data.map(([, b]) => b));
+
+        // !TODO: be aware of the maximum segment size
+        // !TODO: could add support for a timer, that would then make sending mmore efficient
+
+        let tcphdr = TCP_HEADER.create({
+            flags: TCP_FLAGS.ACK,
+            payload: buffer,
+        });
+
+        let res = this.contact_output_tcp(contact, connection, tcphdr);
+
+        connection.sequence_number = connection.sequence_number + buffer.length;
+
+        return res;
     }
     private contact_m_connect_tcp: Contact["connect"] = (contact, caddr) => {
         if (!contact.address && !caddr)

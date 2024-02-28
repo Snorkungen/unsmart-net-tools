@@ -19,8 +19,9 @@ export enum TCPState {
 
 export type TCPConnection = {
     state: TCPState;
-    out_data: Uint8Array[];
-    in_data: Uint8Array[];
+    /** sequence number, data.buffer */
+    out_data: ([number, Uint8Array])[];
+    in_data: ([number, Uint8Array])[];
 
 
     sequence_number: number;
