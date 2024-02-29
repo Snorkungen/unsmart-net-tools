@@ -105,7 +105,8 @@ export interface Contact<AF extends ContactAF = ContactAF, Proto extends Contact
     sendTo(contact: Contact<AF, "UDP", AT, Addr>, data: NetworkData, caddr?: Partial<ContactAddress<Addr>>, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
 
     connect(contact: Contact<AF, "TCP", AT, Addr>, caddr?: Partial<ContactAddress<Addr>>, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>
-    listen(contact: Contact<AF, "TCP", AT, Addr>, receiver?: ContactReceiver, options?: ContactReceiveOptions): DeviceResult<ContactError>
+    listen(contact: Contact<AF, "TCP", AT, Addr>): DeviceResult<ContactError>
+    accept(contact: Contact<AF, "TCP", AT, Addr>, accept_handler: (new_contact: Contact) => boolean): DeviceResult<ContactError>
 }
 
 export type Program<DT = any> = {
@@ -1383,11 +1384,13 @@ export class Device {
             m_sendTo: Contact["sendTo"],
             m_receiveFrom: Contact["receiveFrom"],
             m_connect: Contact["connect"],
-            m_listen: Contact["listen"];
+            m_listen: Contact["listen"],
+            m_accept: Contact["accept"];
 
         m_close = this.contact_close;
         m_connect = this.contact_method_not_supported;
         m_listen = this.contact_method_not_supported;
+        m_accept = this.contact_method_not_supported;
 
         m_sendTo = this.contact_method_not_supported;
         m_receiveFrom = this.contact_method_not_supported;
@@ -1403,6 +1406,7 @@ export class Device {
             m_send = this.contact_m_send_tcp;
             m_connect = this.contact_m_connect_tcp;
             m_listen = this.contact_m_listen_tcp;
+            m_accept = this.contact_m_accept_tcp;
         } else {
             return { success: false, error: undefined, message: "could not determine methods based on ContactProto: " + proto };
         }
@@ -1423,7 +1427,8 @@ export class Device {
             sendTo: m_sendTo.bind(this),
 
             connect: m_connect.bind(this),
-            listen: m_listen.bind(this)
+            listen: m_listen.bind(this),
+            accept: m_accept.bind(this)
         };
 
         return { success: true, data: this.contacts[i] as Contact<CAF, CProto> };
@@ -1533,6 +1538,7 @@ export class Device {
     /** START OF TCP STUFF */
     private tcpseqnum = Math.floor(Math.random() * 2 ** 32); // set a random seed
     private tcpconnections = new Map<string, TCPConnection>(); // !TODO: do some stuff the key can be the address stuff
+    private tcpplaceholderreceiver() { }
     private contact_output_tcp(contact: Contact, connection: TCPConnection, tcphdr: typeof TCP_HEADER, rtentry?: DeviceRoute): DeviceResult<ContactError> {
         if (!contact.address) return { success: false, error: undefined, message: "something not working right" };
 
@@ -1582,7 +1588,7 @@ export class Device {
         switch (connection.state) {
             case TCPState.SYN_SENT: this.contact_input_tcp_syn_sent(contact, connection, tcphdr); break;
             case TCPState.SYN_RCVD: this.contact_input_tcp_syn_rcvd(contact, connection, tcphdr); break;
-            case TCPState.LISTEN: this.contact_input_tcp_listen(contact, connection, tcphdr, input_caddr); break;
+            case TCPState.LISTEN: this.contact_input_tcp_listen(contact, connection, tcphdr, input_caddr, best); break;
             case TCPState.FIN_WAIT_1: this.contact_input_tcp_fin_wait_1(contact, connection, tcphdr); break;
             case TCPState.CLOSING: this.contact_input_tcp_closing(contact, connection, tcphdr); break;
             case TCPState.FIN_WAIT_2: this.contact_input_tcp_fin_wait_2(contact, connection, tcphdr); break;
@@ -1592,6 +1598,10 @@ export class Device {
     }
     /** could make this cooler but i don't feel like it */
     private contact_input_tcp_syn_sent(contact: Contact, connection: TCPConnection, tcphdr: typeof TCP_HEADER) {
+        if (tcphdr.get("flags") & TCP_FLAGS.FIN) {
+            return this.contact_input_tcp_established(contact, connection, tcphdr, undefined); // this is hacky but works good enough
+        }
+
         if ((tcphdr.get("flags") & TCP_FLAGS.SYN) == 0)
             return; // !TODO: remove this could receive only a sync then this would do something different
 
@@ -1638,11 +1648,10 @@ export class Device {
 
         // !TODO: if there was data then send
     }
-    private contact_input_tcp_listen(contact: Contact, connection: TCPConnection, tcphdr: typeof TCP_HEADER, input_caddr: ContactAddress<BaseAddress>) {
+    private contact_input_tcp_listen(contact: Contact, connection: TCPConnection, tcphdr: typeof TCP_HEADER, input_caddr: ContactAddress<BaseAddress>, receive_entry: Device["contact_receivers"][number]) {
         if ((tcphdr.get("flags") & TCP_FLAGS.SYN) == 0)
             return; // ignore, only accepting syn requests
 
-        // !TODO: check that it is possible to create a more specific contact binding
         if (!contact.address) return;
 
         if (
@@ -1696,6 +1705,16 @@ export class Device {
 
         connection = this.tcpconnections.get(connection_id) as TCPConnection;
         if (!connection || !contact.address) return;
+
+        // if there is an accept function set to do stuff
+        if (receive_entry?.receiver && receive_entry.receiver !== this.tcpplaceholderreceiver) {
+            let handler = receive_entry.receiver as Parameters<Contact["accept"]>[1];
+
+            if (!handler(contact)) {
+                this.contact_m_close_tcp(contact); // !TODO: the closing has to be tested
+                return; // the connection was not accepted
+            }
+        }
 
         // reply with a syn+ack
         tcphdr = TCP_HEADER.create({ flags: TCP_FLAGS.SYN | TCP_FLAGS.ACK });
@@ -1771,9 +1790,26 @@ export class Device {
         let header_length = (tcphdr.get("doffset") << 2) || 20; // if offset was unset default to 20
         // check that this packet is acknowledging sent data
 
-        // naive approach doing to much
+        // naive approach doing checking acknowledged data
+        let received_ack_num = tcphdr.get("acknum");
+        for (let i = 0; i < connection.out_data.length; i++) {
+            let [seqnum, buffer] = connection.out_data[i];
 
-        // !TODO: handle data being acknowledged
+            if (received_ack_num <= seqnum) {
+                break; // there is no point moving forward
+            }
+
+            let diff = received_ack_num - seqnum;
+            if (diff >= buffer.byteLength) {
+                connection.out_data.shift();
+                i--;
+                continue;
+            }
+
+            // data paritally accepted
+            connection.out_data[0][0] += diff;
+            connection.out_data[0][1] = buffer.slice(diff)
+        }
 
         // check if there is data
         if (header_length >= tcphdr.size)
@@ -1797,7 +1833,6 @@ export class Device {
         // !TODO: check the state of the connection and do what is necessary
         // for the current connection state
         // change state
-
         let flags = 0;
         let send = false;
 
@@ -1952,7 +1987,7 @@ export class Device {
         let connection = this.tcpconnections.get(connection_id);
         if (!connection || !contact.address) return { success: false, error: undefined, message: "something that should not happen happened" };
 
-        this.contact_receive(contact, (() => undefined));
+        this.contact_receive(contact, this.tcpplaceholderreceiver);
 
         // send first tcp syn packet
         let tcphdr = TCP_HEADER.create({
@@ -1973,7 +2008,7 @@ export class Device {
 
         return res;
     }
-    private contact_m_listen_tcp: Contact["listen"] = (contact, receiver, roptions) => {
+    private contact_m_listen_tcp: Contact["listen"] = (contact) => {
         if (!contact.address)
             return { success: false, error: undefined, message: "contact must be bound, contact not bound" };
 
@@ -1994,10 +2029,18 @@ export class Device {
         // think about how i want to handle receiver and roptions
         // use the current methods and not reinvent the wheel for some reason
         // !TODO: there must be a better way
-        this.contact_receive(contact, receiver || (() => undefined), roptions);
+        this.contact_receive(contact, this.tcpplaceholderreceiver);
         return { success: true, data: undefined, message: "contact listening" };
     }
-
+    private contact_m_accept_tcp: Contact["accept"] = (contact, handler) => {
+        for (let i = 0; i < this.contact_receivers.length; i++) {
+            if (this.contact_receivers[i] && this.contact_receivers[i]?.contact === contact) {
+                this.contact_receivers[i]!.receiver = handler as any; // this is just a hack
+                break;
+            }
+        }
+        return { success: true, data: undefined };
+    }
     private contact_m_send_raw: Contact["send"] = (contact, data, destination, rtentry) => {
         __contact_throw_if_closed(contact);
 

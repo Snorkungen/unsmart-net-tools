@@ -44,12 +44,24 @@ export const TestingComponent2: Component = () => {
         dport: 0
     });
 
-    tcp_server_contact.listen(tcp_server_contact)
+    tcp_server_contact.listen(tcp_server_contact);
+    tcp_server_contact.accept(tcp_server_contact, (con) => {
+        console.log("connection established, i.e., accepted")
+        con.receive(con, (_, data) => {
+            con.send(con, data)
+            // in future reflect back the same data for testing purposes
+        })
+        return true; // accept all connnections 
+    })
 
     function send_tcp4_syn() {
         tcp_client_contact.connect(tcp_client_contact, {
             daddr: address,
             dport: DPORT
+        })
+
+        tcp_client_contact.receive(tcp_client_contact, (_, data) => {
+            console.log("message reflected:", String.fromCharCode(...data.buffer))
         })
 
         console.log(newdevice, tcp_client_contact)
