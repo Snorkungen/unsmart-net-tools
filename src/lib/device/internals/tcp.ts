@@ -144,3 +144,12 @@ export function tcp_read_options(tcphdr: typeof TCP_HEADER): Map<number, Uint8Ar
 
     return map;
 }
+
+export function add_u16(orig: number, num = 0): number {
+    return (orig + num) & (2 ** 16 - 1);
+}
+export function add_u32(orig: number, num = 0): number {
+    let n = (orig + num) & (2 ** 32 - 1);
+    if (n < 0) return n * -1 + 0x80000000;
+    return n;
+}

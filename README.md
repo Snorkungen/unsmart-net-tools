@@ -15,6 +15,9 @@
   - [ ] Device -> contact
     - [x] UDP protocol support
     - [ ] TCP protocol support
+      - [x] connect
+      - [x] send and receive data
+      - [ ] reset connection
 - [ ] Terminal & Shell
   - [ ] batch rendering for more efficient rendering
   - [x] `TerminalRenderer` make rendering faster
