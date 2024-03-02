@@ -54,6 +54,12 @@ export const TestingComponent2: Component = () => {
         return true; // accept all connnections 
     })
 
+    function send_tcp4_synrst() {
+        tcp_client_contact.connect(tcp_client_contact, {
+            daddr: address,
+            dport: 2
+        })
+    }
     function send_tcp4_syn() {
         tcp_client_contact.connect(tcp_client_contact, {
             daddr: address,
@@ -76,6 +82,7 @@ export const TestingComponent2: Component = () => {
 
     return (
         <div>
+            <button onclick={send_tcp4_synrst}>OPEN bad connection</button>
             <button onclick={send_tcp4_syn}>OPEN TCP conn</button>
             <button onclick={send_tcp4_fin}>CLOSE TCP conn</button>
             <button onclick={send_tcp4_send}>SEND TCP hello world</button>
