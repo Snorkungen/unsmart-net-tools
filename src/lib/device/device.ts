@@ -106,9 +106,14 @@ export interface Contact<AF extends ContactAF = ContactAF, Proto extends Contact
     send(contact: Contact<AF, Proto, AT, Addr>, data: NetworkData, destination?: Addr, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
     sendTo(contact: Contact<AF, Proto, AT, Addr>, data: NetworkData, caddr?: Partial<ContactAddress<Addr>>, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
 
-    connect(contact: Contact<AF, "TCP", AT, Addr>, caddr?: Partial<ContactAddress<Addr>>, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>
+    connect(contact: Contact<AF, Proto, AT, Addr>, caddr?: Partial<ContactAddress<Addr>>, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>
     listen(contact: Contact<AF, "TCP", AT, Addr>): DeviceResult<ContactError>
     accept(contact: Contact<AF, "TCP", AT, Addr>, accept_handler: (new_contact: Contact) => boolean): DeviceResult<ContactError>
+
+    /** this method is to allows for, handling of asynchronous errors \
+     * There might be a problem with the contact being closed
+     */
+    on_error(contact: Contact, on_error_handler: (contact: Contact, error: DeviceResult<ContactError>) => void): void
 }
 
 export type Program<DT = any> = {
@@ -1366,6 +1371,7 @@ export class Device {
     private contact_ephemport = 4001
     private contacts: (Contact<ContactAF, ContactProto> | undefined)[] = [];
     private contact_receivers: ({ receiver: ContactReceiver, contact: Contact, options: ContactReceiveOptions } | undefined)[] = [];
+    private contact_error_handlers = new Array<[Contact, handler: Parameters<Contact["on_error"]>[1]]>()
     contact_create<CAF extends ContactAF, CProto extends ContactProto>(addressFamily: CAF, proto: CProto): DeviceResult<ContactError, Contact<CAF, CProto>> {
         // do some rules checking
         if (addressFamily === "RAW" && proto !== "RAW") {
@@ -1422,7 +1428,9 @@ export class Device {
 
             connect: m_connect.bind(this),
             listen: m_listen.bind(this),
-            accept: m_accept.bind(this)
+            accept: m_accept.bind(this),
+
+            on_error: this.contact_on_error.bind(this)
         };
 
         return { success: true, data: this.contacts[i] as Contact<CAF, CProto> };
@@ -1435,6 +1443,9 @@ export class Device {
             if (this.contact_receivers[i]?.contact != contact) { continue; }
             delete this.contact_receivers[i];
         }
+
+        // remove error handlers
+        this.contact_error_handlers = this.contact_error_handlers.filter(([c]) => c !== contact);
 
         let i = this.contacts.indexOf(contact);
         if (i >= 0 && this.contacts[i]) {
@@ -1501,6 +1512,19 @@ export class Device {
         return { success: true, data: undefined };
     }
 
+
+    contact_on_error: Contact["on_error"] = (contact, error_handler) => {
+        this.contact_error_handlers.push([contact, error_handler])
+    }
+    private contact_dispatch_error<E extends DeviceResult<ContactError>>(contact: Contact, error: E): E {
+        for (let [c, h] of this.contact_error_handlers) {
+            if (c === contact) {
+                h(c, error)
+            }
+        }
+        return error;
+    }
+
     private contact_input_raw(af: ContactAF, ...receiver_params: DropFirst<Parameters<ContactReceiver>>) {
         for (let creciver of this.contact_receivers) {
             if (!creciver || creciver.contact.addressFamily != af || creciver.contact.proto != "RAW")
@@ -1565,7 +1589,7 @@ export class Device {
             if ((tcphdr.get("flags") & TCP_FLAGS.SYN) === 0) {
                 return; // do not do anything
             }
-            
+
             // send TCP reset
             tcphdr = TCP_HEADER.create({ flags: TCP_FLAGS.RST });
             let pseudo_header: { getBuffer(): Uint8Array };
