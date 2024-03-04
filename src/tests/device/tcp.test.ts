@@ -120,4 +120,7 @@ describe("add_u32", () => {
     test("edge case #3", () => {
         expect((add_u32(2 ** 32 * 2, 2 ** 32 + 5000))).toBe(5000)
     })
+    test("edge case #3", () => {
+        expect((add_u32(2234574226))).toBe(2234574226)
+    })
 })

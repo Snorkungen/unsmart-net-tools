@@ -37,7 +37,7 @@ describe("Buffer based struct", () => {
             pad: UINT16(4),
             slice: SLICE
         })
-        
+
         let st = struct.from(__fromHex("4feff090"));
         expect(st.get("version")).eq(4)
         expect(st.get("ihl")).eq(15)
@@ -142,16 +142,16 @@ describe("Buffer based struct", () => {
 
         createdStruct.set("uint", __fromHex("0200" /* 0x0200*/))
         expect(createdStruct.get("uint")).toEqual(2)
-        
+
         createdStruct.set("uint", 3)
         expect(createdStruct.get("uint")).toEqual(3)
-        
+
         let struct2 = defineStruct({
             int: INT16
         }), createdStruct2 = struct2.from(__fromHex("0100" /* 0x0100*/), { bigEndian: false });
-        
+
         expect(createdStruct2.get("int")).toBe(1)
-        
+
         createdStruct2.set("int", __fromHex("0200" /* 0x0200*/))
 
         expect(createdStruct2.get("int")).toEqual(2)
@@ -172,4 +172,13 @@ describe("Buffer based struct", () => {
     //         struct.create(Buffer.alloc(0))
     //     }).toThrow()
     // })
+})
+
+describe("Value types", () => {
+    test("UINT32 edge case being negative", () => {
+        let value = 2234574226;
+        let t = UINT32(UINT32.bitLength)
+        let b = t.setter(value)
+        expect(t.getter(b, { bigEndian: true, "packed": false, setDefaultValues: false })).toBe(value)
+    })
 })

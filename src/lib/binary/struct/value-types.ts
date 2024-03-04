@@ -22,6 +22,14 @@ function defineUINT(bitLength: number) {
             return uint8_fromNumber(v, Math.ceil(this.bitLength / 8));
         },
         getter(buf, options) {
+            if (this.bitLength == 32) {
+                let n = _bufToNumber(buf)
+                let mask = 0x80000000;
+                if (n < 0) {
+                    return (n ^ mask) + mask;
+                }
+                return n;
+            }
             return _bufToNumber(buf)
         }
     })

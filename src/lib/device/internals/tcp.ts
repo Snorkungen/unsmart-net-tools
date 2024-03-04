@@ -150,6 +150,9 @@ export function add_u16(orig: number, num = 0): number {
 }
 export function add_u32(orig: number, num = 0): number {
     let n = (orig + num) & (2 ** 32 - 1);
-    if (n < 0) return n * -1 + 0x80000000;
+    let mask = 0x80000000;
+    if (n < 0) {
+        return (n ^ mask) + mask;
+    }
     return n;
 }
