@@ -1591,7 +1591,7 @@ export class Device {
             }
 
             // send TCP reset
-            tcphdr = TCP_HEADER.create({ flags: TCP_FLAGS.RST, dport: input_caddr.dport, sport: input_caddr.sport, acknum: tcphdr.get("seqnum") + 1 });
+            tcphdr = TCP_HEADER.create({ flags: TCP_FLAGS.RST, dport: input_caddr.dport, sport: input_caddr.sport });
             let pseudo_header: { getBuffer(): Uint8Array };
             if (input_caddr.daddr instanceof IPV4Address) pseudo_header = IPV4_PSEUDO_HEADER.create({
                 saddr: input_caddr.saddr, daddr: input_caddr.daddr
