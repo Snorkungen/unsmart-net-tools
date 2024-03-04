@@ -54,6 +54,11 @@ export const TestingComponent2: Component = () => {
         return true; // accept all connnections 
     })
 
+    tcp_client_contact.on_error(tcp_client_contact, (_, r) => {
+        console.log(r)
+        tcp_client_contact.close(tcp_client_contact)
+    })
+
     function send_tcp4_synrst() {
         tcp_client_contact.connect(tcp_client_contact, {
             daddr: address,
@@ -79,6 +84,8 @@ export const TestingComponent2: Component = () => {
     function send_tcp4_send() {
         tcp_client_contact.send(tcp_client_contact, { buffer: uint8_fromString("Hello, World\n") })
     }
+
+    
 
     return (
         <div>

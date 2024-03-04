@@ -1591,7 +1591,7 @@ export class Device {
             }
 
             // send TCP reset
-            tcphdr = TCP_HEADER.create({ flags: TCP_FLAGS.RST });
+            tcphdr = TCP_HEADER.create({ flags: TCP_FLAGS.RST, dport: input_caddr.dport, sport: input_caddr.sport, acknum: tcphdr.get("seqnum") + 1 });
             let pseudo_header: { getBuffer(): Uint8Array };
             if (input_caddr.daddr instanceof IPV4Address) pseudo_header = IPV4_PSEUDO_HEADER.create({
                 saddr: input_caddr.saddr, daddr: input_caddr.daddr
@@ -1612,14 +1612,18 @@ export class Device {
             case TCPState.SYN_RCVD: this.contact_input_tcp_syn_rcvd(contact, connection, tcphdr); break;
             case TCPState.LISTEN: this.contact_input_tcp_listen(contact, connection, tcphdr, input_caddr, best); break;
             case TCPState.FIN_WAIT_1: this.contact_input_tcp_fin_wait_1(contact, connection, tcphdr); break;
-            case TCPState.CLOSING: this.contact_input_tcp_closing(contact, connection, tcphdr); break;
             case TCPState.FIN_WAIT_2: this.contact_input_tcp_fin_wait_2(contact, connection, tcphdr); break;
-            case TCPState.LAST_ACK: this.contact_input_tcp_last_ack(contact, connection, tcphdr); break;
+            case TCPState.CLOSING:
+            case TCPState.LAST_ACK: this.contact_input_tcp_closing_last_ack(contact, connection, tcphdr); break;
             case TCPState.ESTABLISHED: this.contact_input_tcp_established(contact, connection, tcphdr, best); break;
         }
     }
     /** could make this cooler but i don't feel like it */
     private contact_input_tcp_syn_sent(contact: Contact, connection: TCPConnection, tcphdr: typeof TCP_HEADER) {
+        if (tcphdr.get("flags") & TCP_FLAGS.RST) {
+            this.contact_dispatch_error(contact, { success: false, error: "RESET", message: "received tcp reset flag, closing contact" })
+            return this.contact_m_close_tcp(contact)
+        }
         if (tcphdr.get("flags") & TCP_FLAGS.FIN) {
             return this.contact_input_tcp_established(contact, connection, tcphdr, undefined); // this is hacky but works good enough
         }
@@ -1774,14 +1778,9 @@ export class Device {
         connection.ack_number = add_u32(connection.ack_number, 1); // increment assume that closing consumes one data unit 
         this.contact_m_close_tcp(contact);
     }
-    private contact_input_tcp_closing(contact: Contact, connection: TCPConnection, tcphdr: typeof TCP_HEADER) {
+    private contact_input_tcp_closing_last_ack(contact: Contact, _: TCPConnection, tcphdr: typeof TCP_HEADER) {
         if ((tcphdr.get("flags") & TCP_FLAGS.ACK) == 0)
             return;
-        this.contact_m_close_tcp(contact);
-    }
-    private contact_input_tcp_last_ack(contact: Contact, connection: TCPConnection, tcphdr: typeof TCP_HEADER) {
-        if ((tcphdr.get("flags") & TCP_FLAGS.ACK) == 0)
-            return; // segment must ack
         this.contact_m_close_tcp(contact);
     }
     private contact_input_tcp_established(contact: Contact, connection: TCPConnection, tcphdr: typeof TCP_HEADER, receive_entry: Device["contact_receivers"][number]) {
@@ -1849,8 +1848,10 @@ export class Device {
     private contact_m_close_tcp: Contact["close"] = (contact) => {
         let connection_id = tcp_connection_id(contact);
         let connection = this.tcpconnections.get(connection_id);
-        if (!connection_id || !connection || !contact.address) return this.contact_close(contact);
-
+        if (!connection_id || !connection || !contact.address) {
+            if (contact.status === "OPEN") return this.contact_close(contact);
+            return { success: true, data: undefined }
+        }
         let flags = 0;
         let send = false;
 
@@ -1875,6 +1876,7 @@ export class Device {
             case TCPState.CLOSING: {
                 connection.state = TCPState.TIME_WAIT;
             };
+            case TCPState.SYN_SENT:
             case TCPState.LAST_ACK: {
                 connection.state = TCPState.CLOSED;
                 this.tcpconnections.delete(connection_id);
@@ -2004,7 +2006,6 @@ export class Device {
 
             route: route // the outgoing route, why i'm saving a reference i do not know
         });
-
         let connection = this.tcpconnections.get(connection_id);
         if (!connection || !contact.address) return { success: false, error: undefined, message: "something that should not happen happened" };
 
