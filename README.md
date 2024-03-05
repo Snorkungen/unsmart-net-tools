@@ -5,6 +5,7 @@
 - Device
   - [ ] add teardown method for `BaseInterface`
   - [ ] spawned programs able to return values to parent
+  - [ ] mock a generic data store, something like files
   - [ ] IPC, create a way for processes to send messages between each other
   - [ ] Investigate improving the device scheduler
   - programs
@@ -14,10 +15,7 @@
       - [ ] remove a route
   - [ ] Device -> contact
     - [x] UDP protocol support
-    - [ ] TCP protocol support
-      - [x] connect
-      - [x] send and receive data
-      - [ ] reset connection
+    - [x] TCP protocol support*
 - [ ] Terminal & Shell
   - [ ] batch rendering for more efficient rendering
   - [x] `TerminalRenderer` make rendering faster
