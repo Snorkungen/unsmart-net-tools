@@ -5,7 +5,7 @@
 - Device
   - [ ] add teardown method for `BaseInterface`
   - [ ] spawned programs able to return values to parent
-  - [ ] mock a generic data store, something like files
+  - [x] device: key value database
   - [ ] IPC, create a way for processes to send messages between each other
   - [ ] Investigate improving the device scheduler
   - programs

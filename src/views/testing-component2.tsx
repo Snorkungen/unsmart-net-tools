@@ -9,6 +9,7 @@ import { DAEMON_ECHO_REPLIER } from "../lib/device/program/echo-replier";
 import { LoopbackInterface } from "../lib/device/interface";
 import { DEVICE_PROGRAM_ROUTEINFO } from "../lib/device/program/routeinfo";
 import { uint8_fromString } from "../lib/binary/uint8-array";
+import { DEVICE_PROGRAM_DBINFO } from "../lib/device/program/dbinfo";
 
 export const TestingComponent2: Component = () => {
     let terminal: Terminal;
@@ -25,11 +26,15 @@ export const TestingComponent2: Component = () => {
     // add all my programs to the device
     newdevice.programs.push(
         DEVICE_PROGRAM_PING, DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_HELP,
-        DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_IFINFO, DEVICE_PROGRAM_ROUTEINFO
+        DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_IFINFO, DEVICE_PROGRAM_ROUTEINFO,
+
+        DEVICE_PROGRAM_DBINFO
     )
 
     // ADD ECHO REPLIER TO DEVICES
     newdevice.process_start(DAEMON_ECHO_REPLIER, [])
+
+    newdevice.db_set("test", "hello world")
 
     return (
         <div>
