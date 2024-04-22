@@ -12,6 +12,7 @@
     - [ ] UDP/DNS server and client
     - [ ] routeinfo
       - [ ] add a route
+        - [ ] add an ipv4 route
       - [ ] remove a route
   - [ ] Device -> contact
     - [x] UDP protocol support
@@ -21,6 +22,7 @@
   - [x] `TerminalRenderer` make rendering faster
   - [ ] *Auto resize `TerminaleRenderer` View* haven't decided on what this means
   - [ ] Enviroment Variables & Variable expansion `Shell.promptBuffer`
+  - [ ] When a progam is selected the lazy writer call a method on the function to reccomend text
 - [ ] visualize `Struct`
 - [x] Remove `Buffer` from client build
 - [ ] Logically separate the code
