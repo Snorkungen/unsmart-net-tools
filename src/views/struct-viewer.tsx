@@ -1,10 +1,71 @@
-import { Accessor, Component, Match, Setter, Switch, createEffect, createMemo, createSignal } from "solid-js"
+import { Accessor, Component, For, Match, Setter, Switch, createEffect, createMemo, createResource, createSignal } from "solid-js"
 import { type StructType, Struct } from "../lib/binary"
 import { UDP_HEADER } from "../lib/header/udp";
+import { ARP_HEADER } from "../lib/header/arp";
+import { PCAP_GLOBAL_HEADER, PCAP_PACKET_HEADER, PCAP_RECORD_HEADER } from "../lib/header/pcap";
+import { TCP_HEADER } from "../lib/header/tcp";
+import { IPV4_HEADER, IPV4_PSEUDO_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER } from "../lib/header/ip";
+import { ICMP_DESTINATION_UNREACHABLE, ICMP_ECHO_HEADER, ICMP_HEADER, ICMP_NDP_HEADER, ICMP_UNUSED_HEADER } from "../lib/header/icmp";
+import { ETHERNET_DOT1Q_HEADER, ETHERNET_HEADER } from "../lib/header/ethernet";
+import { DHCP_CHADDR, DHCP_HEADER, DHCP_OPTION } from "../lib/header/dhcp/dhcp";
+import { FormSelect } from "solid-bootstrap";
 
 type AnyStruct = Struct<any>;
 
 const TABLE_WIDTH = 32; // 4-Bytes
+
+// !TODO: move this definition to another file
+const DEFINED_STRUCTS: Record<string, AnyStruct> = {
+    ARP_HEADER,
+
+    PCAP_GLOBAL_HEADER,
+    PCAP_PACKET_HEADER,
+    PCAP_RECORD_HEADER,
+
+    TCP_HEADER,
+    UDP_HEADER,
+
+    IPV4_HEADER,
+    IPV4_PSEUDO_HEADER,
+    IPV6_HEADER,
+    IPV6_PSEUDO_HEADER,
+
+    ICMP_HEADER,
+    ICMP_UNUSED_HEADER,
+    ICMP_ECHO_HEADER,
+    ICMP_NDP_HEADER,
+    ICMP_DESTINATION_UNREACHABLE,
+
+    ETHERNET_HEADER,
+    ETHERNET_DOT1Q_HEADER,
+
+    DHCP_HEADER,
+    DHCP_OPTION,
+    DHCP_CHADDR,
+
+};
+
+function get_suitable_structs(buffer: Uint8Array, strict = false, structs = DEFINED_STRUCTS): Record<string, AnyStruct> {
+    let result: Record<string, AnyStruct> = {}
+
+    for (let key in structs) {
+        let struct = structs[key];
+
+        // 1st check that the buffer fits the minimum size
+        if (buffer.byteLength < struct.getMinSize()) {
+            continue;
+        }
+
+        // 2nd where strict mode is apparent if the structs last value is NOT variable sized check that the lenghts match
+        if (strict && struct_get_types(struct)[struct.order.at(-1)!].bitLength > 0 && struct.size != buffer.byteLength) {
+            continue
+        }
+
+        result[key] = struct;
+    }
+
+    return result;
+}
 
 function struct_get_types(struct: AnyStruct): Record<number | string | symbol, StructType<any>> {
     // @ts-expect-error
@@ -84,8 +145,7 @@ const StructTable: Component<{ struct: AnyStruct, active_value_idx: Accessor<num
 
         let content;
 
-        content = truncateString(
-            `"${name.toString()}": ${struct.get(name)}`,
+        content = truncateString(name.toString(),
             30 // !TODO: compute how many characters can fit into the given field
         )
 
@@ -106,8 +166,7 @@ const StructTable: Component<{ struct: AnyStruct, active_value_idx: Accessor<num
                 "border-top": row_start == 1 ? "inherit inherit inherit" : "none",
                 "border-left": col_start == 1 ? "inherit inherit inherit" : "none",
 
-                "opacity": active_value_idx() == i ? "0.8" : undefined,
-                "border-bottom-color": active_value_idx() == i ? "#000" : undefined
+                "color": active_value_idx() == i ? "green" : undefined,
             }}
             onclick={() => set_active_value_idx(i)}
         >{content}</div>
@@ -165,28 +224,59 @@ const ActiveValueViewer: Component<{
     struct: AnyStruct, active_value: Accessor<{
         key: string | number | symbol;
         offset: number;
-        struct_type: any;
+        struct_type: StructType<any>;
     }>
 }> = ({ active_value, struct }) => {
-    let value = active_value();
-    if (active_value() instanceof Struct) {
-        throw "error"
-    }
-
     // !TODO: be able to do some more thoughtful things i do not know what but something would be appreciated
 
+    const struct_type = createMemo(() => active_value().struct_type)
+    const value = createMemo(() => struct.get(active_value().key))
+    const is_bytes = createMemo(() => struct_type().bitLength < 0 || value() instanceof Uint8Array)
+
+    const BYTE_ARRAY_KEY = "BYTE_ARRAY_VALUE"
+
+    const [selected_key, set_selected_key] = createSignal(BYTE_ARRAY_KEY)
+    const content = createMemo(() => {
+        if (selected_key() == BYTE_ARRAY_KEY) {
+            return null; // maybe some more advanced way of looking at the bytes maybe
+        }
+
+        if (!(selected_key() in DEFINED_STRUCTS)) {
+            return null
+        }
+
+
+        return <StructViewer struct={DEFINED_STRUCTS[selected_key()].from(value())} />;
+    })
+
     return <div>
-        <p>{active_value().key}: {struct.get(active_value().key)}</p>
+        <p><strong>{active_value().key.toString()}</strong>: {value()}</p>
+        <Switch>
+            <Match when={is_bytes()}>
+                <div>
+                    <label>Select the appropriate struct for the selected bytes</label>
+                    <FormSelect oninput={(e) => set_selected_key(e.target.value)} value={selected_key()}>
+                        <option value={BYTE_ARRAY_KEY}>Byte Array</option>
+                        <For each={Object.keys(get_suitable_structs(value(), true))}>{(key) => (
+                            <option>{key}</option>
+                        )}</For>
+                    </FormSelect>
+                    {content()}
+                </div>
+            </Match>
+        </Switch>
     </div>
 }
 
-export const StructViewer: Component = () => {
-    let struct: AnyStruct = UDP_HEADER.create({
-        sport: 9023,
-        dport: 7000,
-        length: 30,
-        payload: new Uint8Array({ length: 30 - UDP_HEADER.getMinSize() })
-    });
+export const StructViewer: Component<{ struct?: AnyStruct }> = ({ struct }) => {
+    if (!struct) {
+        struct = UDP_HEADER.create({
+            sport: 9023,
+            dport: 7000,
+            length: 30,
+            payload: new Uint8Array({ length: 30 - UDP_HEADER.getMinSize() })
+        });
+    }
 
     // The struct is known, so the only thing that is needed is the idx, invalid idx means that it is the struct
     const [active_value_idx, set_active_value_idx] = createSignal<number>(-1);
