@@ -51,6 +51,8 @@ export class PacketCaptureRecordReader {
             // Read record data
             recordData = this.readRecordData(buf, recordMetaData.length);
 
+        this.offset += recordMetaData.length;
+
         return Object.assign(recordMetaData, recordData);
     }
 
@@ -81,7 +83,7 @@ export class PacketCaptureRecordReader {
     readRecordData(buf: Uint8Array, length: number): PacketCaptureRecordData {
         switch (this.options.Nformat) {
             case PacketCaptureNFormat.ethernet:
-                return this.readEthernet(buf);
+                return this.readEthernet(buf, this.offset);
         }
 
         throw new Error(`network format: ${this.options.Hformat}, not implemented`);
@@ -89,6 +91,7 @@ export class PacketCaptureRecordReader {
 
     readEthernet(buf: Uint8Array, begin?: number, data?: PacketCaptureRecordData): PacketCaptureRecordData {
         let hdr = ETHERNET_HEADER.from(buf.subarray(begin || 0));
+
         if (!data) {
             data = {
                 saddr: hdr.get("smac"),

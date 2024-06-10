@@ -207,7 +207,7 @@ const StructHexViewer: Component<{
                 [...buffer].map((n, i) => (
                     <span style={{
                         color: (active_range()[0] <= i && active_range()[1] > i) ? "green" : "inherit"
-                    }}>
+                    }} onclick={() => console.log(i)}>
                         {n.toString(16).padStart(2, "0") + (((i + 1) % row_width == 0) ? "\n" : " ")}
                     </span>
                 ))
@@ -215,7 +215,7 @@ const StructHexViewer: Component<{
         <div>{[...buffer].map((n, i) => (
             <span style={{
                 color: (active_range()[0] <= i && active_range()[1] > i) ? "green" : "inherit"
-            }}>{(n >= 32 && n <= 126) ? String.fromCharCode(n) : "."}</span>
+            }}>{(n > 32 && n <= 126) ? String.fromCharCode(n) : n == 32 ? <span innerHTML="&nbsp"></span> : "."}</span>
         ))}</div>
     </div>
 }
