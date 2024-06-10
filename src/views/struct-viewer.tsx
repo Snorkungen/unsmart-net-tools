@@ -1,15 +1,18 @@
-import { Accessor, Component, Setter, createEffect, createMemo, createSignal } from "solid-js"
-import { type StructType, type Struct } from "../lib/binary"
+import { Accessor, Component, Match, Setter, Switch, createEffect, createMemo, createSignal } from "solid-js"
+import { type StructType, Struct } from "../lib/binary"
 import { UDP_HEADER } from "../lib/header/udp";
 
 type AnyStruct = Struct<any>;
 
 const TABLE_WIDTH = 32; // 4-Bytes
 
-/** just can't be bothered to do anything else */
-function struct_get_types<T extends Record<string, StructType<any>>>(struct: Struct<T>): T {
+function struct_get_types(struct: AnyStruct): Record<number | string | symbol, StructType<any>> {
     // @ts-expect-error
     return struct.types;
+}
+function struct_get_options(struct: AnyStruct) {
+    // @ts-expect-error
+    return struct.options;
 }
 
 /** https://stackoverflow.com/a/57688223 */
@@ -18,7 +21,7 @@ const truncateString = (string = '', maxLength = 50) =>
         ? `${string.substring(0, maxLength)}…`
         : string
 
-const StructViewerComponent: Component<{ struct: AnyStruct, active_value_idx: Accessor<number>, set_active_value_idx: Setter<number> }> = ({ struct, active_value_idx, set_active_value_idx }) => {
+const StructTable: Component<{ struct: AnyStruct, active_value_idx: Accessor<number>, set_active_value_idx: Setter<number> }> = ({ struct, active_value_idx, set_active_value_idx }) => {
     const struct_order = [...struct.order];
     // @ts-expect-error
     const struct_types = struct.types as Record<(string | number | symbol), StructType<any>>;
@@ -112,9 +115,72 @@ const StructViewerComponent: Component<{ struct: AnyStruct, active_value_idx: Ac
     </div>
 }
 
+const StructHexViewer: Component<{
+    buffer: Uint8Array, active_value: Accessor<AnyStruct | {
+        key: string | number | symbol;
+        offset: number;
+        struct_type: StructType<any>;
+    }>
+}> = ({ buffer, active_value }) => {
+    let row_width = 16;
+
+    const active_range = createMemo<[number, number]>(() => {
+        let av = active_value()
+        if (av instanceof Struct) {
+            return [-1, -1]
+        }
+
+        if (av.struct_type.bitLength < 0) {
+            return [Math.floor(av.offset / 8), buffer.length]
+        }
+
+        return [Math.floor(av.offset / 8), Math.ceil((av.offset + av.struct_type.bitLength) / 8)]
+    })
+
+    return <div style={{ display: "grid", "grid-template-columns": "50% 50%", gap: "1em", padding: "1em", "font-family": "monospace" }}>
+        <div style={{
+            width: "100%",
+            background: "inherit",
+            border: "none",
+            color: "inherit",
+            "text-align": "left"
+        }} >{
+                [...buffer].map((n, i) => (
+                    <span style={{
+                        color: (active_range()[0] <= i && active_range()[1] > i) ? "green" : "inherit"
+                    }}>
+                        {n.toString(16).padStart(2, "0") + (((i + 1) % row_width == 0) ? "\n" : " ")}
+                    </span>
+                ))
+            }</div>
+        <div>{[...buffer].map((n, i) => (
+            <span style={{
+                color: (active_range()[0] <= i && active_range()[1] > i) ? "green" : "inherit"
+            }}>{(n >= 32 && n <= 126) ? String.fromCharCode(n) : "."}</span>
+        ))}</div>
+    </div>
+}
+
+const ActiveValueViewer: Component<{
+    struct: AnyStruct, active_value: Accessor<{
+        key: string | number | symbol;
+        offset: number;
+        struct_type: any;
+    }>
+}> = ({ active_value, struct }) => {
+    let value = active_value();
+    if (active_value() instanceof Struct) {
+        throw "error"
+    }
+
+    // !TODO: be able to do some more thoughtful things i do not know what but something would be appreciated
+
+    return <div>
+        <p>{active_value().key}: {struct.get(active_value().key)}</p>
+    </div>
+}
+
 export const StructViewer: Component = () => {
-
-
     let struct: AnyStruct = UDP_HEADER.create({
         sport: 9023,
         dport: 7000,
@@ -130,7 +196,7 @@ export const StructViewer: Component = () => {
             return {
                 key: key,
                 // @ts-expect-error
-                offset: struct.getTypeBitOffset(),
+                offset: struct.getTypeBitOffset(key),
                 struct_type: struct_get_types(struct)[key]
             }
         }
@@ -141,9 +207,21 @@ export const StructViewer: Component = () => {
     // !TODO: someway to inspect value, and bit information
 
     return <div>
-        <StructViewerComponent struct={struct} active_value_idx={active_value_idx} set_active_value_idx={set_active_value_idx} />
+        <StructTable struct={struct} active_value_idx={active_value_idx} set_active_value_idx={set_active_value_idx} />
         <div>
-            Here we show information about the selected item
+            <StructHexViewer buffer={struct.getBuffer()} active_value={active_value} />
+
+            <Switch>
+                <Match when={active_value() instanceof Struct}>
+                    <div>
+                        Some this is a struct with x amount of values and y amount of data
+                        <p>{JSON.stringify(struct_get_options(struct))}</p>
+                    </div>
+                </Match>
+                <Match when={!(active_value() instanceof Struct)}>
+                    <ActiveValueViewer struct={struct} active_value={active_value as any} />
+                </Match>
+            </Switch>
         </div>
     </div>
 }
