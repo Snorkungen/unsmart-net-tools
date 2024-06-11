@@ -1,99 +1,19 @@
-import { Accessor, Component, For, Match, Setter, Switch, createEffect, createMemo, createResource, createSignal } from "solid-js"
-import { type StructType, Struct } from "../lib/binary"
+import { Accessor, Component, For, Match, Setter, Show, Switch, createEffect, createMemo, createSignal } from "solid-js"
 import { UDP_HEADER } from "../lib/header/udp";
-import { ARP_HEADER } from "../lib/header/arp";
-import { PCAP_GLOBAL_HEADER, PCAP_PACKET_HEADER, PCAP_RECORD_HEADER } from "../lib/header/pcap";
-import { TCP_HEADER } from "../lib/header/tcp";
-import { IPV4_HEADER, IPV4_PSEUDO_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER } from "../lib/header/ip";
-import { ICMP_DESTINATION_UNREACHABLE, ICMP_ECHO_HEADER, ICMP_HEADER, ICMP_NDP_HEADER, ICMP_UNUSED_HEADER } from "../lib/header/icmp";
-import { ETHERNET_DOT1Q_HEADER, ETHERNET_HEADER } from "../lib/header/ethernet";
-import { DHCP_CHADDR, DHCP_HEADER, DHCP_OPTION } from "../lib/header/dhcp/dhcp";
 import { FormSelect } from "solid-bootstrap";
-
-type AnyStruct = Struct<any>;
+import { DEFINED_STRUCTS, type StructViewerKey, type StructViewerField, get_suitable_structs, struct_get_options, struct_get_types, struct_viewer_create_svd, struct_viewer_get_field, type AnyStruct, StructViewerData, struct_viewer_key, struct_viewer_get_field_value, struct_viewer_struct_to_fields, struct_viewer_keys_equal } from "../lib/struct-viewer/struct-viewer";
 
 const TABLE_WIDTH = 32; // 4-Bytes
 
-// !TODO: move this definition to another file
-const DEFINED_STRUCTS: Record<string, AnyStruct> = {
-    ARP_HEADER,
 
-    PCAP_GLOBAL_HEADER,
-    PCAP_PACKET_HEADER,
-    PCAP_RECORD_HEADER,
-
-    TCP_HEADER,
-    UDP_HEADER,
-
-    IPV4_HEADER,
-    IPV4_PSEUDO_HEADER,
-    IPV6_HEADER,
-    IPV6_PSEUDO_HEADER,
-
-    ICMP_HEADER,
-    ICMP_UNUSED_HEADER,
-    ICMP_ECHO_HEADER,
-    ICMP_NDP_HEADER,
-    ICMP_DESTINATION_UNREACHABLE,
-
-    ETHERNET_HEADER,
-    ETHERNET_DOT1Q_HEADER,
-
-    DHCP_HEADER,
-    DHCP_OPTION,
-    DHCP_CHADDR,
-
-};
-
-function get_suitable_structs(buffer: Uint8Array, strict = false, structs = DEFINED_STRUCTS): Record<string, AnyStruct> {
-    let result: Record<string, AnyStruct> = {}
-
-    for (let key in structs) {
-        let struct = structs[key];
-
-        // 1st check that the buffer fits the minimum size
-        if (buffer.byteLength < struct.getMinSize()) {
-            continue;
-        }
-
-        // 2nd where strict mode is apparent if the structs last value is NOT variable sized check that the lenghts match
-        if (strict && struct_get_types(struct)[struct.order.at(-1)!].bitLength > 0 && struct.size != buffer.byteLength) {
-            continue
-        }
-
-        result[key] = struct;
-    }
-
-    return result;
-}
-
-function struct_get_types(struct: AnyStruct): Record<number | string | symbol, StructType<any>> {
-    // @ts-expect-error
-    return struct.types;
-}
-function struct_get_options(struct: AnyStruct) {
-    // @ts-expect-error
-    return struct.options;
-}
-
-/** https://stackoverflow.com/a/57688223 */
-const truncateString = (string = '', maxLength = 50) =>
-    string.length > maxLength
-        ? `${string.substring(0, maxLength)}…`
-        : string
-
-const StructTable: Component<{ struct: AnyStruct, active_value_idx: Accessor<number>, set_active_value_idx: Setter<number> }> = ({ struct, active_value_idx, set_active_value_idx }) => {
-    const struct_order = [...struct.order];
-    // @ts-expect-error
-    const struct_types = struct.types as Record<(string | number | symbol), StructType<any>>;
-
-    // transform the data to be series of 8-bit chunks
-    // !TODO: join chunks that are smaller than 8-bits into single chunk so it can be handled as a special case
-    let ordered_struct_types = struct_order.map((key) => struct_types[key])
-
-    function get_width_and_height(struct_type: StructType<any>) {
+const StructTable: Component<{
+    svd: Accessor<StructViewerData>,
+    active_key: Accessor<StructViewerKey>,
+    set_active_key: Setter<StructViewerKey>,
+}> = ({ svd, active_key, set_active_key }) => {
+    function get_width_and_height(field: StructViewerField) {
         let height = 1;
-        let width = struct_type.bitLength
+        let width = field.bitLength
         if (width > TABLE_WIDTH) {
             height = Math.ceil(width / TABLE_WIDTH)
             height = Math.min(height, 4) // cap the height to make it easier to look at
@@ -108,46 +28,73 @@ const StructTable: Component<{ struct: AnyStruct, active_value_idx: Accessor<num
         return [width, height]
     }
 
-    // precalculate positions
-    let row_end = 1;
-    let col_end = 1;
+    /**
+     * Takes the fields and returns a flattened array containing the position information, about the field
+     */
+    function compute_sizes(fields: StructViewerField[], row_end = 1, col_end = 1): { width: number; height: number; row_start: number; row_end: number; col_start: number; col_end: number; }[] {
+        let sizes: ReturnType<typeof compute_sizes> = [];
+        // I'm going to need some type of offset
+        let sizes_offset = 0
+        for (let i = 0; i < fields.length; i++) {
+            let field = fields[i];
+            let [w, h] = get_width_and_height(field)
 
-    let precomputed_sizes = ordered_struct_types.map(struct_type => {
-        let [w, h] = get_width_and_height(struct_type)
+            let col_start = col_end;
+            let row_start = row_end;
 
-        let col_start = col_end;
-        let row_start = row_end;
+            if (field.struct && field.fields) {
+                let rsizes = compute_sizes(field.fields, row_end, col_end);
 
-        col_end += w;
-        if (col_end > TABLE_WIDTH) {
-            col_end = 1;
-            row_end += h
+                sizes.splice(i + sizes_offset, 0, ...rsizes);
+                sizes_offset += rsizes.length;
+                continue;
+            }
+
+            col_end += w;
+            if (col_end > TABLE_WIDTH) {
+                col_end = 1;
+                row_end += h
+            }
+
+            sizes[i] = {
+                width: w,
+                height: h,
+                row_start,
+                row_end: row_start + h,
+                col_start,
+                col_end: col_start + w,
+            }
         }
 
-        return {
-            width: w,
-            height: h,
-            row_start,
-            row_end: row_start + h,
-            col_start,
-            col_end: col_start + w
-        }
-    })
+        return sizes;
+    }
 
-    let row_count = precomputed_sizes.at(-1)!.row_end - 1;
+    function flatten_fields(fields: StructViewerField[], pk: StructViewerKey = []): StructViewerField[] {
+        fields = [...fields] // memory is cheap
+        for (let i = 0; i < fields.length; i++) {
+            let field = fields[i]
+
+            // fix the keys
+            if (field.struct && field.fields) {
+                let ff = flatten_fields(field.fields, [...struct_viewer_key(pk, true), ...struct_viewer_key(field.key)]);
+                fields.splice(i, 1, ...ff)
+                i += ff.length - 1
+            }
+        }
+
+        return fields
+    }
+
+    let flattened_fields = createMemo(() => flatten_fields(svd().fields)); // flatten fields array
+    let precomputed_sizes = createMemo(() => compute_sizes(svd().fields)); // precomput a flattened array of positions
+    let row_count = precomputed_sizes().at(-1)!.row_end - 1;
 
     return <div style={{
         display: "grid",
         "grid-template-columns": "repeat(" + TABLE_WIDTH + ", 1fr)",
         "grid-template-rows": "repeat(" + row_count + ", 1fr)",
-    }}>{struct_order.map((name, i) => {
-        let { col_start, col_end, row_start, row_end } = precomputed_sizes[i]
-
-        let content;
-
-        content = truncateString(name.toString(),
-            30 // !TODO: compute how many characters can fit into the given field
-        )
+    }}>{flattened_fields().map((field, i) => {
+        let { col_start, col_end, row_start, row_end } = precomputed_sizes()[i]
 
         return <div
             style={{
@@ -166,34 +113,39 @@ const StructTable: Component<{ struct: AnyStruct, active_value_idx: Accessor<num
                 "border-top": row_start == 1 ? "inherit inherit inherit" : "none",
                 "border-left": col_start == 1 ? "inherit inherit inherit" : "none",
 
-                "color": active_value_idx() == i ? "green" : undefined,
+                "color": (struct_viewer_keys_equal(active_key(), field.key)) ? "green" : undefined,
             }}
-            onclick={() => set_active_value_idx(i)}
-        >{content}</div>
+            onclick={() => {
+                set_active_key(field.key)
+            }}
+        >{field.name}</div>
     })}
     </div>
 }
 
 const StructHexViewer: Component<{
-    buffer: Uint8Array, active_value: Accessor<AnyStruct | {
-        key: string | number | symbol;
-        offset: number;
-        struct_type: StructType<any>;
-    }>
-}> = ({ buffer, active_value }) => {
+    svd: Accessor<StructViewerData>;
+    active_field: Accessor<StructViewerField>;
+}> = ({ svd, active_field }) => {
     let row_width = 16;
 
     const active_range = createMemo<[number, number]>(() => {
-        let av = active_value()
-        if (av instanceof Struct) {
+        let field = active_field();
+        if (field.key == -1) {
             return [-1, -1]
         }
 
-        if (av.struct_type.bitLength < 0) {
-            return [Math.floor(av.offset / 8), buffer.length]
+        if (field.bitLength < 0) {
+            return [
+                Math.floor(field.realBitOffset / 8),
+                svd().buffer.length
+            ]
         }
 
-        return [Math.floor(av.offset / 8), Math.ceil((av.offset + av.struct_type.bitLength) / 8)]
+        return [
+            Math.floor(field.realBitOffset / 8),
+            Math.ceil((field.realBitOffset + field.bitLength) / 8)
+        ]
     })
 
     return <div style={{ display: "grid", "grid-template-columns": "50% 50%", gap: "1em", padding: "1em", "font-family": "monospace" }}>
@@ -204,7 +156,7 @@ const StructHexViewer: Component<{
             color: "inherit",
             "text-align": "left"
         }} >{
-                [...buffer].map((n, i) => (
+                [...svd().buffer].map((n, i) => (
                     <span style={{
                         color: (active_range()[0] <= i && active_range()[1] > i) ? "green" : "inherit"
                     }} onclick={() => console.log(i)}>
@@ -212,7 +164,7 @@ const StructHexViewer: Component<{
                     </span>
                 ))
             }</div>
-        <div>{[...buffer].map((n, i) => (
+        <div>{[...svd().buffer].map((n, i) => (
             <span style={{
                 color: (active_range()[0] <= i && active_range()[1] > i) ? "green" : "inherit"
             }}>{(n > 32 && n <= 126) ? String.fromCharCode(n) : n == 32 ? <span innerHTML="&nbsp"></span> : "."}</span>
@@ -220,51 +172,54 @@ const StructHexViewer: Component<{
     </div>
 }
 
-const ActiveValueViewer: Component<{
-    struct: AnyStruct, active_value: Accessor<{
-        key: string | number | symbol;
-        offset: number;
-        struct_type: StructType<any>;
-    }>
-}> = ({ active_value, struct }) => {
-    // !TODO: be able to do some more thoughtful things i do not know what but something would be appreciated
+const StructConfigureBytes: Component<{ active_field: Accessor<StructViewerField>; set_active_key: Setter<StructViewerKey>; svd: Accessor<StructViewerData>; set_svd: Setter<StructViewerData>; }> = ({ active_field, set_active_key, svd, set_svd }) => {
+    const BYTE_ARRAY_KEY = "BYTE_ARRAY_VALUE";
+    const [option, set_option] = createSignal(BYTE_ARRAY_KEY);
+    const remaining_bytes = createMemo(() => svd().buffer.subarray(Math.floor(struct_viewer_get_field(svd(), active_field().key).realBitOffset / 8)));
 
-    const struct_type = createMemo(() => active_value().struct_type)
-    const value = createMemo(() => struct.get(active_value().key))
-    const is_bytes = createMemo(() => struct_type().bitLength < 0 || value() instanceof Uint8Array)
-
-    const BYTE_ARRAY_KEY = "BYTE_ARRAY_VALUE"
-
-    const [selected_key, set_selected_key] = createSignal(BYTE_ARRAY_KEY)
-    const content = createMemo(() => {
-        if (selected_key() == BYTE_ARRAY_KEY) {
-            return null; // maybe some more advanced way of looking at the bytes maybe
+    createEffect(() => {
+        if (option() == BYTE_ARRAY_KEY || !(option() in DEFINED_STRUCTS)) {
+            return
         }
+        let struct = DEFINED_STRUCTS[option()];
+        set_svd((s) => {
+            let field = struct_viewer_get_field(s, active_field().key)
+            field.struct = struct;
+            field.fields = struct_viewer_struct_to_fields(struct, field.key);
+            return s
+        })
 
-        if (!(selected_key() in DEFINED_STRUCTS)) {
-            return null
-        }
-
-
-        return <StructViewer struct={DEFINED_STRUCTS[selected_key()].from(value())} />;
     })
 
+    // calculate the bytes  that remain
+
     return <div>
-        <p><strong>{active_value().key.toString()}</strong>: {value()}</p>
-        <Switch>
-            <Match when={is_bytes()}>
-                <div>
-                    <label>Select the appropriate struct for the selected bytes</label>
-                    <FormSelect oninput={(e) => set_selected_key(e.target.value)} value={selected_key()}>
-                        <option value={BYTE_ARRAY_KEY}>Byte Array</option>
-                        <For each={Object.keys(get_suitable_structs(value(), true))}>{(key) => (
-                            <option>{key}</option>
-                        )}</For>
-                    </FormSelect>
-                    {content()}
-                </div>
-            </Match>
-        </Switch>
+        <label>Select the appropriate struct for the selected bytes</label>
+        <FormSelect oninput={(e) => set_option(e.target.value)} value={option()}>
+            <option value={BYTE_ARRAY_KEY}>Byte Array</option>
+            <For each={Object.keys(get_suitable_structs(remaining_bytes(), true))}>{(key) => (
+                <option>{key}</option>
+            )}</For>
+        </FormSelect>
+    </div>
+}
+
+const ActiveValueViewer: Component<{
+    svd: Accessor<StructViewerData>;
+    active_field: Accessor<StructViewerField>;
+    set_svd: Setter<StructViewerData>;
+    set_active_key: Setter<StructViewerKey>;
+}> = ({ svd, active_field, set_svd, set_active_key }) => {
+    // !TODO: be able to do some more thoughtful things i do not know what but something would be appreciated
+
+    const value = createMemo(() => struct_viewer_get_field_value(svd(), active_field().key));
+    const is_bytes = createMemo(() => active_field().bitLength < 0 || value() instanceof Uint8Array);
+
+    return <div>
+        <p><strong>{active_field().name}</strong>: {value().toString()}</p>
+        <Show when={is_bytes()}>
+            <StructConfigureBytes active_field={active_field} set_svd={set_svd} set_active_key={set_active_key} svd={svd} />
+        </Show>
     </div>
 }
 
@@ -276,42 +231,37 @@ export const StructViewer: Component<{ struct?: AnyStruct }> = ({ struct }) => {
             length: 30,
             payload: new Uint8Array({ length: 30 - UDP_HEADER.getMinSize() })
         });
+        // struct = IPV4_HEADER
     }
 
-    // The struct is known, so the only thing that is needed is the idx, invalid idx means that it is the struct
-    const [active_value_idx, set_active_value_idx] = createSignal<number>(-1);
-    const active_value = createMemo(() => {
-        if (active_value_idx() >= 0 && active_value_idx() < struct.order.length) {
-            let key = struct.order[active_value_idx()]
-            return {
-                key: key,
-                // @ts-expect-error
-                offset: struct.getTypeBitOffset(key),
-                struct_type: struct_get_types(struct)[key]
-            }
-        }
-
-        return struct;
-    }, struct)
-
+    const [svd, set_svd] = createSignal(struct_viewer_create_svd(struct), { equals: false });
+    const [active_key, set_active_key] = createSignal<StructViewerKey>(-1, { equals: false });
+    const active_field = createMemo<StructViewerField>(() => (
+        struct_viewer_get_field(svd(), active_key())
+    ));
     // !TODO: someway to inspect value, and bit information
 
     return <div>
-        <StructTable struct={struct} active_value_idx={active_value_idx} set_active_value_idx={set_active_value_idx} />
+        <button onclick={() => set_active_key(key => {
+            let k = struct_viewer_key(key).slice(0, -1);
+            if (k.length) return k;
+            return -1;
+        })}>Pop selection, temp-name</button>
+        <StructTable svd={svd} active_key={active_key} set_active_key={set_active_key} />
+        <StructHexViewer svd={svd} active_field={active_field} />
         <div>
-            <StructHexViewer buffer={struct.getBuffer()} active_value={active_value} />
-
-            <Switch>
-                <Match when={active_value() instanceof Struct}>
-                    <div>
-                        Some this is a struct with x amount of values and y amount of data
-                        <p>{JSON.stringify(struct_get_options(struct))}</p>
-                    </div>
-                </Match>
-                <Match when={!(active_value() instanceof Struct)}>
-                    <ActiveValueViewer struct={struct} active_value={active_value as any} />
-                </Match>
-            </Switch>
+            <Show
+                when={!!active_field().struct}
+                fallback={(
+                    <ActiveValueViewer svd={svd} active_field={active_field} set_svd={set_svd} set_active_key={set_active_key} />
+                )}
+            >
+                <div>
+                    Some this is a struct with x amount of values and y amount of data
+                    <p>{JSON.stringify(struct_get_options(struct))} {active_field().name}</p>
+                    <StructConfigureBytes svd={svd} set_svd={set_svd} set_active_key={set_active_key} active_field={active_field} />
+                </div>
+            </Show>
         </div>
     </div>
 }
