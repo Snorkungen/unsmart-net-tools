@@ -11,32 +11,40 @@ const StructTable: Component<{
     set_active_key: Setter<StructViewerKey>,
 }> = ({ svd, active_key, set_active_key }) => {
     function get_width_and_height(field: StructViewerField) {
+        const HEIGHT_CAP = 4;
+        let capped = 0; // if the value could be taller but has been capped
+
         let height = 1;
         let width = field.bitLength
         if (width > TABLE_WIDTH) {
             height = Math.ceil(width / TABLE_WIDTH)
-            height = Math.min(height, 4) // cap the height to make it easier to look at
+            if (height > HEIGHT_CAP) {
+                height = HEIGHT_CAP
+                capped = 1;
+            }
+
             width = TABLE_WIDTH
             // do something 
             // modify the height
         } else if (width <= 0) {
             height = 4;
             width = TABLE_WIDTH;
+            capped = 1;
         }
 
-        return [width, height]
+        return [width, height, capped]
     }
 
     /**
      * Takes the fields and returns a flattened array containing the position information, about the field
      */
-    function compute_sizes(fields: StructViewerField[], row_end = 1, col_end = 1): { width: number; height: number; row_start: number; row_end: number; col_start: number; col_end: number; }[] {
+    function compute_sizes(fields: StructViewerField[], row_end = 1, col_end = 1): { width: number; height: number; row_start: number; row_end: number; col_start: number; col_end: number; capped: boolean; }[] {
         let sizes: ReturnType<typeof compute_sizes> = [];
         // I'm going to need some type of offset
         let sizes_offset = 0
         for (let i = 0; i < fields.length; i++) {
             let field = fields[i];
-            let [w, h] = get_width_and_height(field)
+            let [w, h, capped] = get_width_and_height(field)
 
             let col_start = col_end;
             let row_start = row_end;
@@ -47,6 +55,15 @@ const StructTable: Component<{
                 sizes.splice(i + sizes_offset, 0, ...rsizes);
                 sizes_offset += rsizes.length;
                 continue;
+            }
+
+            if (TABLE_WIDTH - (col_start - 1) < w) {
+                console.log(field.name, TABLE_WIDTH - col_start, w, h)
+                // move item to the next row
+                col_start = 1;
+                col_end = col_start;
+                row_start = row_start + 1;
+                row_end = row_start;
             }
 
             col_end += w;
@@ -62,6 +79,7 @@ const StructTable: Component<{
                 row_end: row_start + h,
                 col_start,
                 col_end: col_start + w,
+                capped: !!capped,
             }
         }
 
@@ -86,14 +104,14 @@ const StructTable: Component<{
 
     let flattened_fields = createMemo(() => flatten_fields(svd().fields)); // flatten fields array
     let precomputed_sizes = createMemo(() => compute_sizes(svd().fields)); // precomput a flattened array of positions
-    let row_count = (precomputed_sizes().at(-1)?.row_end || 1) - 1;
+    let row_count = () => (precomputed_sizes().at(-1)?.row_end || 1) - 1;
 
     return <div style={{
         display: "grid",
         "grid-template-columns": "repeat(" + TABLE_WIDTH + ", 1fr)",
-        "grid-template-rows": "repeat(" + row_count + ", 1fr)",
+        "grid-template-rows": "repeat(" + row_count() + ", 1fr)",
     }}>{flattened_fields().map((field, i) => {
-        let { col_start, col_end, row_start, row_end } = precomputed_sizes()[i]
+        let { col_start, col_end, row_start, row_end, capped } = precomputed_sizes()[i]
 
         return <div
             style={{
@@ -111,6 +129,8 @@ const StructTable: Component<{
                 "border": "solid 2px #e1e1e1",
                 "border-top": row_start == 1 ? "inherit inherit inherit" : "none",
                 "border-left": col_start == 1 ? "inherit inherit inherit" : "none",
+                "border-right-style": capped ? "dotted" : "solid",
+                "border-left-style": capped ? "dotted" : "solid",
 
                 "color": (struct_viewer_keys_equal(active_key(), field.key)) ? "green" : undefined,
             }}
