@@ -1,10 +1,9 @@
-import { Accessor, Component, For, Match, Setter, Show, Switch, createEffect, createMemo, createSignal } from "solid-js"
+import { Accessor, Component, For, JSX, Match, Setter, Show, Switch, createEffect, createMemo, createSignal } from "solid-js"
 import { UDP_HEADER } from "../lib/header/udp";
 import { FormSelect } from "solid-bootstrap";
 import { DEFINED_STRUCTS, type StructViewerKey, type StructViewerField, get_suitable_structs, struct_get_options, struct_get_types, struct_viewer_create_svd, struct_viewer_get_field, type AnyStruct, StructViewerData, struct_viewer_key, struct_viewer_get_field_value, struct_viewer_struct_to_fields, struct_viewer_keys_equal } from "../lib/struct-viewer/struct-viewer";
 
 const TABLE_WIDTH = 32; // 4-Bytes
-
 
 const StructTable: Component<{
     svd: Accessor<StructViewerData>,
@@ -87,7 +86,7 @@ const StructTable: Component<{
 
     let flattened_fields = createMemo(() => flatten_fields(svd().fields)); // flatten fields array
     let precomputed_sizes = createMemo(() => compute_sizes(svd().fields)); // precomput a flattened array of positions
-    let row_count = precomputed_sizes().at(-1)!.row_end - 1;
+    let row_count = (precomputed_sizes().at(-1)?.row_end || 1) - 1;
 
     return <div style={{
         display: "grid",
@@ -174,30 +173,81 @@ const StructHexViewer: Component<{
 
 const StructConfigureBytes: Component<{ active_field: Accessor<StructViewerField>; set_active_key: Setter<StructViewerKey>; svd: Accessor<StructViewerData>; set_svd: Setter<StructViewerData>; }> = ({ active_field, set_active_key, svd, set_svd }) => {
     const BYTE_ARRAY_KEY = "BYTE_ARRAY_VALUE";
+
+    let field = active_field()
     const [option, set_option] = createSignal(BYTE_ARRAY_KEY);
-    const remaining_bytes = createMemo(() => svd().buffer.subarray(Math.floor(struct_viewer_get_field(svd(), active_field().key).realBitOffset / 8)));
+    const struct_options = createMemo(() => {
+        let svdata = svd(), afield = active_field();
+
+        let options = Object.keys(get_suitable_structs((
+            svdata.buffer.subarray(Math.floor(struct_viewer_get_field(svdata, afield.key).realBitOffset / 8))
+        ), false));
+        if (!struct_viewer_keys_equal(afield.key, -1)) {
+            options.unshift(BYTE_ARRAY_KEY)
+        }
+
+        return options
+    })
 
     createEffect(() => {
+        // set the struct
+        // set the option based on the active field
+        field = active_field();
+        let struct = field.struct;
+
+        if (!struct) {
+            return set_option(BYTE_ARRAY_KEY)
+        }
+
+        for (let key in DEFINED_STRUCTS) {
+            if (DEFINED_STRUCTS[key].name === struct.name) {
+                return set_option(key)
+            }
+        }
+
+        set_option(BYTE_ARRAY_KEY)
+    })
+
+    createEffect(() => {
+        if (field != active_field() && field.key == -1) {
+            return; // this case means that something is really wrong
+        }
+
         if (option() == BYTE_ARRAY_KEY || !(option() in DEFINED_STRUCTS)) {
+            // reset the field
+            set_svd((s) => {
+                field = struct_viewer_get_field(s, active_field().key)
+
+                if (struct_viewer_keys_equal(field.key, -1)) {
+                    throw new Error("Cannot set reset the root field")
+                } else {
+                    field.struct = undefined;
+                    field.fields = undefined;
+                }
+
+                return s
+            })
             return
         }
+
         let struct = DEFINED_STRUCTS[option()];
+
+        if (struct == field.struct) {
+            return;
+        }
+
         set_svd((s) => {
             let field = struct_viewer_get_field(s, active_field().key)
             field.struct = struct;
             field.fields = struct_viewer_struct_to_fields(struct, field.key);
             return s
         })
-
     })
-
-    // calculate the bytes  that remain
 
     return <div>
         <label>Select the appropriate struct for the selected bytes</label>
-        <FormSelect oninput={(e) => set_option(e.target.value)} value={option()}>
-            <option value={BYTE_ARRAY_KEY}>Byte Array</option>
-            <For each={Object.keys(get_suitable_structs(remaining_bytes(), true))}>{(key) => (
+        <FormSelect oninput={e => set_option(e.currentTarget.value)} value={option()}>
+            <For each={struct_options()}>{(key) => (
                 <option>{key}</option>
             )}</For>
         </FormSelect>
@@ -228,12 +278,11 @@ export const StructViewer: Component<{ struct?: AnyStruct }> = ({ struct }) => {
         struct = UDP_HEADER.create({
             sport: 9023,
             dport: 7000,
-            length: 30,
-            payload: new Uint8Array({ length: 30 - UDP_HEADER.getMinSize() })
+            length: 100,
+            payload: new Uint8Array({ length: 100 - UDP_HEADER.getMinSize() })
         });
         // struct = IPV4_HEADER
     }
-
     const [svd, set_svd] = createSignal(struct_viewer_create_svd(struct), { equals: false });
     const [active_key, set_active_key] = createSignal<StructViewerKey>(-1, { equals: false });
     const active_field = createMemo<StructViewerField>(() => (
