@@ -144,11 +144,11 @@ const StructTable: Component<{
 const StructHexViewer: Component<{
     svd: Accessor<StructViewerData>;
     active_field: Accessor<StructViewerField>;
-}> = ({ svd, active_field }) => {
+}> = (props) => {
     let row_width = 16;
 
     const active_range = createMemo<[number, number]>(() => {
-        let field = active_field();
+        let field = props.active_field();
         if (field.key == -1) {
             return [-1, -1]
         }
@@ -156,7 +156,7 @@ const StructHexViewer: Component<{
         if (field.bitLength < 0) {
             return [
                 Math.floor(field.realBitOffset / 8),
-                svd().buffer.length
+                props.svd().buffer.length
             ]
         }
 
@@ -174,7 +174,7 @@ const StructHexViewer: Component<{
             color: "inherit",
             "text-align": "left"
         }} >{
-                [...svd().buffer].map((n, i) => (
+                [...props.svd().buffer].map((n, i) => (
                     <span style={{
                         color: (active_range()[0] <= i && active_range()[1] > i) ? "green" : "inherit"
                     }} onclick={() => console.log(i)}>
@@ -182,7 +182,7 @@ const StructHexViewer: Component<{
                     </span>
                 ))
             }</div>
-        <div>{[...svd().buffer].map((n, i) => (
+        <div>{[...props.svd().buffer].map((n, i) => (
             <span style={{
                 color: (active_range()[0] <= i && active_range()[1] > i) ? "green" : "inherit"
             }}>{(n > 32 && n <= 126) ? String.fromCharCode(n) : n == 32 ? <span innerHTML="&nbsp"></span> : "."}</span>
@@ -238,6 +238,8 @@ const StructConfigureBytes: Component<{ active_field: Accessor<StructViewerField
                 field = struct_viewer_get_field(s, active_field().key)
 
                 if (struct_viewer_keys_equal(field.key, -1)) {
+                    console.warn("Cannot reset the root field")
+                    return s;
                     throw new Error("Cannot set reset the root field")
                 } else {
                     field.struct = undefined;
@@ -292,9 +294,9 @@ const ActiveValueViewer: Component<{
     </div>
 }
 
-export const StructViewer: Component<{ struct?: AnyStruct }> = ({ struct }) => {
-    if (!struct) {
-        struct = UDP_HEADER.create({
+export const StructViewer: Component<{ struct?: AnyStruct }> = (props) => {
+    if (!props.struct) {
+        props.struct = UDP_HEADER.create({
             sport: 9023,
             dport: 7000,
             length: 100,
@@ -302,12 +304,21 @@ export const StructViewer: Component<{ struct?: AnyStruct }> = ({ struct }) => {
         });
         // struct = IPV4_HEADER
     }
-    const [svd, set_svd] = createSignal(struct_viewer_create_svd(struct), { equals: false });
+
+    const [svd, set_svd] = createSignal(struct_viewer_create_svd(props.struct), { equals: false });
     const [active_key, set_active_key] = createSignal<StructViewerKey>(-1, { equals: false });
     const active_field = createMemo<StructViewerField>(() => (
         struct_viewer_get_field(svd(), active_key())
     ));
     // !TODO: someway to inspect value, and bit information
+
+    createEffect(() => {
+        if (!props.struct) {
+            return
+        }
+        set_svd(struct_viewer_create_svd(props.struct))
+        set_active_key(-1)
+    })
 
     return <div>
         <button onclick={() => set_active_key(key => {
@@ -326,7 +337,7 @@ export const StructViewer: Component<{ struct?: AnyStruct }> = ({ struct }) => {
             >
                 <div>
                     Some this is a struct with x amount of values and y amount of data
-                    <p>{JSON.stringify(struct_get_options(struct))} {active_field().name}</p>
+                    <p>{JSON.stringify(struct_get_options(props.struct))} {active_field().name}</p>
                     <StructConfigureBytes svd={svd} set_svd={set_svd} set_active_key={set_active_key} active_field={active_field} />
                 </div>
             </Show>

@@ -1,106 +1,18 @@
-import { For, createSignal } from "solid-js";
-import { Struct, UINT32, } from "../lib/binary/struct";
-import { BaseAddress } from "../lib/address/base";
-import { PCAP_GLOBAL_HEADER, PCAP_PACKET_HEADER } from "../lib/header/pcap";
-import { ETHERNET_HEADER, ETHER_TYPES } from "../lib/header/ethernet";
-import { IPV4_HEADER, PROTOCOLS } from "../lib/header/ip";
-import { ICMP_HEADER, ICMP_UNUSED_HEADER, ICMPV4_CODES, ICMPV4_TYPES } from "../lib/header/icmp";
-import { UDP_HEADER } from "../lib/header/udp";
+import { For, createEffect, createMemo, createSignal } from "solid-js";
 import { PacketCapture } from "../lib/packet-capture/capture";
 import { PacketCaptureRecordStatus } from "../lib/packet-capture/record";
 import { uint8_fromBase64 } from "../lib/binary/uint8array/base64";
-
-function stringifyStruct(struct: Struct<any>) {
-    let obj: any = {}
-
-    struct.order.forEach(k => {
-        obj[k] = struct.get(k) + ""
-    })
-
-    return JSON.stringify(obj, null, 2)
-}
-
-function stringifyConstName(name: string): string {
-    return name.replaceAll("_", " ")
-}
-
+import { StructViewer } from "./struct-viewer";
+import { PCAPNG_BLOCK } from "../lib/header/pcapng";
 
 export default function PacketCaptureViewer() {
     let buffer = uint8_fromBase64(base64EncodedPCAPFile);
 
     let [state, setState] = createSignal<PacketCapture>(new PacketCapture(buffer))
-
-
-
-
-    let data: Array<[typeof PCAP_PACKET_HEADER, typeof ETHERNET_HEADER]> = [];
-
-
-    type TableEntry = {
-        timestamp: Date;
-        source: { toString: () => string };
-        destination: BaseAddress;
-        protocol: string;
-        sport?: number,
-        dport?: number,
-
-        negative?: true;
-        title?: string;
-    }
-    const getKeyByValue = (obj: Record<string, number>, value: number) => Object.keys(obj).find(key => obj[key] === value) ?? "";
-    let tableEntries = data.map(([packetHeader, ethHeader],) => {
-        let entry: TableEntry = {
-            timestamp: new Date((packetHeader.get("tsSec") + (packetHeader.get("tsUsec") / 1_000_000)) * 1000),
-            source: ethHeader.get("smac"),
-            destination: ethHeader.get("dmac"),
-            protocol: getKeyByValue(ETHER_TYPES, ethHeader.get("ethertype"))
-        }
-
-        if (ethHeader.get("ethertype") == ETHER_TYPES.IPv4) {
-            let ipHeader = IPV4_HEADER.from(ethHeader.get("payload").subarray(0, -(UINT32.bitLength / 8)));
-
-            entry.source = ipHeader.get("saddr");
-            entry.destination = ipHeader.get("daddr");
-            entry.protocol = getKeyByValue(PROTOCOLS, ipHeader.get("proto"))
-
-
-            if (ipHeader.get("proto") == PROTOCOLS.ICMP) {
-                let unwrapIPv4 = (ipHdrBuffer: Uint8Array) => {
-                    let contentIPHdr = IPV4_HEADER.from(ipHdrBuffer);
-                    if (contentIPHdr.get("proto") == PROTOCOLS.UDP) {
-                        let udpHdr = UDP_HEADER.from(contentIPHdr.get("payload"))
-                        entry.sport = udpHdr.get("sport")
-                        entry.dport = udpHdr.get("dport")
-
-                    }
-
-                    entry.protocol += "->" + getKeyByValue(PROTOCOLS, contentIPHdr.get("proto"))
-                    return contentIPHdr;
-                }
-                let icmpHdr = ICMP_HEADER.from(ipHeader.get("payload"))
-
-                if (icmpHdr.get("type") == ICMPV4_TYPES.TIME_EXCEEDED) {
-                    let contentIPHdr = unwrapIPv4(ICMP_UNUSED_HEADER.from(icmpHdr.get("data")).get("data"));
-
-                    entry.negative = true
-                    entry.title = `Time Exceeded: ${stringifyConstName(getKeyByValue(ICMPV4_CODES[ICMPV4_TYPES.TIME_EXCEEDED], icmpHdr.get("code")))}`
-                } else if (icmpHdr.get("type") == ICMPV4_TYPES.DESTINATION_UNREACHABLE) {
-                    let contentIPHdr = unwrapIPv4(ICMP_UNUSED_HEADER.from(icmpHdr.get("data")).get("data"));
-
-                    entry.negative = true;
-                    entry.title = `Destination Unreachable: ${stringifyConstName(getKeyByValue(ICMPV4_CODES[ICMPV4_TYPES.DESTINATION_UNREACHABLE], icmpHdr.get("code")))}`
-                }
-            } else if (ipHeader.get("proto") == PROTOCOLS.UDP) {
-                let udpHdr = UDP_HEADER.from(ipHeader.get("payload"))
-                entry.sport = udpHdr.get("sport")
-                entry.dport = udpHdr.get("dport")
-            }
-        }
-
-        return entry
-    })
+    let struct = createMemo(() => PCAPNG_BLOCK.from(state().buffer.subarray(0, 32 * 5)))
 
     return <div>
+        <StructViewer struct={struct()} />
         <header>
             <h1>Packet Capture</h1>
             <input type="file" onInput={(event: any) => {

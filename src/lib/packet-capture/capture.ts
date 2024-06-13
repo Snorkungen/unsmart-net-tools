@@ -5,7 +5,7 @@ import { PacketCaptureRecord } from "./record";
 
 export class PacketCapture {
     records: PacketCaptureRecord[] = [];
-
+    buffer: Uint8Array
     private options: PacketCaptureRecordReaderOptions = {
         "Hformat": PacketCaptureHFormat.unknown,
         "Nformat": PacketCaptureNFormat.unknown,
@@ -17,7 +17,7 @@ export class PacketCapture {
     constructor(buf: Uint8Array) {
         let buffer = new Uint8Array(buf);
         this.identifyHFormat(buffer);
-
+        this.buffer = buffer;
         if (this.options.Hformat == PacketCaptureHFormat.unknown) {
             // return early; unknown file format not recognized
             return;
