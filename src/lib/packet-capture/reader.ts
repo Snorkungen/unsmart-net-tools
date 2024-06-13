@@ -1,21 +1,21 @@
-import { StructOptions, StructType } from "../binary";
+import { BaseAddress } from "../address/base";
+import { uint8_readUint32BE } from "../binary/uint8-array";
 import { ARP_HEADER, ARP_OPCODES } from "../header/arp";
 import { ETHERNET_DOT1Q_HEADER, ETHERNET_HEADER, ETHER_TYPES } from "../header/ethernet";
 import { ICMPV4_CODES, ICMPV4_TYPES, ICMPV6_TYPES, ICMP_DESTINATION_UNREACHABLE, ICMP_ECHO_HEADER, ICMP_HEADER, ICMP_NDP_HEADER, ICMP_UNUSED_HEADER } from "../header/icmp";
 import { IPV4_HEADER, IPV6_HEADER, PROTOCOLS } from "../header/ip";
-import { PCAP_RECORD_HEADER } from "../header/pcap";
+import { PCAP_GLOBAL_HEADER, PCAP_MAGIC_NUMBER, PCAP_MAGIC_NUMBER_LITTLE, PCAP_RECORD_HEADER } from "../header/pcap";
 import { UDP_HEADER } from "../header/udp";
-import { PacketCaptureRecord, PacketCaptureRecordData, PacketCaptureRecordMetaData, PacketCaptureRecordStatus } from "./record";
 
 const getKeyByValue = <N extends number, T extends Record<string, N>>(obj: T, value: N): keyof T => Object.keys(obj).find(key => obj[key] === value) ?? "";
-
-
-
 
 export enum PacketCaptureHFormat {
     unknown,
     /** libpcap 2.4 <https://wiki.wireshark.org/Development/LibpcapFileFormat> */
     libpcap,
+
+    /** pcapng 1.0 */
+    pcapng,
 }
 
 /** network that the packets are encapsulated as */
@@ -24,72 +24,52 @@ export enum PacketCaptureNFormat {
     ethernet,
 }
 
-export type PacketCaptureRecordReaderOptions = {
-    bigEndian: StructOptions["bigEndian"];
-    /** Header Format */
-    Hformat: PacketCaptureHFormat;
-    /** Network Format */
-    Nformat: PacketCaptureNFormat;
+export enum PacketCaptureRecordStatus {
+    NORMAL,
+    WARNING,
+    ERROR,
 }
 
-export class PacketCaptureRecordReader {
-    options: PacketCaptureRecordReaderOptions;
-    offset: number = 0;
+export interface PacketCaptureRecordMetaData {
+    index: number;
+    timestamp: Date;
+    length: number;
+    fullLength: number;
+}
 
-    constructor(options: PacketCaptureRecordReaderOptions) {
-        this.options = options;
+export interface PacketCaptureRecordData {
+    saddr: BaseAddress;
+    daddr: BaseAddress;
+    protocol: string;
+    status: PacketCaptureRecordStatus;
+
+    info: string[];
+}
+
+export type PacketCaptureRecord = PacketCaptureRecordMetaData & PacketCaptureRecordData;
+
+export interface PacketCaptureReader {
+    /** has_more is for pcapng where the next block 
+     * might be some configuration with no packets after it so you would have to look ahead
+     *  and see if there are packets left */
+    has_more(): boolean;
+    reset(): void;
+    read(length?: number): PacketCaptureRecord;
+}
+
+export class PacketCaptureEthernetReader implements PacketCaptureReader {
+    constructor(private buffer: Uint8Array, private begin: number, private metadata: PacketCaptureRecordMetaData) { }
+
+    private read_called = false
+    has_more(): boolean { return !this.read_called }
+    reset(): void { this.read_called = false }
+
+    read(length?: number): PacketCaptureRecord {
+        this.read_called = true;
+        return Object.assign(this.metadata, this.readEthernet(this.buffer.subarray(this.begin, length ? this.begin + length : undefined), 0))
     }
 
-    reset() {
-        this.offset = 0;
-    }
-
-    read(buf: Uint8Array, offset: number): PacketCaptureRecord {
-        this.offset = offset;
-        // Read record header
-        let recordMetaData = this.readRecordHeader(buf),
-            // Read record data
-            recordData = this.readRecordData(buf, recordMetaData.length);
-
-        this.offset += recordMetaData.length;
-
-        return Object.assign(recordMetaData, recordData);
-    }
-
-    readRecordHeader(buf: Uint8Array): PacketCaptureRecordMetaData {
-        switch (this.options.Hformat) {
-            case PacketCaptureHFormat.libpcap:
-                return this.readRecordHeaderLibpcap(buf);
-        }
-
-        throw new Error(`header format: ${this.options.Hformat}, not implemented`);
-    }
-
-    readRecordHeaderLibpcap(buf: Uint8Array): PacketCaptureRecordMetaData {
-        let hdr = PCAP_RECORD_HEADER.from(buf.subarray(this.offset, this.offset += PCAP_RECORD_HEADER.size), {
-            bigEndian: this.options.bigEndian
-        });
-
-        let ms = Math.round((hdr.get("tsSec") * 1_000) + (hdr.get("tsUsec") / 1_000))
-
-        return {
-            index: 0, // due to it being unknown at this point
-            timestamp: new Date(ms),
-            length: hdr.get("inclLen"),
-            fullLength: hdr.get("origLen")
-        }
-    }
-
-    readRecordData(buf: Uint8Array, length: number): PacketCaptureRecordData {
-        switch (this.options.Nformat) {
-            case PacketCaptureNFormat.ethernet:
-                return this.readEthernet(buf, this.offset);
-        }
-
-        throw new Error(`network format: ${this.options.Hformat}, not implemented`);
-    }
-
-    readEthernet(buf: Uint8Array, begin?: number, data?: PacketCaptureRecordData): PacketCaptureRecordData {
+    private readEthernet(buf: Uint8Array, begin?: number, data?: PacketCaptureRecordData): PacketCaptureRecordData {
         let hdr = ETHERNET_HEADER.from(buf.subarray(begin || 0));
 
         if (!data) {
@@ -118,7 +98,7 @@ export class PacketCaptureRecordReader {
         return data;
     }
 
-    readVLAN(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): PacketCaptureRecordData {
+    private readVLAN(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): PacketCaptureRecordData {
         let hdr = ETHERNET_DOT1Q_HEADER.from(buf.subarray(begin));
 
         data.info = ["VLAN/" + hdr.get("vid")]
@@ -132,7 +112,7 @@ export class PacketCaptureRecordReader {
         return this.readEthernet(ethhdr.getBuffer(), 0, data);
     }
 
-    readARP(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): PacketCaptureRecordData {
+    private readARP(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): PacketCaptureRecordData {
         let hdr = ARP_HEADER.from(buf.subarray(begin));
 
         if (hdr.get("ptype") != ETHER_TYPES.IPv4) {
@@ -150,7 +130,7 @@ export class PacketCaptureRecordReader {
         return data;
     }
 
-    readIPv4(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): PacketCaptureRecordData {
+    private readIPv4(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): PacketCaptureRecordData {
         let hdr = IPV4_HEADER.from(buf.subarray(begin));
 
         data.saddr = hdr.get("saddr");
@@ -169,7 +149,7 @@ export class PacketCaptureRecordReader {
         return data;
     }
 
-    readICMPv4(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): typeof data {
+    private readICMPv4(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): typeof data {
         let hdr = ICMP_HEADER.from(buf.subarray(begin));
         let echoHdr = ICMP_ECHO_HEADER.from(hdr.get("data")),
             dstUnrchbleHdr = ICMP_UNUSED_HEADER.from(hdr.get("data"))
@@ -196,7 +176,7 @@ export class PacketCaptureRecordReader {
         return data;
     }
 
-    readIPv6(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): typeof data {
+    private readIPv6(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): typeof data {
         let hdr = IPV6_HEADER.from(buf.subarray(begin));
 
         data.saddr = hdr.get("saddr");
@@ -211,7 +191,7 @@ export class PacketCaptureRecordReader {
         return data;
     }
 
-    readICMPv6(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): typeof data {
+    private readICMPv6(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): typeof data {
         let ipHdr = IPV6_HEADER.from(buf);
         let hdr = ICMP_HEADER.from(buf.subarray(begin));
         let echoHdr = ICMP_ECHO_HEADER.from(hdr.get("data"))
@@ -232,9 +212,120 @@ export class PacketCaptureRecordReader {
         return data;
     }
 
-    readUDP(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): typeof data {
+    private readUDP(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): typeof data {
         let hdr = UDP_HEADER.from(buf.subarray(begin));
         data.info.push(`port: ${hdr.get("sport")} => ${hdr.get("dport")}`)
         return data;
     }
 }
+
+export class PacketCaptureLibpcapReader implements PacketCaptureReader {
+    pointer: number;
+    buffer: Uint8Array;
+
+    record_index: number = 0;
+
+    network_type: PacketCaptureNFormat = PacketCaptureNFormat.unknown;
+
+    big_endian: boolean = false;
+    version: [number, number] = [2, 4];
+    sigfig: number = 0;
+    snaplen: number = 0;
+    thiszone: number = 0;
+
+    constructor(buffer: Uint8Array, private begin: number = 0) {
+        this.buffer = buffer;
+        this.pointer = begin;
+
+        this.read_header_and_configure()
+    }
+
+    private read_header_and_configure() {
+        // read global header determine if the headers are big-endian or little endian move pointer
+
+        // first read magic value and check if it is big endian or little endiand
+        let magic = uint8_readUint32BE(this.buffer, this.pointer);
+        if (magic === PCAP_MAGIC_NUMBER) {
+            this.big_endian = true;
+        } else if (magic === PCAP_MAGIC_NUMBER_LITTLE) {
+            this.big_endian = false;
+        } else {
+            throw new Error("ReaderError: magic number not recognized");
+        }
+
+        let hdr = PCAP_GLOBAL_HEADER.from(
+            this.buffer.subarray(this.pointer, this.pointer + PCAP_GLOBAL_HEADER.size),
+            { bigEndian: this.big_endian }
+        );
+
+        if (hdr.get("versionMajor") != 2 || hdr.get("versionMinor") != 4) {
+            throw new Error("ReaderError: version MUST be 2.4");
+        }
+
+        switch (hdr.get("network")) {
+            case 1:
+                this.network_type = PacketCaptureNFormat.ethernet;
+                break;
+            default:
+                throw new Error("ReaderError: reader only supports reading ethernet packets")
+        }
+
+        // save header information
+        this.version = [hdr.get("versionMajor"), hdr.get("versionMinor")]
+        this.sigfig = hdr.get("sigfigs");
+        this.snaplen = hdr.get("snaplen");
+        this.thiszone = hdr.get("thiszone");
+
+        // move the pointer forward
+        this.pointer += PCAP_GLOBAL_HEADER.size;
+    }
+
+    has_more() {
+        return this.pointer < this.buffer.length;
+    }
+
+    reset() {
+        this.pointer = this.begin;
+        this.read_header_and_configure();
+    }
+
+    read(): PacketCaptureRecord {
+        // first read the record header
+        let hdr = PCAP_RECORD_HEADER.from(
+            this.buffer.subarray(this.pointer, this.pointer + PCAP_RECORD_HEADER.size),
+            { bigEndian: this.big_endian }
+        );
+
+        let ms = Math.round((hdr.get("tsSec") * 1_000) + (hdr.get("tsUsec") / 1_000))
+        let metadata: PacketCaptureRecordMetaData = {
+            index: this.record_index++,
+            timestamp: new Date(ms),
+            length: hdr.get("inclLen"),
+            fullLength: hdr.get("origLen"),
+        }
+
+        // increment pointer after reading record header
+        this.pointer += PCAP_RECORD_HEADER.size;
+
+        let record: PacketCaptureRecord;
+        // second read the packet
+        if (this.network_type == PacketCaptureNFormat.ethernet) {
+            let ethernet_reader = new PacketCaptureEthernetReader(this.buffer, this.pointer, metadata);
+            record = ethernet_reader.read(metadata.length);
+        } else {
+            throw new Error("ReaderError: network type not supported")
+        }
+
+        // increment pointer after reading ethernet packet
+        this.pointer += metadata.length;
+
+        return record;
+    }
+
+    static identify(buffer: Uint8Array) {
+        let magic_number = uint8_readUint32BE(buffer);
+        return magic_number == PCAP_MAGIC_NUMBER || magic_number == PCAP_MAGIC_NUMBER_LITTLE;
+    }
+}
+
+

@@ -1,6 +1,5 @@
-import { For, createEffect, createMemo, createSignal } from "solid-js";
-import { PacketCapture } from "../lib/packet-capture/capture";
-import { PacketCaptureRecordStatus } from "../lib/packet-capture/record";
+import { For, createMemo, createSignal } from "solid-js";
+import { PacketCapture, PacketCaptureRecordStatus } from "../lib/packet-capture";
 import { uint8_fromBase64 } from "../lib/binary/uint8array/base64";
 import { StructViewer } from "./struct-viewer";
 import { PCAPNG_BLOCK } from "../lib/header/pcapng";

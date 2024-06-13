@@ -8,7 +8,7 @@ import { uint8_concat, uint8_equals, uint8_fromNumber, uint8_matchLength, uint8_
 import { ETHERNET_DOT1Q_HEADER, ETHERNET_HEADER, ETHER_TYPES } from "../header/ethernet";
 import { IPV4_HEADER, IPV4_PSEUDO_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../header/ip";
 import { ARP_HEADER, ARP_OPCODES } from "../header/arp";
-import { PacketCaptureHFormat, PacketCaptureNFormat, PacketCaptureRecordReader } from "../packet-capture/reader";
+import { PacketCaptureEthernetReader, type PacketCaptureRecordData } from "../packet-capture/reader";
 import { calculateChecksum } from "../binary/checksum";
 import { ICMPV4_TYPES, ICMPV6_TYPES, ICMP_HEADER, ICMP_NDPFLAG_SOLICITED, ICMP_NDP_HEADER } from "../header/icmp";
 import { UDP_HEADER } from "../header/udp";
@@ -269,13 +269,8 @@ export class Device {
             return;
         }
 
-        let reader = new PacketCaptureRecordReader({
-            "Hformat": PacketCaptureHFormat.unknown,
-            "Nformat": PacketCaptureNFormat.unknown,
-            bigEndian: true,
-        })
-
-        let frame_info = reader.readEthernet(data.buffer)
+        let reader = new PacketCaptureEthernetReader(data.buffer, 0, {} as any)
+        let frame_info : PacketCaptureRecordData = reader.read()
 
         let iface_name = iface.name + iface.unit;
         frame_info.protocol
