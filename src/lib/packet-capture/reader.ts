@@ -1,11 +1,11 @@
 import { BaseAddress } from "../address/base";
-import { uint8_readUint32BE } from "../binary/uint8-array";
+import { uint8_fromString, uint8_readUint32BE } from "../binary/uint8-array";
 import { ARP_HEADER, ARP_OPCODES } from "../header/arp";
 import { ETHERNET_DOT1Q_HEADER, ETHERNET_HEADER, ETHER_TYPES } from "../header/ethernet";
 import { ICMPV4_CODES, ICMPV4_TYPES, ICMPV6_TYPES, ICMP_DESTINATION_UNREACHABLE, ICMP_ECHO_HEADER, ICMP_HEADER, ICMP_NDP_HEADER, ICMP_UNUSED_HEADER } from "../header/icmp";
 import { IPV4_HEADER, IPV6_HEADER, PROTOCOLS } from "../header/ip";
 import { PCAP_GLOBAL_HEADER, PCAP_MAGIC_NUMBER, PCAP_MAGIC_NUMBER_LITTLE, PCAP_RECORD_HEADER } from "../header/pcap";
-import { PCAPNG_BLOCK, PCAPNG_BYTE_ORDER_MAGIC_BIG, PCAPNG_BYTE_ORDER_MAGIC_LITTLE, PCAPNG_MAGIC_NUMBER, PCAPNG_OPTION, PCAPNG_SECTION_HEADER } from "../header/pcapng";
+import { PCAPNG_BLOCK, PCAPNG_BLOCK_TYPES, PCAPNG_BYTE_ORDER_MAGIC_BIG, PCAPNG_BYTE_ORDER_MAGIC_LITTLE, PCAPNG_EPACKET, PCAPNG_IFACE_DESC, PCAPNG_MAGIC_NUMBER, PCAPNG_OPTION, PCAPNG_SECTION_HEADER, PCAPNG_SPACKET } from "../header/pcapng";
 import { UDP_HEADER } from "../header/udp";
 
 const getKeyByValue = <N extends number, T extends Record<string, N>>(obj: T, value: N): keyof T => Object.keys(obj).find(key => obj[key] === value) ?? "";
@@ -224,8 +224,6 @@ export class PacketCaptureLibpcapReader implements PacketCaptureReader {
     pointer: number;
     buffer: Uint8Array;
 
-    record_index: number = 0;
-
     network_type: PacketCaptureNFormat = PacketCaptureNFormat.unknown;
 
     big_endian: boolean = false;
@@ -299,7 +297,7 @@ export class PacketCaptureLibpcapReader implements PacketCaptureReader {
 
         let ms = Math.round((hdr.get("tsSec") * 1_000) + (hdr.get("tsUsec") / 1_000))
         let metadata: PacketCaptureRecordMetaData = {
-            index: this.record_index++,
+            index: -1,
             timestamp: new Date(ms),
             length: hdr.get("inclLen"),
             fullLength: hdr.get("origLen"),
@@ -329,12 +327,21 @@ export class PacketCaptureLibpcapReader implements PacketCaptureReader {
     }
 }
 
+function align_number(offset: number, align = 4) {
+    return offset + (align - (offset % align)) % align;
+    // return (align - (offset & (align - 1))) & (align - 1)
+}
 export class PacketCapturePcapngReader implements PacketCaptureReader {
     pointer: number;
     buffer: Uint8Array;
 
-    record_index: number = 0;
-
+    ifaces: {
+        /** <https://www.tcpdump.org/linktypes.html> */
+        link_type: number;
+        snap_len: number;
+        tsresol: number;
+        options: ReturnType<PacketCapturePcapngReader["read_options"]>;
+    }[] = [];
 
     constructor(buffer: Uint8Array, private begin: number = 0) {
         this.buffer = buffer;
@@ -378,38 +385,168 @@ export class PacketCapturePcapngReader implements PacketCaptureReader {
         // !TODO: read the section length
 
         // read the options
-        let options_bytes = hdr.get("options");
-        let option_pointer = 0;
+        // !TODO: read options
+        // let options = this.read_options(hdr.get("options"))
+        // options.forEach(o => {
+        //     console.log([...o.get("body")].map(n => String.fromCharCode(n)).join(""))
+        // })
 
-        while (option_pointer < options_bytes.byteLength) {
+        this.pointer += align_number(block_length);
+    }
+
+    private read_options(arena: Uint8Array) {
+        let options: (typeof PCAPNG_OPTION)[] = [];
+        let arena_pointer = 0;
+
+        while (arena_pointer < arena.byteLength) {
             let option = PCAPNG_OPTION.from(
-                options_bytes.subarray(option_pointer),
-                { bigEndian: this.big_endian, packed: false }
+                arena.subarray(arena_pointer, arena_pointer + PCAPNG_OPTION.size),
+                { bigEndian: this.big_endian }
             );
+
+            if (option.get("type") === 0) {
+                break; // opt_endofopt
+            }
 
             let option_length = option.get("length");
 
-            console.log(option.get("type"), option.get("length"))
-
-            option_pointer += option_length + PCAPNG_OPTION.size + (
-                4 - (option_length % 4) // each option is padded to a 4-byte boundary
+            options.push(
+                PCAPNG_OPTION.from(arena.subarray(arena_pointer, arena_pointer + option_length + PCAPNG_OPTION.size),
+                    { bigEndian: this.big_endian }
+                )
             );
+
+            arena_pointer += align_number(option_length + PCAPNG_OPTION.size);
         }
 
-        // increment the pointer after having read the section header
-        this.pointer += block_length;
+        return options;
     }
 
     has_more() {
+        let local_pointer = this.pointer;
+        while (local_pointer < this.buffer.byteLength) {
+            let block = PCAPNG_BLOCK.from(
+                this.buffer.subarray(local_pointer),
+                { bigEndian: this.big_endian }
+            );
+
+            let block_type = block.get("type");
+            if (block_type == PCAPNG_BLOCK_TYPES.SPACKET || block_type == PCAPNG_BLOCK_TYPES.EPACKET) {
+                return true;
+            }
+
+            local_pointer += align_number(block.get("blockLength"));
+        }
+
         return false;
     }
 
     reset(): void {
+        this.ifaces = [];
         this.pointer = this.begin;
         this.read_header_and_configure();
     }
-    read(length?: number): PacketCaptureRecord {
-        throw new Error("Method not implemented.");
+    read(): PacketCaptureRecord {
+        let record: undefined | PacketCaptureRecord = undefined;
+
+        while (this.pointer < this.buffer.byteLength) {
+            let block = PCAPNG_BLOCK.from(
+                this.buffer.subarray(this.pointer, this.pointer + PCAPNG_BLOCK.size),
+                { bigEndian: this.big_endian }
+            );
+
+            let block_type = block.get("type");
+            let block_length = block.get("blockLength")
+
+            if (PCAPNG_BLOCK_TYPES.SECTION_HEADER === block_type) {
+                this.read_header_and_configure();
+                continue;
+            } else if (PCAPNG_BLOCK_TYPES.IFACE_DESC === block_type) {
+                // skip block
+                let iface_desc = PCAPNG_IFACE_DESC.from(
+                    this.buffer.subarray(this.pointer + PCAPNG_BLOCK.size, this.pointer + block_length - 4),
+                    { bigEndian: this.big_endian }
+                );
+
+                let tsresol = 6; // default if_tsresol
+                let options = this.read_options(iface_desc.get("options"));
+                for (let opt of options) {
+                    if (opt.get("type") === 9) {// if_tsresol
+                        tsresol = opt.get("body")[0];
+                    }
+                }
+
+                this.ifaces.push({
+                    link_type: iface_desc.get("linkType"),
+                    snap_len: iface_desc.get("snaplen"),
+                    tsresol: tsresol, // default value
+                    options: options
+                });
+            } else if (PCAPNG_BLOCK_TYPES.SPACKET === block_type) {
+                // read simple packet
+                let spacket = PCAPNG_SPACKET.from(
+                    this.buffer.subarray(this.pointer + PCAPNG_BLOCK.size, this.pointer + block_length - 4),
+                    { bigEndian: this.big_endian }
+                );
+
+                let metadata: PacketCaptureRecordMetaData = {
+                    index: -1,
+                    timestamp: new Date(NaN), // force invalid date due to no timestamp being provided
+                    length: spacket.get("incLen"),
+                    fullLength: spacket.get("origLen"),
+                }
+
+                let ethernet_reader = new PacketCaptureEthernetReader(spacket.get("body"), 0, metadata);
+                record = ethernet_reader.read(spacket.get("incLen"))
+            } else if (PCAPNG_BLOCK_TYPES.EPACKET === block_type) {
+                // read enhanced packet
+                let epacket = PCAPNG_EPACKET.from(
+                    this.buffer.subarray(this.pointer + PCAPNG_BLOCK.size, this.pointer + block_length - 4),
+                    { bigEndian: this.big_endian }
+                );
+
+
+                // get the iface
+                let iface = this.ifaces[epacket.get("ifid")];
+                if (iface) {
+                    let ms = 0; // !TODO: read inteface description blocks and determine time resolution
+
+                    let big_number = (BigInt(epacket.get("upperTimestamp")) << BigInt(8 * 4)) | BigInt(epacket.get("lowerTimestamp"));
+                    if (iface.tsresol < 0x80) {
+                        ms = Math.round(Number(big_number) * 10 ** -(iface.tsresol - 3))
+                    }
+
+                    if (iface.tsresol >= 0x80) {
+                        // !TODO: support whatever this means (2) ** -x
+                    }
+
+                    let metadata: PacketCaptureRecordMetaData = {
+                        index: -1,
+                        timestamp: new Date(ms),
+                        length: epacket.get("incLen"),
+                        fullLength: epacket.get("origLen"),
+                    }
+
+                    // do something about the options
+                    // let options = this.read_options(
+                    //     epacket.get("body").subarray(align_number(epacket.get("incLen")))
+                    // );
+
+                    // assume the body of the packet is ethernet
+                    let ethernet_reader = new PacketCaptureEthernetReader(epacket.get("body"), 0, metadata);
+                    record = ethernet_reader.read(epacket.get("incLen"))
+                }
+
+            }
+
+            this.pointer += align_number(block_length);
+
+            if (record) {
+                return record;
+            }
+        }
+
+        throw new Error("ReaderError: there is nothing to read")
     }
 
     static identify(buffer: Uint8Array) {

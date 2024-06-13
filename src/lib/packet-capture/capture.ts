@@ -28,6 +28,7 @@ export class PacketCapture {
         while (this.reader.has_more()) {
             let record = this.reader.read();
             this.records.push(record)
+            this.records[this.records.length - 1].index = this.records.length - 1;
         }
     }
 }
