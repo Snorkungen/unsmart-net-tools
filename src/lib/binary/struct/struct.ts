@@ -31,6 +31,8 @@ export type StructType<T extends any> = {
     getter: (buf: Uint8Array, options: StructOptions) => T;
     /** function to be called when a struct is setting a value */
     setter: (value: T, options?: StructOptions) => Uint8Array;
+    /** a flag that prevents the getter and setter from reversing bytes */
+    endianSensitive?: true;
 }
 
 export class Struct<Types extends Record<string, StructType<any>>> {
@@ -177,7 +179,7 @@ export class Struct<Types extends Record<string, StructType<any>>> {
         }
         buf = new Uint8Array(buf)
 
-        if (!this.options.bigEndian) {
+        if (!this.options.bigEndian && !this.types[key].endianSensitive) {
             // reverse the byte order
             buf = buf.reverse()
         }
@@ -217,7 +219,7 @@ export class Struct<Types extends Record<string, StructType<any>>> {
             throw new StructValueError("value does not fit in bits", value)
         }
 
-        if (!this.options.bigEndian && !(value instanceof Uint8Array)) {
+        if (!this.options.bigEndian && !(value instanceof Uint8Array) && !this.types[key].endianSensitive) {
             // reverse the byte order
             buf = buf.reverse()
         }

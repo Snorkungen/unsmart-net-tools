@@ -13,6 +13,7 @@ export const defineAddress = <AT extends typeof BaseAddress>(Address: AT) => {
         setter(value) {
             return value.buffer;
         },
+        endianSensitive: true,
     }
 }
 

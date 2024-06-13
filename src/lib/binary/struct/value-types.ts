@@ -92,12 +92,14 @@ export const SLICE = defineStructType<Uint8Array>({
     },
     setter(buf) {
         return buf
-    }
+    },
+    endianSensitive: true,
 })
 
 export const BYTE_ARRAY = (length: number) => defineStructType<Uint8Array>({
     defaultValue: new Uint8Array(length),
     bitLength: length * 8,
     getter: buf => buf,
-    setter: buf => buf
+    setter: buf => buf,
+    endianSensitive: true,
 })
