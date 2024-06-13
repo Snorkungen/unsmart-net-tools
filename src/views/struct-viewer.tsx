@@ -58,7 +58,6 @@ const StructTable: Component<{
             }
 
             if (TABLE_WIDTH - (col_start - 1) < w) {
-                console.log(field.name, TABLE_WIDTH - col_start, w, h)
                 // move item to the next row
                 col_start = 1;
                 col_end = col_start;
@@ -128,9 +127,9 @@ const StructTable: Component<{
                 "padding": "0.4em",
                 "border": "solid 2px #e1e1e1",
                 "border-top": row_start == 1 ? "inherit inherit inherit" : "none",
-                "border-left": col_start == 1 ? "inherit inherit inherit" : "none",
                 "border-right-style": capped ? "dotted" : "solid",
-                "border-left-style": capped ? "dotted" : "solid",
+                "border-left": col_start == 1 ? "inherit inherit inherit" : "none",
+                "border-left-style": col_start == 1 ? capped ? "dotted" : "solid" : "none",
 
                 "color": (struct_viewer_keys_equal(active_key(), field.key)) ? "green" : undefined,
             }}
