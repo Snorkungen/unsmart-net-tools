@@ -5,6 +5,7 @@ import { ETHERNET_DOT1Q_HEADER, ETHERNET_HEADER, ETHER_TYPES } from "../header/e
 import { ICMPV4_CODES, ICMPV4_TYPES, ICMPV6_TYPES, ICMP_DESTINATION_UNREACHABLE, ICMP_ECHO_HEADER, ICMP_HEADER, ICMP_NDP_HEADER, ICMP_UNUSED_HEADER } from "../header/icmp";
 import { IPV4_HEADER, IPV6_HEADER, PROTOCOLS } from "../header/ip";
 import { PCAP_GLOBAL_HEADER, PCAP_MAGIC_NUMBER, PCAP_MAGIC_NUMBER_LITTLE, PCAP_RECORD_HEADER } from "../header/pcap";
+import { PCAPNG_BLOCK, PCAPNG_BYTE_ORDER_MAGIC_BIG, PCAPNG_BYTE_ORDER_MAGIC_LITTLE, PCAPNG_MAGIC_NUMBER, PCAPNG_OPTION, PCAPNG_SECTION_HEADER } from "../header/pcapng";
 import { UDP_HEADER } from "../header/udp";
 
 const getKeyByValue = <N extends number, T extends Record<string, N>>(obj: T, value: N): keyof T => Object.keys(obj).find(key => obj[key] === value) ?? "";
@@ -328,4 +329,90 @@ export class PacketCaptureLibpcapReader implements PacketCaptureReader {
     }
 }
 
+export class PacketCapturePcapngReader implements PacketCaptureReader {
+    pointer: number;
+    buffer: Uint8Array;
 
+    record_index: number = 0;
+
+
+    constructor(buffer: Uint8Array, private begin: number = 0) {
+        this.buffer = buffer;
+        this.pointer = begin;
+
+        this.read_header_and_configure()
+    }
+
+    big_endian: boolean = false;
+    private read_header_and_configure() {
+        // assume that the first block is the section header
+
+        // determine endidaness
+        let magic = uint8_readUint32BE(this.buffer, this.pointer + 8); // the byte offset is determined by counting
+        if (magic === PCAPNG_BYTE_ORDER_MAGIC_BIG) {
+            this.big_endian = true;
+        } else if (magic === PCAPNG_BYTE_ORDER_MAGIC_LITTLE) {
+            this.big_endian = false;
+        } else {
+            throw new Error("ReaderError: magic number not recognized");
+        }
+
+        // read the first block
+        let block = PCAPNG_BLOCK.from(
+            this.buffer.subarray(this.pointer),
+            { bigEndian: this.big_endian, packed: false } // endianes is not known yet.
+        );
+
+        let block_length = block.get("blockLength");
+
+        let hdr = PCAPNG_SECTION_HEADER.from(
+            this.buffer.subarray(this.pointer + PCAPNG_BLOCK.size, this.pointer + block_length),
+            { bigEndian: this.big_endian, packed: false }
+        );
+
+        // byte_order has been read earlier
+        if (hdr.get("versionMajor") !== 1) {
+            throw new Error("ReaderError: version must be 1.x")
+        }
+
+        // !TODO: read the section length
+
+        // read the options
+        let options_bytes = hdr.get("options");
+        let option_pointer = 0;
+
+        while (option_pointer < options_bytes.byteLength) {
+            let option = PCAPNG_OPTION.from(
+                options_bytes.subarray(option_pointer),
+                { bigEndian: this.big_endian, packed: false }
+            );
+
+            let option_length = option.get("length");
+
+            console.log(option.get("type"), option.get("length"))
+
+            option_pointer += option_length + PCAPNG_OPTION.size + (
+                4 - (option_length % 4) // each option is padded to a 4-byte boundary
+            );
+        }
+
+        // increment the pointer after having read the section header
+        this.pointer += block_length;
+    }
+
+    has_more() {
+        return false;
+    }
+
+    reset(): void {
+        this.pointer = this.begin;
+        this.read_header_and_configure();
+    }
+    read(length?: number): PacketCaptureRecord {
+        throw new Error("Method not implemented.");
+    }
+
+    static identify(buffer: Uint8Array) {
+        return uint8_readUint32BE(buffer, 0) == PCAPNG_MAGIC_NUMBER;
+    }
+}

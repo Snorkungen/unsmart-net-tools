@@ -4,8 +4,8 @@ import { BYTE_ARRAY, SLICE, UINT16, UINT32, defineStruct } from "../binary";
 
 export const PCAPNG_MAGIC_NUMBER = 0x0A0D0D0A;
 
-export const PCAPNG_BYTE_ORDER_MAGIC_BIG = 0xa1b2c3d4;
-export const PCAPNG_BYTE_ORDER_MAGIC_LITTLE = 0xd4c3b2a1;
+export const PCAPNG_BYTE_ORDER_MAGIC_BIG = 0x1A2B3C4D;
+export const PCAPNG_BYTE_ORDER_MAGIC_LITTLE = 0x4D3C2B1A;
 
 export const PCAPNG_BLOCK_TYPES = {
     SECTION_HEADER: PCAPNG_MAGIC_NUMBER,
@@ -32,7 +32,7 @@ export const PCAPNG_BLOCK_TYPES = {
  */
 export const PCAPNG_BLOCK = defineStruct({
     type: UINT32,
-    length: UINT32,
+    blockLength: UINT32,
     body: SLICE,
 });
 
@@ -48,7 +48,12 @@ export const PCAPNG_BLOCK = defineStruct({
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
  ```
  */
-export const PCAPNG_OPTION = PCAPNG_BLOCK;
+export const PCAPNG_OPTION = defineStruct({
+   type: UINT16,
+   length: UINT16,
+   body: SLICE,
+});
+;
 
 /**
 ```txt

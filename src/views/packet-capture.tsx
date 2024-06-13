@@ -8,7 +8,7 @@ export default function PacketCaptureViewer() {
     let buffer = uint8_fromBase64(base64EncodedPCAPFile);
 
     let [state, setState] = createSignal<PacketCapture>(new PacketCapture(buffer))
-    let struct = createMemo(() => PCAPNG_BLOCK.from(state().buffer.subarray(0, 32 * 5)))
+    let struct = createMemo(() => PCAPNG_BLOCK.from(state().buffer.subarray(0, 32 * 10)))
 
     return <div>
         <StructViewer struct={struct()} />
