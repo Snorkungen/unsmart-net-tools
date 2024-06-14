@@ -1,23 +1,15 @@
+import { uint8_readUint32BE } from "../binary/uint8-array";
 import { BaseAddress } from "../address/base";
-import { uint8_fromString, uint8_readUint32BE } from "../binary/uint8-array";
-import { ARP_HEADER, ARP_OPCODES } from "../header/arp";
-import { ETHERNET_DOT1Q_HEADER, ETHERNET_HEADER, ETHER_TYPES } from "../header/ethernet";
-import { ICMPV4_CODES, ICMPV4_TYPES, ICMPV6_TYPES, ICMP_DESTINATION_UNREACHABLE, ICMP_ECHO_HEADER, ICMP_HEADER, ICMP_NDP_HEADER, ICMP_UNUSED_HEADER } from "../header/icmp";
-import { IPV4_HEADER, IPV6_HEADER, PROTOCOLS } from "../header/ip";
 import { PCAP_GLOBAL_HEADER, PCAP_MAGIC_NUMBER, PCAP_MAGIC_NUMBER_LITTLE, PCAP_RECORD_HEADER } from "../header/pcap";
 import { PCAPNG_BLOCK, PCAPNG_BLOCK_TYPES, PCAPNG_BYTE_ORDER_MAGIC_BIG, PCAPNG_BYTE_ORDER_MAGIC_LITTLE, PCAPNG_EPACKET, PCAPNG_IFACE_DESC, PCAPNG_MAGIC_NUMBER, PCAPNG_OPTION, PCAPNG_SECTION_HEADER, PCAPNG_SPACKET } from "../header/pcapng";
+import { ETHERNET_DOT1Q_HEADER, ETHERNET_HEADER, ETHER_TYPES } from "../header/ethernet";
+import { ARP_HEADER, ARP_OPCODES } from "../header/arp";
+import { IPV4_HEADER, IPV6_HEADER, PROTOCOLS } from "../header/ip";
+import { ICMPV4_CODES, ICMPV4_TYPES, ICMPV6_TYPES, ICMP_ECHO_HEADER, ICMP_HEADER, ICMP_NDP_HEADER, ICMP_UNUSED_HEADER } from "../header/icmp";
+import { TCP_HEADER } from "../header/tcp";
 import { UDP_HEADER } from "../header/udp";
 
 const getKeyByValue = <N extends number, T extends Record<string, N>>(obj: T, value: N): keyof T => Object.keys(obj).find(key => obj[key] === value) ?? "";
-
-export enum PacketCaptureHFormat {
-    unknown,
-    /** libpcap 2.4 <https://wiki.wireshark.org/Development/LibpcapFileFormat> */
-    libpcap,
-
-    /** pcapng 1.0 */
-    pcapng,
-}
 
 /** network that the packets are encapsulated as */
 export enum PacketCaptureNFormat {
@@ -136,15 +128,17 @@ export class PacketCaptureEthernetReader implements PacketCaptureReader {
 
         data.saddr = hdr.get("saddr");
         data.daddr = hdr.get("daddr");
-        data.protocol = getKeyByValue(PROTOCOLS, hdr.get("proto"))
+        data.protocol = getKeyByValue(PROTOCOLS, hdr.get("proto"));
 
-        data.info.push(`ttl: ${hdr.get("ttl")}`)
+        data.info.push(`ttl: ${hdr.get("ttl")}`);
 
         switch (hdr.get("proto")) {
             case PROTOCOLS.ICMP:
                 return this.readICMPv4(hdr.getBuffer(), hdr.getMinSize(), data);
             case PROTOCOLS.UDP:
                 return this.readUDP(hdr.getBuffer(), hdr.getMinSize(), data)
+            case PROTOCOLS.TCP:
+                return this.readTCP(hdr.getBuffer(), hdr.getMinSize(), data)
         }
 
         return data;
@@ -187,6 +181,10 @@ export class PacketCaptureEthernetReader implements PacketCaptureReader {
         switch (hdr.get("nextHeader")) {
             case PROTOCOLS.IPV6_ICMP:
                 return this.readICMPv6(hdr.getBuffer(), hdr.getMinSize(), data);
+            case PROTOCOLS.UDP:
+                return this.readUDP(hdr.getBuffer(), hdr.getMinSize(), data);
+            case PROTOCOLS.TCP:
+                return this.readTCP(hdr.getBuffer(), hdr.getMinSize(), data);
         }
 
         return data;
@@ -215,7 +213,19 @@ export class PacketCaptureEthernetReader implements PacketCaptureReader {
 
     private readUDP(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): typeof data {
         let hdr = UDP_HEADER.from(buf.subarray(begin));
-        data.info.push(`port: ${hdr.get("sport")} => ${hdr.get("dport")}`)
+        data.info.push(`port: ${hdr.get("sport")} => ${hdr.get("dport")}`);
+
+        // !TODO: create database of know destination and source ports
+
+        return data;
+    }
+
+    private readTCP(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): typeof data {
+        let hdr = TCP_HEADER.from(buf.subarray(begin));
+        data.info.push(`port: ${hdr.get("sport")} => ${hdr.get("dport")}`);
+
+        // !TODO: create database of know destination and source portss
+
         return data;
     }
 }
@@ -460,7 +470,7 @@ export class PacketCapturePcapngReader implements PacketCaptureReader {
 
             if (PCAPNG_BLOCK_TYPES.SECTION_HEADER === block_type) {
                 this.read_header_and_configure();
-                continue;
+                continue; // above function increments pointer
             } else if (PCAPNG_BLOCK_TYPES.IFACE_DESC === block_type) {
                 // skip block
                 let iface_desc = PCAPNG_IFACE_DESC.from(
@@ -479,7 +489,7 @@ export class PacketCapturePcapngReader implements PacketCaptureReader {
                 this.ifaces.push({
                     link_type: iface_desc.get("linkType"),
                     snap_len: iface_desc.get("snaplen"),
-                    tsresol: tsresol, // default value
+                    tsresol: tsresol,
                     options: options
                 });
             } else if (PCAPNG_BLOCK_TYPES.SPACKET === block_type) {
@@ -489,22 +499,29 @@ export class PacketCapturePcapngReader implements PacketCaptureReader {
                     { bigEndian: this.big_endian }
                 );
 
-                let metadata: PacketCaptureRecordMetaData = {
-                    index: -1,
-                    timestamp: new Date(NaN), // force invalid date due to no timestamp being provided
-                    length: spacket.get("incLen"),
-                    fullLength: spacket.get("origLen"),
+                let iface = this.ifaces[0]; // !TODO: read the spec, which interface is this expected to use
+
+                if (iface) {
+                    let metadata: PacketCaptureRecordMetaData = {
+                        index: -1,
+                        timestamp: new Date(NaN), // force invalid date due to no timestamp being provided
+                        length: spacket.get("incLen"),
+                        fullLength: spacket.get("origLen"),
+                    };
+
+                    // link-type 1: ethernet
+                    if (iface.link_type === 1) {
+                        let ethernet_reader = new PacketCaptureEthernetReader(spacket.get("body"), 0, metadata);
+                        record = ethernet_reader.read(spacket.get("incLen"));
+                    }
                 }
 
-                let ethernet_reader = new PacketCaptureEthernetReader(spacket.get("body"), 0, metadata);
-                record = ethernet_reader.read(spacket.get("incLen"))
             } else if (PCAPNG_BLOCK_TYPES.EPACKET === block_type) {
                 // read enhanced packet
                 let epacket = PCAPNG_EPACKET.from(
                     this.buffer.subarray(this.pointer + PCAPNG_BLOCK.size, this.pointer + block_length - 4),
                     { bigEndian: this.big_endian }
                 );
-
 
                 // get the iface
                 let iface = this.ifaces[epacket.get("ifid")];
@@ -532,11 +549,12 @@ export class PacketCapturePcapngReader implements PacketCaptureReader {
                     //     epacket.get("body").subarray(align_number(epacket.get("incLen")))
                     // );
 
-                    // assume the body of the packet is ethernet
-                    let ethernet_reader = new PacketCaptureEthernetReader(epacket.get("body"), 0, metadata);
-                    record = ethernet_reader.read(epacket.get("incLen"))
+                    // link-type 1: ethernet
+                    if (iface.link_type === 1) {
+                        let ethernet_reader = new PacketCaptureEthernetReader(epacket.get("body"), 0, metadata);
+                        record = ethernet_reader.read(epacket.get("incLen"));
+                    }
                 }
-
             }
 
             this.pointer += align_number(block_length);
