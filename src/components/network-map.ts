@@ -1,8 +1,6 @@
 import { type Device } from "../lib/device/device";
 import { EthernetInterface, type BaseInterface } from "../lib/device/interface";
 
-
-
 export interface NMEntity {
     width: number;
     height: number;
@@ -97,7 +95,6 @@ class NMInterface implements NMEntity {
             let end = value;
 
             if (value.iface.device.interfaces.length > this.iface.device.interfaces.length) {
-                console.log("this is doing something")
                 start = value;
                 end = this
             }

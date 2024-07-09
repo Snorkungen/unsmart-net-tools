@@ -1,8 +1,9 @@
+import { BaseAddress } from "../../address/base";
 import { IPV4Address } from "../../address/ipv4";
 import { IPV6Address } from "../../address/ipv6";
 import { AddressMask, createMask } from "../../address/mask";
-import { uint8_fromString, uint8_readUint32BE } from "../../binary/uint8-array";
-import { Program, ProcessSignal, Process } from "../device";
+import { uint8_equals, uint8_fromString, uint8_readUint32BE } from "../../binary/uint8-array";
+import { Program, ProcessSignal, Process, DeviceRoute } from "../device";
 import { formatTable } from "./helpers";
 
 
@@ -23,16 +24,50 @@ export const DEVICE_PROGRAM_ROUTEINFO_ARP: Program = {
     },
 }
 
-// !TODO: add a route
 // !TODO: remove a route
+const DEVICE_PROGRAM_ROUTEINFO_REMOVE: Program = {
+    name: "remove",
+    description: "remove a entry from routes",
+    content: "!TODO: write usage instructions",
+    init(proc, args) {
+        let [, , arg_destination, ifid,] = args;
 
+        if (!arg_destination) {
+            proc.term_write(uint8_fromString(`Destination: missing\n${this.content}`));
+            return ProcessSignal.ERROR;
+        }
+
+        let destination: BaseAddress;
+        if (IPV4Address.validate(arg_destination)) {
+            destination = new IPV4Address(arg_destination);
+        } else if (true /* should validate ipv6 addresses, but not implemented yet */) {
+            destination = new IPV6Address(arg_destination);
+        }
+
+
+        let predicate = (route: DeviceRoute) => {
+            return uint8_equals(route.destination.buffer, destination.buffer);
+        }
+
+        // take destination and find the destination and the disambiguate the route
+        // !TODO: ensure that only one route gets removed at a time
+        let removed_routes = proc.device.routes.filter(predicate);
+        proc.term_write(uint8_fromString(`removed ${removed_routes.length} routes\n`))
+        proc.device.routes = proc.device.routes.filter(r => !predicate(r)); // just remove all destinations matching the specified destination
+
+        
+        return ProcessSignal.EXIT;
+    },
+}
+
+// !TODO: add a route
 const DEVICE_PROGRAM_ROUTEINFO_ADD4: Program = {
     name: "add4",
     description: "add ipv4 address to route entries",
-    content: "TODO: write content for DEVICE_PROGRAM_ROUTEINFO_ADD4",
+    content: "USAGE:\n<routeinfo add4 [IF_ID] [destination] [netmask] [gateway]>\nEXAMPLE:\n<routeinfo add4 eth0 192.168.1.100 32 192.168.1.10>",
     init(proc, args, data) {
         // <routeinfo add4 [IF_ID] [destination] [netmask] [gateway] [...flags]
-        let [, , ifid, arg_destination, arg_netmask, ...flags] = args
+        let [, , ifid, arg_destination, arg_netmask, arg_gateway] = args
 
         if (!ifid) {
             proc.term_write(uint8_fromString(`IF_ID: missing\n${this.content}`));
@@ -76,35 +111,21 @@ const DEVICE_PROGRAM_ROUTEINFO_ADD4: Program = {
             return ProcessSignal.ERROR;
         }
 
-
         let f_gateway: true | undefined = undefined,
             f_dynamic: true | undefined = undefined,
             f_host: true | undefined = undefined,
             f_static = true
 
-        let gateway: IPV4Address
-
-        let arg_gateway = flags[0] || ""
+        let gateway: IPV4Address;
         if (IPV4Address.validate(arg_gateway)) {
             f_gateway = true
-            f_host = undefined
             gateway = new IPV4Address(arg_gateway)
-            flags.shift()
         } else {
-            f_host = true
             gateway = new IPV4Address("0.0.0.0");
         }
 
-        if (uint8_readUint32BE(gateway.buffer) === 0) {
-            if (netmask.length === IPV4Address.ADDRESS_LENGTH) {
-                f_host = true
-            } else {
-                // !TODO: i can't remember what the goal is
-            }
-        }
-
-        if (flags.length) {
-            // !TODO: read flags
+        if (netmask.length === IPV4Address.ADDRESS_LENGTH) {
+            f_host = true; // if netmask covers all bits, the destination is a host
         }
 
         proc.device.routes.push({
@@ -154,11 +175,8 @@ export const DEVICE_PROGRAM_ROUTEINFO: Program = {
             }
 
             let flags = "";
-            if (route.f_gateway) {
-                flags += "G";
-            } else  if (route.f_host) {
-                flags += "H"
-            }
+            if (route.f_gateway) flags += "G";
+            if (route.f_host) flags += "H";
 
             return [route.destination.toString(), netmask, route.gateway.toString(), flags, route.iface.id()]
         }))
@@ -167,5 +185,5 @@ export const DEVICE_PROGRAM_ROUTEINFO: Program = {
 
         return ProcessSignal.EXIT;
     },
-    sub: [DEVICE_PROGRAM_ROUTEINFO_ARP, DEVICE_PROGRAM_ROUTEINFO_ADD4]
+    sub: [DEVICE_PROGRAM_ROUTEINFO_ARP, DEVICE_PROGRAM_ROUTEINFO_REMOVE, DEVICE_PROGRAM_ROUTEINFO_ADD4]
 }

@@ -31,9 +31,12 @@ export type StructType<T extends any> = {
     getter: (buf: Uint8Array, options: StructOptions) => T;
     /** function to be called when a struct is setting a value */
     setter: (value: T, options?: StructOptions) => Uint8Array;
+    /** a flag that prevents the getter and setter from reversing bytes */
+    endianSensitive?: true;
 }
 
-export class Struct<Types extends Record<string, StructType<any>>>{
+export class Struct<Types extends Record<string, StructType<any>>> {
+    name: string;
     order: Array<keyof Types>
 
     private options: StructOptions;
@@ -41,7 +44,7 @@ export class Struct<Types extends Record<string, StructType<any>>>{
     private types: Types;
     private offsetCache: Partial<Record<keyof Types, number>>;
 
-    constructor(types: Types, options: Partial<StructOptions> = {}) {
+    constructor(types: Types, options: Partial<StructOptions> = {}, name?: string) {
         this.options = { ...STRUCT_DEFAULT_OPTIONS, ...options };
         this.order = Object.keys(types)
         this.types = types;
@@ -56,6 +59,12 @@ export class Struct<Types extends Record<string, StructType<any>>>{
 
         if (this.options.setDefaultValues) {
             this.setDefaultValues();
+        }
+
+        if (name) {
+            this.name = name;
+        } else {
+            this.name = `Struct_${this.order.length}:${this.getMinSize()}-${Math.floor(Math.random() * 1000)}`
         }
     }
 
@@ -170,7 +179,7 @@ export class Struct<Types extends Record<string, StructType<any>>>{
         }
         buf = new Uint8Array(buf)
 
-        if (!this.options.bigEndian) {
+        if (!this.options.bigEndian && !this.types[key].endianSensitive) {
             // reverse the byte order
             buf = buf.reverse()
         }
@@ -210,7 +219,7 @@ export class Struct<Types extends Record<string, StructType<any>>>{
             throw new StructValueError("value does not fit in bits", value)
         }
 
-        if (!this.options.bigEndian && !(value instanceof Uint8Array)) {
+        if (!this.options.bigEndian && !(value instanceof Uint8Array) && !this.types[key].endianSensitive) {
             // reverse the byte order
             buf = buf.reverse()
         }
@@ -248,7 +257,7 @@ export class Struct<Types extends Record<string, StructType<any>>>{
     }
 
     create<TypeValues extends { [x in keyof Types]: ReturnType<Types[x]["getter"]> }>(values: Partial<TypeValues>, options: Partial<StructOptions> = {}) {
-        let struct = new Struct(this.types, { ...this.options, ...options });
+        let struct = new Struct(this.types, { ...this.options, ...options }, this.name);
         struct.buffer = new Uint8Array(this.buffer)
 
         if (values instanceof Uint8Array) {

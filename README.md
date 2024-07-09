@@ -12,8 +12,8 @@
     - [ ] UDP/DNS server and client
     - [ ] routeinfo
       - [ ] add a route
-        - [ ] add an ipv4 route
-      - [ ] remove a route
+        - [x] add an ipv4 route
+      - [x] remove a route
   - [ ] Device -> contact
     - [x] UDP protocol support
     - [x] TCP protocol support*
