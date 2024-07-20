@@ -23,8 +23,8 @@ export const OSIFS_FRAME = defineStruct({
     payload: SLICE
 });
 
-
-let transactions: { opcode: number, clid: number, xid: number, iface: OSInterface }[] = []
+let clients = new Map<number, OSInterface>(); // keep a map of for handling Send Packet messages
+let transactions: { opcode: number, xid: number, iface: OSInterface }[] = []
 let websocket = new WebSocket(
     "ws://localhost:7000"
 )
@@ -38,9 +38,22 @@ websocket.onmessage = async (event) => {
 
     let frame = OSIFS_FRAME.from(buffer);
 
+    if (frame.get("opcode") == OSIFS_OP_SEND_PACKET) { // this is a special case of the things
+        // get client 
+        let iface = clients.get(frame.get("clientid"))
+        if (!iface) return; // client not found
+
+        iface.input(
+            frame.get("ethertype"),
+            {
+                buffer: frame.get("payload"), // i do not rememeber how anything works
+            }
+        )
+        return
+    }
+
     // get transaction using transactionid
     let transaction = transactions.find(({ xid }) => xid === frame.get("transactionid"));
-
     if (!transaction) {
         return
     }
@@ -69,15 +82,9 @@ websocket.onmessage = async (event) => {
 
         transaction.iface.clientid = frame.get("clientid");
         transaction.iface.up = true;
-    } else if (frame.get("opcode") == OSIFS_OP_SEND_PACKET) {
-        transaction.iface.input(
-            frame.get("ethertype"),
-            {
-                buffer: frame.get("payload"), // i do not rememeber how anything works
-            }
-        )
-    }
 
+        clients.set(transaction.iface.clientid, transaction.iface);
+    }
 
     transactions = transactions.filter(t => t !== transaction)
 }
@@ -87,7 +94,6 @@ websocket.onmessage = async (event) => {
 function send_init(iface: OSInterface) {
     let transaction: typeof transactions[number] = {
         opcode: OSIFS_OP_INIT,
-        clid: iface.clientid,
         xid: Math.floor(Math.random() * 10_000),
         iface: iface
     }
@@ -107,24 +113,16 @@ function send_init(iface: OSInterface) {
 }
 
 function send_packet(iface: OSInterface, ethertype: EtherType, data: NetworkData) {
-    let transaction: typeof transactions[number] = {
-        opcode: OSIFS_OP_SEND_PACKET,
-        clid: iface.clientid,
-        xid: Math.floor(Math.random() * 50_000),
-        iface: iface
-    }
-
     let frame = OSIFS_FRAME.create({
         version: OSIFS_VERSION,
-        opcode: transaction.opcode,
-        clientid: transaction.clid,
-        transactionid: transaction.xid,
+        opcode: OSIFS_OP_SEND_PACKET,
+        clientid: iface.clientid,
+        transactionid: 0,
         ethertype: ethertype,
         payload: data.buffer
     })
 
     websocket.send(frame.getBuffer())
-    transactions.push(transaction)
 }
 
 export class OSInterface extends BaseInterface {
