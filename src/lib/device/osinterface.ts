@@ -7,7 +7,6 @@ import { IPV4_HEADER } from "../header/ip";
 import { NetworkData, DeviceRoute, DeviceResult, Device } from "./device";
 import { BaseInterface } from "./interface";
 
-
 const OSIFS_VERSION = 1,
     OSIFS_OP_INIT = 1,
     OSIFS_OP_REPLY = 2,
@@ -23,107 +22,133 @@ export const OSIFS_FRAME = defineStruct({
     payload: SLICE
 });
 
-let clients = new Map<number, OSInterface>(); // keep a map of for handling Send Packet messages
-let transactions: { opcode: number, xid: number, iface: OSInterface }[] = []
-let websocket = new WebSocket(
-    "ws://localhost:7000"
-)
+/** a singleton that wraps and checks stuff and does some stateful stuff */
+const OSINTERFACER = {
+    url: "",
+    websocket: undefined as undefined | WebSocket,
+    clients: new Map<number, OSInterface>(),
+    transactions: new Map<number, [opcode: number, iface: OSInterface]>(),
 
-websocket.onopen = () => {
-    console.log("WebSocket connection established")
-}
+    connect(url: string) {
+        this.url = url;
+        this.websocket = new WebSocket(url);
 
-websocket.onmessage = async (event) => {
-    let buffer = new Uint8Array(await event.data.arrayBuffer())
-
-    let frame = OSIFS_FRAME.from(buffer);
-
-    if (frame.get("opcode") == OSIFS_OP_SEND_PACKET) { // this is a special case of the things
-        // get client 
-        let iface = clients.get(frame.get("clientid"))
-        if (!iface) return; // client not found
-
-        iface.input(
-            frame.get("ethertype"),
-            {
-                buffer: frame.get("payload"), // i do not rememeber how anything works
-            }
-        )
-        return
-    }
-
-    // get transaction using transactionid
-    let transaction = transactions.find(({ xid }) => xid === frame.get("transactionid"));
-    if (!transaction) {
-        return
-    }
-
-    if (frame.get("opcode") == OSIFS_OP_REPLY) {
-        // parse options
-        let payload = frame.get("payload");
-        let options: Record<string, any>
-        if (payload.length < 2) {
-            options = {}
-        } else {
-            try {
-                let td = new TextDecoder()
-                options = JSON.parse(td.decode(payload))
-            } catch (_) {
-                options = {}
-            }
+        this.websocket.onerror = () => {
+            this.websocket = undefined;
         }
 
-        // just save clientid and move on
-        if (transaction.opcode != OSIFS_OP_INIT) {
-            return // future versions might do something else
+        this.websocket.onclose = () => {    
+            this.clients.forEach(iface => {
+                iface.up = false;
+            })
+
+            // reset the state
+            this.websocket = undefined;
+            this.clients = new Map()
+            this.transactions = new Map()
         }
 
-        // !TODO: in future server might advertise supported protocols
+        this.websocket.onopen = () => {
+            console.log("osinterfacer has established a connection with a server");
+        }
 
-        transaction.iface.clientid = frame.get("clientid");
-        transaction.iface.up = true;
+        // handle each received message
+        this.websocket.onmessage = async (ev) => {
+            let data = new Uint8Array(await ev.data.arrayBuffer());
+            let frame = OSIFS_FRAME.from(data);
 
-        clients.set(transaction.iface.clientid, transaction.iface);
+            if (frame.get("version") != OSIFS_VERSION) {
+                return;
+            }
+
+            // handle send packet
+            if (frame.get("opcode") === OSIFS_OP_SEND_PACKET) {
+                let iface = this.clients.get(frame.get("clientid"));
+                if (!iface) {
+                    return; // ignore client unknown
+                }
+
+                return iface.input(frame.get("ethertype"), { buffer: frame.get("payload") })
+            }
+
+            if (frame.get("opcode") != OSIFS_OP_REPLY) {
+                return; // ignore bad opcode
+            }
+
+
+            // handle replies
+            let transaction = this.transactions.get(frame.get("transactionid"));
+            if (!transaction) {
+                return; // transaction id unknown
+            }
+
+            let [opcode, iface] = transaction;
+
+            let options: {};
+            if (frame.get("payload").length < 2) {
+                options = {};
+            } else {
+                try {
+                    let td = new TextDecoder()
+                    options = JSON.parse(td.decode(frame.get("payload")))
+                } catch (_) {
+                    options = {}
+                }
+            }
+
+            if (opcode != OSIFS_OP_INIT) {
+                return; // only op being sent is INIT
+            }
+
+            iface.clientid = frame.get("clientid");
+            iface.up = true;
+
+            this.clients.set(iface.clientid, iface);
+        }
+    },
+    send_init(iface: OSInterface) {
+        if (!this.websocket) {
+            return; // do nothing, server is not up
+        }
+
+        let transactionid = Math.floor(Math.random() * 10_000);
+
+        let frame = OSIFS_FRAME.create({
+            version: OSIFS_VERSION,
+            opcode: OSIFS_OP_INIT,
+            transactionid: transactionid,
+            payload: uint8_fromString(JSON.stringify({
+                // leave room for options
+            }, null, 0))
+        });
+
+        this.websocket.send(frame.getBuffer())
+        this.transactions.set(transactionid, [OSIFS_OP_INIT, iface])
+    },
+    send_packet(iface: OSInterface | undefined, ethertype: EtherType, data: NetworkData) {
+        if (!this.websocket) {
+            return; // websocket not connected
+        }
+
+        iface = this.clients.get(iface?.clientid || -1);
+        if (!iface) {
+            return; // iface is not initialized
+        }
+
+        let frame = OSIFS_FRAME.create({
+            version: OSIFS_VERSION,
+            opcode: OSIFS_OP_SEND_PACKET,
+            clientid: iface.clientid,
+            transactionid: 0,
+            ethertype: ethertype,
+            payload: data.buffer
+        })
+
+        this.websocket.send(frame.getBuffer());
     }
-
-    transactions = transactions.filter(t => t !== transaction)
 }
 
-
-
-function send_init(iface: OSInterface) {
-    let transaction: typeof transactions[number] = {
-        opcode: OSIFS_OP_INIT,
-        xid: Math.floor(Math.random() * 10_000),
-        iface: iface
-    }
-
-    let frame = OSIFS_FRAME.create({
-        version: OSIFS_VERSION,
-        opcode: transaction.opcode,
-        transactionid: transaction.xid,
-        payload: uint8_fromString(JSON.stringify({
-            // leave room for options
-        }, null, 0))
-    });
-
-
-    websocket.send(frame.getBuffer())
-    transactions.push(transaction)
-}
-
-function send_packet(iface: OSInterface, ethertype: EtherType, data: NetworkData) {
-    let frame = OSIFS_FRAME.create({
-        version: OSIFS_VERSION,
-        opcode: OSIFS_OP_SEND_PACKET,
-        clientid: iface.clientid,
-        transactionid: 0,
-        ethertype: ethertype,
-        payload: data.buffer
-    })
-
-    websocket.send(frame.getBuffer())
-}
+OSINTERFACER.connect("ws://localhost:7000");
 
 export class OSInterface extends BaseInterface {
     clientid: number = -1
@@ -149,7 +174,7 @@ export class OSInterface extends BaseInterface {
                 buffer: ETHERNET_HEADER.create({ ethertype: ETHER_TYPES.IPv4, payload: data.buffer }).getBuffer(),
                 rcvif: this
             }, "SEND")
-            send_packet(this, ETHER_TYPES.IPv4, data)
+            OSINTERFACER.send_packet(this, ETHER_TYPES.IPv4, data)
         }
 
         return { success: true, data: undefined, error: undefined }
@@ -169,7 +194,7 @@ export class OSInterface extends BaseInterface {
 
     start(): DeviceResult {
         // register a client
-        send_init(this)
+        OSINTERFACER.send_init(this)
         return { success: true, data: undefined, error: undefined }
     }
 }
