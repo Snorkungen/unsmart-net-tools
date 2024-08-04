@@ -270,7 +270,7 @@ export class Device {
         }
 
         let reader = new PacketCaptureEthernetReader(data.buffer, 0, {} as any)
-        let frame_info : PacketCaptureRecordData = reader.read()
+        let frame_info: PacketCaptureRecordData = reader.read()
 
         let iface_name = iface.name + iface.unit;
         frame_info.protocol
@@ -486,7 +486,7 @@ export class Device {
             saddr: iphdr.get("saddr"),
             daddr: iphdr.get("daddr"),
             proto: PROTOCOLS.TCP,
-            len: tcphdr.size
+            len: iphdr.get("len") - (iphdr.get("ihl") << 2)
         });
 
         if (calculateChecksum(uint8_concat([pseudohdr.getBuffer(), tcphdr.getBuffer()])) !== 0) {
@@ -510,7 +510,7 @@ export class Device {
             saddr: iphdr.get("saddr"),
             daddr: iphdr.get("daddr"),
             proto: PROTOCOLS.TCP,
-            len: tcphdr.size
+            len: iphdr.get("payloadLength"), // Assume that packet contains no extension headers
         });
 
         if (calculateChecksum(uint8_concat([pseudohdr.getBuffer(), tcphdr.getBuffer()])) !== 0) {
@@ -721,6 +721,11 @@ export class Device {
             }
         }
 
+        // ensure that buffer is the size the ip header specifies
+        iphdr = iphdr.from(
+            iphdr.getBuffer().subarray(0, iphdr.getMinSize() + iphdr.get("payloadLength"))
+        );
+
         this.contact_input_raw("IPv6", { ...data, buffer: iphdr.getBuffer() });
 
         switch (iphdr.get("nextHeader")) {
@@ -773,7 +778,13 @@ export class Device {
             }
         }
 
+        // ensure that buffer is the size the ip header specifies
+        iphdr = iphdr.from(
+            iphdr.getBuffer().subarray(0, iphdr.get("len"))
+        );
+
         this.contact_input_raw("IPv4", { ...data, buffer: iphdr.getBuffer() });
+
         switch (iphdr.get("proto")) {
             case PROTOCOLS.ICMP:
                 return this.input_icmp4(iphdr, data);
