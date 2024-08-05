@@ -105,11 +105,33 @@ export const TestingComponent2: Component = () => {
         }, {})
     }
 
+    function connect_tcp() {
+        let contact = newdevice.contact_create("IPv4", "TCP").data!;
+
+        contact.connect(contact, {
+            daddr: osif_destination,
+            dport: osif_dport
+        });
+
+        contact.on_error(contact, () => {
+            console.log("failed to connect to destination")
+        })
+
+        contact.receive(contact, (_, d) => {
+            let string = new TextDecoder("utf-8").decode(d.buffer);
+            console.log(string);
+
+            contact.send(contact, {buffer: uint8_fromString(string + " --reply")});
+            contact.close(contact)
+        }, {})
+    }
+
     return (
         <div>
             <button onclick={() => osif.start()}>start osif</button>
             <button onclick={send_ping}>send packet over wire</button>
             <button onclick={send_udp}>send udp packet over wire</button>
+            <button onclick={connect_tcp}>connect tcp</button>
             <div ref={(el) => {
                 terminal = new Terminal(el)
             }}></div>
