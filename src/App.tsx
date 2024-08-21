@@ -1,24 +1,25 @@
-import { Container, Nav, Navbar, Card, NavLink } from 'solid-bootstrap';
 import { Component, For } from 'solid-js';
 import ViewRouter, { createViewHref } from './components/view-router';
 import { views } from './view-manifest';
 
 const App: Component = () => {
   return (
-    <div>
-      <Navbar bg="dark" variant="dark">
-        <Container>
-          <Navbar.Brand href="#home">Navbar</Navbar.Brand>
-          <Nav class="me-auto">
+    <>
+      <nav data-bs-theme="dark" class="navbar navbar-expand-md bg-body-tertiary">
+        <div class="container-fluid">
+          <ul class="navbar-nav me-auto mb-2 mb-lg-0">
             <For each={views}>{([component, name], i) => (
-              <NavLink href={createViewHref(component.name + i())}>{name}</NavLink>
+              <li class="nav-item">
+                <a class="nav-link" href={createViewHref(component.name + i())}>{name}</a>
+              </li>
             )}</For>
-          </Nav>
-        </Container>
-      </Navbar>
-      <Container>
-        <Card bg='dark' text='light' class='mt-4'>
-          <Card.Body>
+          </ul>
+        </div>
+      </nav>
+      <div class="container">
+        <div data-bs-theme="dark" class="card">
+          <div class="card-body">
+
             <ViewRouter views={views.map(([Comp], i) => ({
               element: <Comp />,
               name: Comp.name + i
@@ -27,10 +28,11 @@ const App: Component = () => {
                 <h1>View not found</h1>
               )}
             />
-          </Card.Body>
-        </Card>
-      </Container>
-    </div>
+
+          </div>
+        </div>
+      </div>
+    </>
   );
 };
 

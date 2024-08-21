@@ -1,6 +1,5 @@
 import { Accessor, Component, For, JSX, Match, Setter, Show, Switch, createEffect, createMemo, createSignal } from "solid-js"
 import { UDP_HEADER } from "../lib/header/udp";
-import { FormSelect } from "solid-bootstrap";
 import { DEFINED_STRUCTS, type StructViewerKey, type StructViewerField, get_suitable_structs, struct_get_options, struct_get_types, struct_viewer_create_svd, struct_viewer_get_field, type AnyStruct, StructViewerData, struct_viewer_key, struct_viewer_get_field_value, struct_viewer_struct_to_fields, struct_viewer_keys_equal } from "../lib/struct-viewer/struct-viewer";
 
 const TABLE_WIDTH = 32; // 4-Bytes
@@ -182,7 +181,7 @@ const StructHexViewer: Component<{
                     </span>
                 ))
             }</div>
-        <div>{[...props.svd().buffer].map((n, i) => (
+        <div style={{ width: "100%", display: "flex", "flex-direction": "row", "flex-wrap": "wrap" }}>{[...props.svd().buffer].map((n, i) => (
             <span style={{
                 color: (active_range()[0] <= i && active_range()[1] > i) ? "green" : "inherit"
             }}>{(n > 32 && n <= 126) ? String.fromCharCode(n) : n == 32 ? <span innerHTML="&nbsp"></span> : "."}</span>
@@ -267,11 +266,11 @@ const StructConfigureBytes: Component<{ active_field: Accessor<StructViewerField
 
     return <div>
         <label>Select the appropriate struct for the selected bytes</label>
-        <FormSelect oninput={e => set_option(e.currentTarget.value)} value={option()}>
+        <select style="margin: 0 auto; display: block; width: 100%;" oninput={e => set_option(e.currentTarget.value)} value={option()}>
             <For each={struct_options()}>{(key) => (
                 <option>{key}</option>
             )}</For>
-        </FormSelect>
+        </select>
     </div>
 }
 
