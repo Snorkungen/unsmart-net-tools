@@ -29,15 +29,35 @@ const OSINTERFACER = {
     clients: new Map<number, OSInterface>(),
     transactions: new Map<number, [opcode: number, iface: OSInterface]>(),
 
-    connect(url: string) {
+
+    _pending_messages: <ArrayBufferLike[]>[],
+    send(_: ArrayBufferLike) {/* stub do nothing ... logic defined elsewhere ... */ },
+    connect(url: string, auto_connect: boolean = true) {
         this.url = url;
+
+        /* if auto_connect is not true wait for a call to send ... to connect */
+        if (auto_connect != true) {
+            /* define logic for lazy send which checks am i connected ... connect to client for real ... otherwise do nothing */
+
+            this.send = ((data: ArrayBufferLike) => {
+                this._pending_messages.push(data)
+                if (!this.websocket && this.url == url) {
+                    this.connect(this.url, true); /* auto_connect */
+                }
+            }).bind(this);
+
+            return;
+        }
+
+
         this.websocket = new WebSocket(url);
+        this.websocket.binaryType = "arraybuffer";
 
         this.websocket.onerror = () => {
             this.websocket = undefined;
         }
 
-        this.websocket.onclose = () => {    
+        this.websocket.onclose = () => {
             this.clients.forEach(iface => {
                 iface.up = false;
             })
@@ -50,11 +70,24 @@ const OSINTERFACER = {
 
         this.websocket.onopen = () => {
             console.log("osinterfacer has established a connection with a server");
+
+            if (!this.websocket) {
+                return;
+            }
+
+            this.send = this.websocket.send.bind(this.websocket);
+            for (let m of this._pending_messages) {
+                this.send(m);
+            }
         }
 
         // handle each received message
         this.websocket.onmessage = async (ev) => {
-            let data = new Uint8Array(await ev.data.arrayBuffer());
+            if (!(ev.data instanceof ArrayBuffer)) {
+                throw "osinterface: incorrect message type";
+            }
+
+            let data = new Uint8Array(ev.data);
             let frame = OSIFS_FRAME.from(data);
 
             if (frame.get("version") != OSIFS_VERSION) {
@@ -107,10 +140,6 @@ const OSINTERFACER = {
         }
     },
     send_init(iface: OSInterface) {
-        if (!this.websocket) {
-            return; // do nothing, server is not up
-        }
-
         let transactionid = Math.floor(Math.random() * 10_000);
 
         let frame = OSIFS_FRAME.create({
@@ -122,14 +151,10 @@ const OSINTERFACER = {
             }, null, 0))
         });
 
-        this.websocket.send(frame.getBuffer())
+        this.send(frame.getBuffer())
         this.transactions.set(transactionid, [OSIFS_OP_INIT, iface])
     },
     send_packet(iface: OSInterface | undefined, ethertype: EtherType, data: NetworkData) {
-        if (!this.websocket) {
-            return; // websocket not connected
-        }
-
         iface = this.clients.get(iface?.clientid || -1);
         if (!iface) {
             return; // iface is not initialized
@@ -144,11 +169,11 @@ const OSINTERFACER = {
             payload: data.buffer
         })
 
-        this.websocket.send(frame.getBuffer());
+        this.send(frame.getBuffer());
     }
 }
 
-OSINTERFACER.connect("ws://localhost:7000");
+OSINTERFACER.connect("ws://localhost:7000", false);
 
 export class OSInterface extends BaseInterface {
     clientid: number = -1
