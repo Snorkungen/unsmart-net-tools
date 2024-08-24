@@ -45,6 +45,11 @@ export const DAEMON_ROUTING: Program = {
             if (!route) {
                 return; // discarded
             }
+            
+            /* do not route within the same subnet */
+            if (route.netmask.compare(iphdr.get("saddr"), iphdr.get("daddr"))) {
+                return; // discarded
+            }
 
             // decrement ttl and recalculate checksum
             iphdr.set("ttl", iphdr.get("ttl") - 1);
