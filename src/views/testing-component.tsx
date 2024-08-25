@@ -222,6 +222,9 @@ pc1.process_start(DAEMON_ECHO_REPLIER);
 let tmp = server_pc.process_start(
     DAEMON_DHCP_SERVER,
     ["", server_iface_eth.id()],
+    {
+        gateways4: [new IPV4Address("10.10.0.1")]
+    }
 )
 
 
