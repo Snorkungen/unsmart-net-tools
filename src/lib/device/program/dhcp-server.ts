@@ -417,45 +417,113 @@ function receive(proc: Process<DHCPServerData>) {
     }
 }
 
+/* shape of information stored in the device-store */
+export type DHCPServer_Store = {
+    /* the server can operate on multiple interfaces */
+
+    parameters: {
+        /** the interface the following parameters are associated with ... */
+        ifid: string;
+        /** the ip version that the following information applies to */
+        version: 4; // only support DHCPv4
+
+        /** the start of the address */
+        address_range?: [string, string]; /* begin and end */
+        /** list of gateways */
+        gateways?: string[];
+    }[];
+};
+
 export const DAEMON_DHCP_SERVER: Program<DHCPServerData> = {
     name: "daemon_dhcp_server",
-    init(proc, [, ifid], data) {
+    init(proc) {
         // check that program is not running
-        if (proc.device.processes.find(p => p?.id.includes(this.name) && proc != p && proc.data.iface.id() == ifid)) {
+        if (proc.device.processes.find(p => p?.id.includes(this.name) && p != proc)) {
             return ProcessSignal.EXIT;
         }
 
-        let iface = data?.iface || proc.device.interfaces.find(f => f.id() == ifid);
-        if (!iface || iface.header !== ETHERNET_HEADER) {
-            // no iface found
+        // Read from store if there exist a configuration
+        let store = proc.device.store.get(this.name) as (DHCPServer_Store | null);
+        if (!store) {
+            /* TODO: create a way of journaling events */
             return ProcessSignal.ERROR;
         }
 
-        console.warn(this.name + " is a bad implementation")
+        // TODO: validate that the store could be bad
+        // NOTE: it is note expected that daemon configuration would be directly touched by a human-user
+
+        // For testing only read the first parameter
+        if (store.parameters.length != 1) {
+            if (store.parameters.length > 1) {
+                throw "DHCP_SERVER: only supports operating on 1 interface";
+            }
+
+            return ProcessSignal.ERROR;
+        }
+        let params = store.parameters[0];
+
+        // ONLY SUPPORT IPv4
+        if (params.version != 4) {
+            throw "DCHP_SERVER: only supports ipv4"
+            return ProcessSignal.ERROR;
+        }
+
+        let iface = proc.device.interfaces.find(f => f.id() == params.ifid);
+        if (!iface || iface.header !== ETHERNET_HEADER) {
+            // no valid iface found
+            return ProcessSignal.ERROR;
+        }
+
+        // the chosen interface must be configured with an ip address
 
         let source = iface.addresses.find(a => a.address instanceof IPV4Address);
         if (!source) {
+            // no valid source address found
             return ProcessSignal.ERROR;
         }
 
-        let addressRange4 = data?.addressRange4;
-        if (!addressRange4) { // this is cursed, does not feel right
-            let start = new IPV4Address(source.address); incrementAddress(start, source.netmask as AddressMask<typeof IPV4Address>);
-            let end = new IPV4Address(or(start.buffer, not(source.netmask.buffer))); end.buffer[3] = end.buffer[3] ^ 1;
-            addressRange4 = [start, end];
+        // TODO: create a logical an address pool, thing ...
+
+        // configure address pool
+        let ap_start: IPV4Address, ap_end: IPV4Address;
+        if (params.address_range) {
+            // use range from parameters
+
+            ap_start = new IPV4Address(params.address_range[0]);
+            ap_end = new IPV4Address(params.address_range[1]);
+
+            // validate that the range makes sense
+            // rules must be in the same subnet as the source address
+
+            if (!source.netmask.compare(source.address, ap_start) || !source.netmask.compare(source.address, ap_end)) {
+                console.warn(this.name, "bad range", `${source.address.toString()}: [${params.address_range[0]}, ${params.address_range[1]}]`)
+                return ProcessSignal.ERROR;
+            }
+
+        } else {
+            // use a default range
+            ap_start = new IPV4Address(source.address); incrementAddress(ap_start, source.netmask as AddressMask<typeof IPV4Address>);
+            ap_end = new IPV4Address(or(ap_start.buffer, not(source.netmask.buffer))); ap_end.buffer[3] ^ 1;
         }
 
-        let contact = proc.device.contact_create("RAW", "RAW").data!;
+        // initialise a contact
+        let contact = proc.device.contact_create("RAW", "RAW").data!; // should never fail
 
         (<DHCPServerData>proc.data) = {
-            sid: data?.sid || source.address.buffer,
+            sid: source.address.buffer,
             contact: contact,
             iface: iface,
-            addressRange4: addressRange4,
             netmask4: source.netmask as AddressMask<typeof IPV4Address>,
-            gateways4: data?.gateways4,
+            addressRange4: [ap_start, ap_end], // this should really be a pool thing that keeps track of used addresses
 
-            repo: new Map()
+
+
+            repo: new Map(),
+        }
+
+        // setup default gateways if given in parameters
+        if (params.gateways) {
+            proc.data.gateways4 = params.gateways.map(v => new IPV4Address(v));
         }
 
         proc.handle(proc, () => {

@@ -12,7 +12,7 @@ import { DEVICE_PROGRAM_DOWNLOAD } from "../lib/device/program/program";
 import { DAEMON_ECHO_REPLIER } from "../lib/device/program/echo-replier";
 import { NetworkSwitch } from "../lib/device/network-switch";
 import { DAEMON_ROUTING } from "../lib/device/program/routing";
-import { DAEMON_DHCP_SERVER } from "../lib/device/program/dhcp-server";
+import { DAEMON_DHCP_SERVER, DHCPServer_Store } from "../lib/device/program/dhcp-server";
 import { DEVICE_PROGRAM_DHCP_CLIENT } from "../lib/device/program/dhcp-client";
 import { render } from "solid-js/web";
 const selectContents = (ev: MouseEvent) => {
@@ -185,7 +185,6 @@ function push_default_gateway(device: Device, iface: BaseInterface, gateway: IPV
     })
 }
 
-
 let server_pc = new Device(); server_pc.name = "SRV 10";
 let server_iface_lo = server_pc.interface_add(new LoopbackInterface(server_pc)); server_iface_lo.start();
 let server_iface_eth = server_pc.interface_add(new EthernetInterface(server_pc));
@@ -214,18 +213,24 @@ server_iface_eth.connect(r1_iface_server);
 pc1_iface.connect(r1_iface_pc1);
 pc2_iface.connect(r1_iface_pc2);
 
-
 pc1.process_start(DAEMON_ECHO_REPLIER);
 
 // SRV start DHCP server ...
 // TODO DHCP support gateway ...
-let tmp = server_pc.process_start(
-    DAEMON_DHCP_SERVER,
-    ["", server_iface_eth.id()],
-    {
-        gateways4: [new IPV4Address("10.10.0.1")]
-    }
-)
+let dhcp_server_config: DHCPServer_Store = {
+    parameters: [
+        {
+            ifid: server_iface_eth.id(),
+            version : 4,
+
+            address_range: ["10.10.0.200", "10.10.0.240"],
+            gateways: ["10.10.0.1"],
+        }
+    ]
+};
+server_pc.store.set(DAEMON_DHCP_SERVER.name, dhcp_server_config);
+
+server_pc.process_start(DAEMON_DHCP_SERVER)
 
 
 

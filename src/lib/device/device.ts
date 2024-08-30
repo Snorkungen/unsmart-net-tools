@@ -300,14 +300,9 @@ export class Device {
         return this.log_records.filter((record) => record.iface.name + record.iface.unit == iface_id)
     }
 
-    /** A DB allowing things to store data 
-     * Future implementations could then have the data being forwarded to something else, like window.sessionStorage
-    */
-    private db = new Map<string, string>();
-    db_get(key: string): string | undefined { return this.db.get(key); }
-    db_set(key: string, value: string) { this.db.set(key, value); }
-    db_delete(key: string): boolean { return this.db.delete(key); }
-    db_keys(): string[] { return [... this.db.keys()]; } // this is here for programs that want to itterate through the keys in the database
+    /* store key-value information about something ... */
+    /** NOTE: store should only store simple types as Objects, Arrays, Numbers, Strings */
+    store: Map<string, Record<string, unknown>> = new Map();
 
     /*
     THIS IS RESERVED SPACE FOR PROCESS LOGIC

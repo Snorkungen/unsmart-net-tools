@@ -9,13 +9,13 @@ import { DAEMON_ECHO_REPLIER } from "../lib/device/program/echo-replier";
 import { LoopbackInterface } from "../lib/device/interface";
 import { DEVICE_PROGRAM_ROUTEINFO } from "../lib/device/program/routeinfo";
 import { uint8_equals, uint8_fromString } from "../lib/binary/uint8-array";
-import { DEVICE_PROGRAM_DBINFO } from "../lib/device/program/dbinfo";
 import { OSInterface } from "../lib/device/osinterface";
 import { IPV4Address } from "../lib/address/ipv4";
 import { createMask } from "../lib/address/mask";
 import { calculateChecksum } from "../lib/binary/checksum";
 import { ICMP_ECHO_HEADER, ICMPV4_TYPES, ICMP_HEADER } from "../lib/header/icmp";
 import { IPV4_HEADER, PROTOCOLS, createIPV4Header } from "../lib/header/ip";
+import { DEVICE_PROGRAM_DAEMAN } from "../lib/device/program/daeman";
 
 export const TestingComponent2: Component = () => {
     let terminal: Terminal;
@@ -34,12 +34,11 @@ export const TestingComponent2: Component = () => {
         DEVICE_PROGRAM_PING, DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_HELP,
         DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_IFINFO, DEVICE_PROGRAM_ROUTEINFO,
 
-        DEVICE_PROGRAM_DBINFO
+        DEVICE_PROGRAM_DAEMAN,
     )
 
     // ADD ECHO REPLIER TO DEVICES
     newdevice.process_start(DAEMON_ECHO_REPLIER, [])
-    newdevice.db_set("test", "hello world")
 
     let osif = newdevice.interface_add(new OSInterface(newdevice))
     const osif_destination = new IPV4Address("10.1.1.40");
