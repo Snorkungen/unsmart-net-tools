@@ -1,4 +1,4 @@
-import { Component, createRoot, createSignal } from "solid-js";
+import { Component, createEffect, createRoot, createSignal } from "solid-js";
 import { AddressMask, createMask } from "../lib/address/mask";
 import { IPV4Address } from "../lib/address/ipv4";
 import { IPV6Address } from "../lib/address/ipv6";
@@ -8,13 +8,41 @@ import { calculateChecksum } from "../lib/binary/checksum";
 import { IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS, createIPV4Header } from "../lib/header/ip";
 import { Device } from "../lib/device/device";
 import { BaseInterface, EthernetInterface, LoopbackInterface, VlanInterface, createMacAddress } from "../lib/device/interface";
-import { DEVICE_PROGRAM_DOWNLOAD } from "../lib/device/program/program";
+import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_HELP } from "../lib/device/program/program";
 import { DAEMON_ECHO_REPLIER } from "../lib/device/program/echo-replier";
 import { NetworkSwitch } from "../lib/device/network-switch";
 import { DAEMON_ROUTING } from "../lib/device/program/routing";
 import { DAEMON_DHCP_SERVER, DHCPServer_Store } from "../lib/device/program/dhcp-server";
 import { DEVICE_PROGRAM_DHCP_CLIENT } from "../lib/device/program/dhcp-client";
-import { render } from "solid-js/web";
+import Terminal from "../lib/terminal/terminal";
+import { DAEMON_SHELL } from "../lib/device/program/shell";
+import { DEVICE_PROGRAM_DAEMAN } from "../lib/device/program/daeman";
+import { DEVICE_PROGRAM_IFINFO } from "../lib/device/program/ifinfo";
+import { DEVICE_PROGRAM_PING } from "../lib/device/program/ping";
+import { DEVICE_PROGRAM_ROUTEINFO } from "../lib/device/program/routeinfo";
+
+let terminal_device: Device | undefined;
+let terminal: Terminal;
+
+function attach_device_to_terminal(device: Device) {
+    return () => {
+        terminal.flush()
+        if (terminal_device) {
+            terminal_device.terminal_detach();
+        }
+
+        device.terminal_attach(terminal);
+        let p = device.processes.find(p => p?.id.includes(DAEMON_SHELL.name)); 
+        if (p) {
+            device.process_termwriteto(p, new Uint8Array([10])); // press enter
+        } else {
+            device.process_start(DAEMON_SHELL, []);
+        }
+
+        terminal_device = device;
+    }
+}
+
 const selectContents = (ev: MouseEvent) => {
     if (!(ev.currentTarget instanceof HTMLElement)) return;
     let range = document.createRange();
@@ -112,6 +140,13 @@ function handle_ping(device: Device) {
 const DeviceComponent: Component<{ device: Device }> = ({ device }) => {
     // HACKY BS
     device.process_start(DAEMON_ECHO_REPLIER);
+    device.programs.push(
+        DEVICE_PROGRAM_PING, DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_HELP,
+        DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_IFINFO, DEVICE_PROGRAM_ROUTEINFO,
+
+        DEVICE_PROGRAM_DAEMAN,
+    )
+
 
     let create_content = () => <div>
         {device.interfaces.map((iface) => (
@@ -141,7 +176,7 @@ const DeviceComponent: Component<{ device: Device }> = ({ device }) => {
 
     return <div>
         <div style={{ display: "flex", "justify-content": "space-between", "align-items": "end" }}>
-            <h2>{device.name}</h2>
+            <h2 onclick={attach_device_to_terminal(device)}>{device.name}</h2>
             <div style={{ gap: "1em", display: "flex" }}>
                 <button onclick={() => setContent(create_content())} >refresh</button>
                 <button onclick={handle_ping(device)}>ping</button>
@@ -221,7 +256,7 @@ let dhcp_server_config: DHCPServer_Store = {
     parameters: [
         {
             ifid: server_iface_eth.id(),
-            version : 4,
+            version: 4,
 
             address_range: ["10.10.0.200", "10.10.0.240"],
             gateways: ["10.10.0.1"],
@@ -232,9 +267,8 @@ server_pc.store.set(DAEMON_DHCP_SERVER.name, dhcp_server_config);
 
 server_pc.process_start(DAEMON_DHCP_SERVER)
 
-
-
 export const TestingComponent: Component = () => {
+    createEffect(attach_device_to_terminal(pc1));
 
     return (
         <div>
@@ -250,6 +284,11 @@ export const TestingComponent: Component = () => {
             <div>
                 <button onclick={() => pc1.process_start(DEVICE_PROGRAM_DHCP_CLIENT, ["", pc1_iface.id()])} >init dhcp pc1</button>
             </div>
+            <hr></hr>
+            <div ref={(el) => {
+                terminal = new Terminal(el);
+                // @ts-ignore
+            }}></div>
         </div>
     )
 }
