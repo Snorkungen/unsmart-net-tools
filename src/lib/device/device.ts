@@ -152,9 +152,15 @@ export type Process<DT = any> = {
     spawn<SDT extends any>(proc: Process, program: Program<SDT>, args?: string[], data?: Partial<SDT>, handle_close?: ProcessHandler): Process | undefined;
     handle(proc: Process, signal_handler: (proc: Process, signal: ProcessSignal) => void): void
 
+    /** write an entry into a process diary \
+     * type: 0(info), 1(warning), 2(error)
+    */
+    journal(proc: Process, type: number, message: string): void;
+
     term_read(proc: Process, read_func: ProcessTerminalReadFunc): void
     term_write(data: Uint8Array): void;
     term_flush(): void;
+
 
     // !TODO: for now it is the users responsibility to close contacts
 }
@@ -312,6 +318,7 @@ export class Device {
     processes: (Process | undefined)[] = [];
     private process_handlers: ({ proc: Process, handler: ProcessHandler, id: ProcessID } | undefined)[] = [];
     private PROCESS_ID_SEPARATOR = ":";
+    private process_journal_entries: Map<string, [type: number, timestamp: number, message: string][]> = new Map();
     process_start<DT extends any>(program: Program<DT>, args?: string[], data?: Partial<DT>, proc?: Process): Process | undefined {
         let i = -1; while (this.processes[++i]) { continue; };
 
@@ -337,10 +344,12 @@ export class Device {
             close: this.process_close.bind(this),
             spawn: this.process_spawn.bind(this),
             handle: this.process_handle.bind(this),
+            journal: this.process_journal.bind(this),
 
             term_read: this.process_term_read.bind(this),
             term_write: this.process_term_write.bind(this),
             term_flush: this.process_term_flush.bind(this),
+
         };
 
         let init_sig = program.init(this.processes[i]!, args || [], data);
@@ -397,6 +406,10 @@ export class Device {
         this.terminal_readers = this.terminal_readers.filter((tr) => tr.proc != proc);
         proc.term_write = this.process_term_writeblackhole;
         proc.term_flush = this.process_term_flushblackhole;
+        
+        // delete journal entries
+        this.process_journal_entries.delete(proc.id);
+        
         delete this.processes[i];
     }
 
@@ -426,6 +439,20 @@ export class Device {
             handler: handler,
             id: id ? id : proc.id
         }
+    }
+
+    /** write an entry into the process journal */
+    process_journal(proc: Process, type: number, message: string) {
+        let timestamp = Date.now();
+        
+        let entries = this.process_journal_entries.get(proc.id);
+        if (!entries) {
+            entries = [[type, timestamp, message]];
+        } else {
+            entries.push([type, timestamp, message]);
+        }
+
+        this.process_journal_entries.set(proc.id, entries);
     }
 
     private terminal?: DeviceTerminal;

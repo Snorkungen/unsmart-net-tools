@@ -20,8 +20,15 @@ export const DEVICE_PROGRAM_DAEMAN: Program = {
         for (let p of proc.device.processes) {
             if (!p?.id || p == proc) continue;
 
+            // @ts-expect-error
+            let jentries = proc.device.process_journal_entries.get(p.id);
+            if (jentries) {
+                console.log(p.id, jentries)
+            }
+
             proc.term_write(uint8_fromString(`${i++}:\t${p.id}\n`));
         }
+
 
         return ProcessSignal.EXIT;
     }

@@ -153,6 +153,7 @@ function handleDiscover(proc: Process<DHCPServerData>, dhcphdr: typeof DHCP_HEAD
             xid: dhcphdr.get("xid")
         }
     )
+    proc.journal(proc, 0, `${clientIdentifier}: created client`);
 
     let replyOptions: Uint8Array[] = []
 
@@ -362,6 +363,7 @@ function handleRequest(proc: Process<DHCPServerData>, dhcphdr: typeof DHCP_HEADE
     })
 
     proc.data.repo.set(clientIdentifier, { ...params, state: DHCPServerState.BOUND })
+    proc.journal(proc, 0, `${clientIdentifier}: bound client`);
     return sendDHCPv4HdrServer(proc, ackDHCPHdr, BROADCAST_IPV4_ADDRESS);
 }
 
@@ -439,13 +441,14 @@ export const DAEMON_DHCP_SERVER: Program<DHCPServerData> = {
     init(proc) {
         // check that program is not running
         if (proc.device.processes.find(p => p?.id.includes(this.name) && p != proc)) {
+            proc.journal(proc, 1, "process already running");
             return ProcessSignal.EXIT;
         }
 
         // Read from store if there exist a configuration
         let store = proc.device.store.get(this.name) as (DHCPServer_Store | null);
         if (!store) {
-            /* TODO: create a way of journaling events */
+            proc.journal(proc, 2, "failed to read server configuration from device store");
             return ProcessSignal.ERROR;
         }
 
@@ -458,7 +461,8 @@ export const DAEMON_DHCP_SERVER: Program<DHCPServerData> = {
                 throw "DHCP_SERVER: only supports operating on 1 interface";
             }
 
-            return ProcessSignal.ERROR;
+            proc.journal(proc, 1, "no interface configured");
+            return ProcessSignal.__EXPLICIT__; /* the server will hang and do nothing */
         }
         let params = store.parameters[0];
 
@@ -471,6 +475,7 @@ export const DAEMON_DHCP_SERVER: Program<DHCPServerData> = {
         let iface = proc.device.interfaces.find(f => f.id() == params.ifid);
         if (!iface || iface.header !== ETHERNET_HEADER) {
             // no valid iface found
+            proc.journal(proc, 2, "failed to find valid interface with id:" + params.ifid);
             return ProcessSignal.ERROR;
         }
 
@@ -479,6 +484,7 @@ export const DAEMON_DHCP_SERVER: Program<DHCPServerData> = {
         let source = iface.addresses.find(a => a.address instanceof IPV4Address);
         if (!source) {
             // no valid source address found
+            proc.journal(proc, 2, "failed to find valid interface with id:" + params.ifid + " no source address configured");
             return ProcessSignal.ERROR;
         }
 
@@ -497,6 +503,8 @@ export const DAEMON_DHCP_SERVER: Program<DHCPServerData> = {
 
             if (!source.netmask.compare(source.address, ap_start) || !source.netmask.compare(source.address, ap_end)) {
                 console.warn(this.name, "bad range", `${source.address.toString()}: [${params.address_range[0]}, ${params.address_range[1]}]`)
+
+                proc.journal(proc, 2, `failed to use given address range ${source.address.toString()}: [${params.address_range[0]}, ${params.address_range[1]}]`);
                 return ProcessSignal.ERROR;
             }
 
@@ -516,8 +524,6 @@ export const DAEMON_DHCP_SERVER: Program<DHCPServerData> = {
             netmask4: source.netmask as AddressMask<typeof IPV4Address>,
             addressRange4: [ap_start, ap_end], // this should really be a pool thing that keeps track of used addresses
 
-
-
             repo: new Map(),
         }
 
@@ -530,6 +536,8 @@ export const DAEMON_DHCP_SERVER: Program<DHCPServerData> = {
             contact.close(contact);
         })
         contact.receive(contact, receive(proc));
+
+        proc.journal(proc, 0, "started")
 
         return ProcessSignal.__EXPLICIT__;
     }
