@@ -5,6 +5,7 @@ import { TestingComponent } from "./views/testing-component";
 import { Component } from "solid-js";
 import { TestingComponent2 } from "./views/testing-component2";
 import { StructViewer } from "./views/struct-viewer";
+import { BroadcastStorm } from "./views/broadcaststorm";
 
 export const views: [Component, string][] = [
     [NetworkMap, "Network Map"],
@@ -13,4 +14,5 @@ export const views: [Component, string][] = [
     [TestingComponent2, "Testing Component 2"],
     [PacketCaptureViewer, "Packet Capture Viewer"],
     [StructViewer, "Struct viewer"],
+    [BroadcastStorm, "Broadcast Storm"],
 ];
