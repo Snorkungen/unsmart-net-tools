@@ -3,9 +3,73 @@
 import { createSignal, Setter } from "solid-js";
 import { IPV4Address } from "../lib/address/ipv4";
 import { createMask } from "../lib/address/mask";
-import { Device } from "../lib/device/device";
+import { Contact, Device, ProcessSignal, Program } from "../lib/device/device";
 import { EthernetInterface } from "../lib/device/interface";
 import { NetworkSwitch } from "../lib/device/network-switch";
+import { uint8_concat, uint8_equals, uint8_fromNumber, uint8_readUint32BE } from "../lib/binary/uint8-array";
+import { ETHERNET_HEADER } from "../lib/header/ethernet";
+import { MACAddress } from "../lib/address/mac";
+import { BaseAddress } from "../lib/address/base";
+
+// for switch loop prevention create a program for loop prevention ...
+const loop_prevention_dameon: Program = {
+    name: "loop_prevention_daemon",
+    init(proc, _, data) {
+
+        // send a configuration message or some shit
+
+        let initial_id = uint8_readUint32BE(proc.device.interfaces.filter(iface => iface instanceof EthernetInterface)[0].macAddress.buffer.slice(2));
+
+        let mcast_destination = new MACAddress("01-80-C2-00-00-00");
+
+        let conf = {
+            root_id: initial_id,
+            root_dist: 0
+        }
+
+        function send_inforamtion(contact: Contact<"RAW", "RAW">, id: number, dist: number) {
+            console.log(proc.device.name, "sending switch information");
+
+            proc.device.interfaces.filter(iface => iface instanceof EthernetInterface).forEach(iface => iface.output({
+                buffer: uint8_concat([
+                    uint8_fromNumber(id, 4),
+                    uint8_fromNumber(dist + 1, 4),
+                ]),
+            }, new BaseAddress(ETHERNET_HEADER.create({ dmac: mcast_destination }).getBuffer())))
+        }
+
+        // setup listener ...
+        let contact = proc.device.contact_create("RAW", "RAW").data!;
+        contact.receive(contact, (_, d) => {
+            if (!(d.rcvif instanceof EthernetInterface)) return;
+
+            let ethhdr = ETHERNET_HEADER.from(d.buffer);
+
+            if (!uint8_equals(ethhdr.get("dmac").buffer, mcast_destination.buffer)) return;
+            let rid = uint8_readUint32BE(ethhdr.get("payload"), 4);
+            let rdist = uint8_readUint32BE(ethhdr.get("payload"), 8);
+
+            if (rid < conf.root_id || (rid == conf.root_id && rdist < conf.root_dist)) {
+                conf.root_id = rid;
+                conf.root_dist = rdist;
+
+
+                // send something
+                console.log(proc.device.name, conf)
+                send_inforamtion(contact, conf.root_id, conf.root_dist)
+            } else if(rid == conf.root_id) {
+                console.log("loop detected")
+                d.rcvif.up = false
+            }
+
+            // read payload
+        }, { promiscuous: true })
+
+        send_inforamtion(contact, conf.root_id, conf.root_dist);
+
+        return ProcessSignal.__EXPLICIT__;
+    }
+}
 
 const [redundant_connection, set_redundant_connection] = createSignal(true)
 function proxy_interface(iface: EthernetInterface, setter?: Setter<boolean>): EthernetInterface {
@@ -104,5 +168,10 @@ export function BroadcastStorm() {
     return <div>
         <button onclick={toggle_redundant_link}>Turn {redundant_connection() ? "Off 🟥" : "On 🟢"} redundant connection</button>
         <button onclick={initiateStorm}>Act!</button>
+        <button onclick={() => {
+            sw1.process_start(loop_prevention_dameon)
+            sw2.process_start(loop_prevention_dameon)
+            sw3.process_start(loop_prevention_dameon)
+        }}>test</button>
     </div>;
 }
