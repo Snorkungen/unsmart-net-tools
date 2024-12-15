@@ -3,10 +3,17 @@ import { ETHERNET_HEADER } from "../header/ethernet";
 import { Device, ProcessSignal, Program } from "./device";
 import { BaseInterface, EthernetInterface } from "./interface";
 
+export enum NetworkSwitchPortState {
+    DISABLED = -1,
+    BLOCKING = 0,
+    LISTENING = 1,
+    LEARNING = 2,
+    FORWARDING = 3
+}
 /** attributes and data needed for the ethernet bridging ... */
 export type NetworkSwitchStoreData = {
     ports: Record<string, {
-        // TODO: store information relating to a specific port
+        state: NetworkSwitchPortState
     }>;
     /** K: MACAddress.toString(), V: Outgoing port */
     macaddresses: Map<string, EthernetInterface>;
@@ -35,10 +42,16 @@ const DAEMON_NETWORK_SWITCH: Program = {
                 return; // do not forward packet is for host and host only
             }
 
+            // !TODO: filter things based upon multicast group
+
             let rcvif_info = store.ports[data.rcvif.id()];
             if (!rcvif_info) throw new Error("port must be configured");
 
             function forward(iface: BaseInterface) {
+                if (store.ports[iface.id()].state != NetworkSwitchPortState.FORWARDING) {
+                    return; // do not forward
+                }
+
                 iface.output({
                     ...data,
                     buffer: etherheader.get("payload"),
@@ -53,7 +66,15 @@ const DAEMON_NETWORK_SWITCH: Program = {
                 }
             }
 
+            if (rcvif_info.state < NetworkSwitchPortState.LEARNING) {
+                return; // drop received frame
+            }
+
             store.macaddresses.set(etherheader.get("smac").toString(), data.rcvif);
+
+            if (rcvif_info.state != NetworkSwitchPortState.FORWARDING) {
+                return; // do not forward
+            }
 
             if (data.broadcast || etherheader.get("dmac").isBroadcast()) {
                 return flood()
@@ -94,12 +115,22 @@ export class NetworkSwitch extends Device {
             iface.vlan_set("access", 1); // initialize vlans so that they all get a vlan
         }
 
+        let stp_enabled = false; // assume STP is disabled by default
+
         // add a default port configureation for the given interfce
         (this.store.get(DAEMON_NETWORK_SWITCH_STORE_KEY)! as NetworkSwitchStoreData).ports[iface.id()] = {
-            // !TODO: add default port configureation
+            state: stp_enabled ? NetworkSwitchPortState.BLOCKING : NetworkSwitchPortState.FORWARDING
+            // !TODO: add default port configuration
         }
 
         return super.interface_add(iface);
     }
 }
 
+export function network_switch_set_port_state(device: Device, iface: BaseInterface, state: NetworkSwitchPortState ) {
+    if (!(device instanceof NetworkSwitch)) {
+        throw new Error("cannot set port state on a non NetworkSwitch device")
+    }
+
+    (device.store.get(DAEMON_NETWORK_SWITCH_STORE_KEY)! as NetworkSwitchStoreData).ports[iface.id()].state = state;
+}
