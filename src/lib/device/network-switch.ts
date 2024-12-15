@@ -1,4 +1,6 @@
 import { BaseAddress } from "../address/base";
+import { MACAddress } from "../address/mac";
+import { uint8_equals } from "../binary/uint8-array";
 import { ETHERNET_HEADER } from "../header/ethernet";
 import { Device, ProcessSignal, Program } from "./device";
 import { BaseInterface, EthernetInterface } from "./interface";
@@ -43,6 +45,19 @@ const DAEMON_NETWORK_SWITCH: Program = {
             }
 
             // !TODO: filter things based upon multicast group
+            if (data.multicast) {
+                let dmac = etherheader.get("dmac");
+                /*
+                    Source <https://standards.ieee.org/wp-content/uploads/import/documents/tutorials/macgrp.pdf>
+                    do not forward the following range of addresses
+                    01-80-C2-00-00-00 -> 01-80-C2-00-00-0F
+                */
+                dmac.buffer[5] &= 0xF0;
+                if (uint8_equals((new MACAddress("01-80-C2-00-00-00")).buffer, dmac.buffer)) {
+                    return; // do not forward things
+                }
+            }
+
 
             let rcvif_info = store.ports[data.rcvif.id()];
             if (!rcvif_info) throw new Error("port must be configured");
@@ -127,7 +142,7 @@ export class NetworkSwitch extends Device {
     }
 }
 
-export function network_switch_set_port_state(device: Device, iface: BaseInterface, state: NetworkSwitchPortState ) {
+export function network_switch_set_port_state(device: Device, iface: BaseInterface, state: NetworkSwitchPortState) {
     if (!(device instanceof NetworkSwitch)) {
         throw new Error("cannot set port state on a non NetworkSwitch device")
     }

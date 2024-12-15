@@ -406,10 +406,10 @@ export class Device {
         this.terminal_readers = this.terminal_readers.filter((tr) => tr.proc != proc);
         proc.term_write = this.process_term_writeblackhole;
         proc.term_flush = this.process_term_flushblackhole;
-        
+
         // delete journal entries
         this.process_journal_entries.delete(proc.id);
-        
+
         delete this.processes[i];
     }
 
@@ -444,7 +444,7 @@ export class Device {
     /** write an entry into the process journal */
     process_journal(proc: Process, type: number, message: string) {
         let timestamp = Date.now();
-        
+
         let entries = this.process_journal_entries.get(proc.id);
         if (!entries) {
             entries = [[type, timestamp, message]];
@@ -729,7 +729,8 @@ export class Device {
         if (data.loopback) {
             data.destination = true; // it is looped back IT IS for this device
         } else if (data.multicast) {
-            // !TODO: add a more generic way of checking multicast subscriptions
+            data.destination = this.interfaces_mcast_subscriptions[data.rcvif.id()].some((addr) => (daddr.constructor == addr.constructor) && uint8_equals(addr.buffer, daddr.buffer));
+
             // for now assume that all multicasts are FF01:0:0:0:0:0:0:1 A.K.A. ALL_NODES
             data.destination = true; // REMEMBER, THIS IS TEMPORARY
         } else {
@@ -769,15 +770,15 @@ export class Device {
             throw "ipv4 fragments not supported"
         }
 
-
         let daddr = iphdr.get("daddr")
         if (data.loopback) {
             data.destination = true; // it is looped back IT IS for this device
         } else if (daddr.toString() == "255.255.255.255") { // all hosts broadcst
             data.broadcast = true;
             data.destination = true;
-        } else if (false) {
-            // something something  multicast
+        } else if ((daddr.buffer[0] & 0xe0) == 0xe0 /* Match class D address */) {
+            data.multicast = true;
+            data.destination = this.interfaces_mcast_subscriptions[data.rcvif.id()].some((addr) => (daddr.constructor == addr.constructor) && uint8_equals(addr.buffer, daddr.buffer));
         } else {
             data.destination = false; // this could have been set by lower level things
             daddr_check: for (let iface of this.interfaces) for (let source of iface.addresses) {
@@ -905,7 +906,8 @@ export class Device {
             data.broadcast = true; data.destination = true;
         } else if (data.multicast || dmac.isMulticast()) {
             // !TODO: some generic way of checking for multicast subscriptions
-            data.multicast = true; data.destination = true;
+            data.multicast = true;
+            data.destination = this.interfaces_mcast_subscriptions[data.rcvif.id()].some((addr) => (dmac.constructor == addr.constructor) && uint8_equals(addr.buffer, dmac.buffer));
         } else if (dmac.isUnicast()) {
             data.destination = data.rcvif_hwaddress && uint8_equals(data.rcvif_hwaddress?.buffer, dmac.buffer);
         }
@@ -1335,9 +1337,18 @@ export class Device {
     }
 
     interfaces: BaseInterface[] = [];
+    /** interfaces multicast subscriptions */
+    interfaces_mcast_subscriptions: Record<string, BaseAddress[]> = {};
     // interface_add and interface_remove defined so that if further devices have som type extra configuration they want to do
-    interface_add<F extends BaseInterface>(iface: F): F { this.interfaces.push(iface); return iface };
-    interface_remove(iface: BaseInterface) { this.interfaces = this.interfaces.filter(f => f != iface) };
+    interface_add<F extends BaseInterface>(iface: F): F {
+        this.interfaces.push(iface);
+        this.interfaces_mcast_subscriptions[iface.id()] = [];
+        return iface
+    };
+    interface_remove(iface: BaseInterface) {
+        delete this.interfaces_mcast_subscriptions[iface.id()];
+        this.interfaces = this.interfaces.filter(f => f != iface)
+    };
 
     interface_set_address<AT extends typeof BaseAddress>(iface: BaseInterface, address: InstanceType<AT>, netmask: AddressMask<AT>): DeviceResult { // !TODO: result could include the created route or address entry on iface idk
         // this functions maintains the information about the routes for the network that is just now configured
@@ -1402,6 +1413,22 @@ export class Device {
             success: true,
             data: undefined
         }
+    }
+
+    interface_mcast_subscribe(iface: BaseInterface, address: BaseAddress): DeviceResult {
+        // !TODO: add a route to allow for the sending to multicast destinations
+        if (!(address instanceof MACAddress)) {
+            throw new Error("multicast not supported")
+        }
+
+        this.interfaces_mcast_subscriptions[iface.id()].push(address);
+
+        return { success: true, data: undefined };
+    }
+    interface_mcast_unsubscribe(iface: BaseInterface, address: BaseAddress): DeviceResult {
+        this.interfaces_mcast_subscriptions[iface.id()] = this.interfaces_mcast_subscriptions[iface.id()].filter(addr => addr.constructor != address.constructor || !uint8_equals(addr.buffer, address.buffer));
+
+        return { success: true, data: undefined };
     }
 
     /** this is to ensure that contacts get given unique ephemeral ports */
