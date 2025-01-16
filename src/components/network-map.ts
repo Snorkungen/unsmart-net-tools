@@ -181,6 +181,7 @@ export class NetworkMap {
 
     mouse_down: boolean = false;
     mouse_down_position: { x: number; y: number } = { x: -1, y: -1 };
+    mouse_moved: boolean = false;
     mouse_down_entity?: NMEntity;
 
     set_container(container: SVGSVGElement) {
@@ -190,7 +191,6 @@ export class NetworkMap {
         this.container.addEventListener("mousedown", this.handle_mousedown.bind(this))
         this.container.addEventListener("mousemove", this.handle_mousemove.bind(this))
         this.container.addEventListener("mouseup", this.handle_mouseup.bind(this))
-        this.container.addEventListener("click", this.handle_click.bind(this))
     }
 
     private get_mouse_event_entity(ev: MouseEvent): NMEntity | undefined {
@@ -215,6 +215,8 @@ export class NetworkMap {
     }
 
     private handle_mousedown(ev: MouseEvent) {
+        this.mouse_moved = false;
+
         if (!this.container) return;
 
         this.mouse_down_position.x = ev.clientX;
@@ -230,14 +232,15 @@ export class NetworkMap {
         this.mouse_down_entity = entity;
         this.mouse_down = true
     }
+
     private handle_mousemove(ev: MouseEvent) {
+        this.mouse_moved = true;
+
         if (!this.mouse_down || !this.mouse_down_entity) {
             return
         }
 
-
         let diffX = ev.clientX - this.mouse_down_position.x, diffY = ev.clientY - this.mouse_down_position.y;
-
 
         this.mouse_down_entity.x += diffX;
         this.mouse_down_entity.y += diffY;
@@ -246,16 +249,20 @@ export class NetworkMap {
         this.mouse_down_position.y = ev.clientY;
         this.update()
     }
+
     private handle_mouseup(ev: MouseEvent) {
         this.mouse_down = false;
         this.mouse_down_entity = undefined;
         this.mouse_down_position.x = -1;
         this.mouse_down_position.y = -1
-    }
-    private handle_click(ev: MouseEvent) {
-        let entity = this.get_mouse_event_entity(ev)
-        if (!entity || !entity.onclick) return;
-        entity.onclick(this)
+
+        // handle click event
+        if (!this.mouse_moved) {
+            let entity = this.get_mouse_event_entity(ev)
+            if (!entity || !entity.onclick) return;
+
+            entity.onclick(this)
+        }
     }
 
     update(entities = this.entities, container: SVGElement | undefined = this.container, parent_entity?: NMEntity) {
