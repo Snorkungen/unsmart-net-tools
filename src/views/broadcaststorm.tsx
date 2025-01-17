@@ -4,12 +4,20 @@ import { createSignal, Setter } from "solid-js";
 import { IPV4Address } from "../lib/address/ipv4";
 import { createMask } from "../lib/address/mask";
 import { Contact, Device, ProcessSignal, Program } from "../lib/device/device";
-import { EthernetInterface } from "../lib/device/interface";
-import { network_switch_set_port_state, NetworkSwitch, NetworkSwitchPortState } from "../lib/device/network-switch";
+import { BaseInterface, EthernetInterface } from "../lib/device/interface";
+import { NetworkSwitch, NetworkSwitchPortState } from "../lib/device/network-switch";
 import { uint8_concat, uint8_equals, uint8_fromNumber, uint8_readUint32BE } from "../lib/binary/uint8-array";
 import { ETHERNET_HEADER } from "../lib/header/ethernet";
 import { MACAddress } from "../lib/address/mac";
 import { BaseAddress } from "../lib/address/base";
+
+function network_switch_set_port_state(device: Device, iface: BaseInterface, state: NetworkSwitchPortState) {
+    if (!(device instanceof NetworkSwitch)) {
+        return;
+    }
+
+    device.port_iface_set_state(iface, state);
+}
 
 // for switch loop prevention create a program for loop prevention ...
 const loop_prevention_dameon: Program = {
