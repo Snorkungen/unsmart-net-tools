@@ -1,4 +1,4 @@
-import { BYTE_ARRAY, defineStruct, UINT16, UINT32, UINT8 } from "../binary";
+import { BYTE_ARRAY, defineStruct, UINT16, UINT32, UINT64, UINT8 } from "../binary";
 
 /** Topology Change Notification BPDU */
 export const BPDU_TCN_HEADER = defineStruct({
@@ -17,9 +17,9 @@ export const BPDU_C_HEADER = defineStruct({
     "version_id": UINT8,
     "type": UINT8,
     "flags": UINT8,
-    "root_id": BYTE_ARRAY(8),
+    "root_id": UINT64,
     "root_path_cost": UINT32,
-    "bridge_id": BYTE_ARRAY(8),
+    "bridge_id": UINT64,
     "port_id": UINT32,
     "message_age": UINT32,
     "max_age": UINT32,
