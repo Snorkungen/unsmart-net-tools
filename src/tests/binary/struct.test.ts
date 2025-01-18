@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { INT16, INT32, INT8, SLICE, UINT16, UINT32, UINT8, defineStruct } from "../../lib/binary/struct/";
+import { INT16, INT32, INT64, INT8, SLICE, UINT16, UINT32, UINT64, UINT8, defineStruct } from "../../lib/binary/struct/";
 
 function __fromHex(hex: string): Uint8Array {
     let length = Math.floor(hex.length / 2);
@@ -180,5 +180,17 @@ describe("Value types", () => {
         let t = UINT32(UINT32.bitLength)
         let b = t.setter(value)
         expect(t.getter(b, { bigEndian: true, "packed": false, setDefaultValues: false })).toBe(value)
+    });
+
+    test("UINT64 & INT64", () => {
+        let value = 2234574226n << 8n;
+        let t = UINT64;
+        let b = t.setter(value)
+        expect(t.getter(b, { bigEndian: true, "packed": false, setDefaultValues: false })).toBe(value);
+        
+        value = value * -1n;
+        t = INT64;
+        b = t.setter(value);
+        expect(t.getter(b, { bigEndian: true, "packed": false, setDefaultValues: false })).toBe(value);
     })
 })

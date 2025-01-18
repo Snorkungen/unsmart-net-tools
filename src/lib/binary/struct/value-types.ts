@@ -1,4 +1,4 @@
-import { StructValueError } from "./struct";
+import { StructOptions, StructValueError, StructType } from "./struct";
 import { defineStructType } from "./define";
 import { uint8_fromNumber } from "../uint8-array";
 import { _bufToNumber } from "./shared";
@@ -77,12 +77,38 @@ function defineINT(bitLength: number) {
 export const UINT8 = defineUINT(8);
 export const UINT16 = defineUINT(16);
 export const UINT32 = defineUINT(32);
-// export const UINT64 = `StructType<BigInt>` !TODO implement BigInt
 
 export const INT8 = defineINT(8);
 export const INT16 = defineINT(16);
 export const INT32 = defineINT(32);
-// export const INT64 = `StructType<BigInt>` !TODO implement BigInt
+
+export const UINT64: StructType<bigint> = {
+    bitLength: 64,
+    getter: function (buf: Uint8Array, options: StructOptions) {
+        let dv = new DataView(buf.buffer, 0, 8);
+        return dv.getBigUint64(0, false);
+    },
+    setter: function (value: bigint, options?: StructOptions): Uint8Array {
+        const buf = new Uint8Array(8);
+        const dv = new DataView(buf.buffer, 0, 8);
+        dv.setBigUint64(0, value, false);
+        return buf;
+    }
+};
+
+export const INT64: StructType<bigint> = {
+    bitLength: 64,
+    getter: function (buf: Uint8Array, options: StructOptions) {
+        let dv = new DataView(buf.buffer, 0, 8);
+        return dv.getBigInt64(0, false);
+    },
+    setter: function (value: bigint, options?: StructOptions): Uint8Array {
+        const buf = new Uint8Array(8);
+        const dv = new DataView(buf.buffer, 0, 8);
+        dv.setBigInt64(0, value, false);
+        return buf;
+    }
+};
 
 export const SLICE = defineStructType<Uint8Array>({
     defaultValue: new Uint8Array(0),
