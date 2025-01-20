@@ -2234,6 +2234,10 @@ export class Device {
         if (delay < 0) { delay = this.schedule_default_delay; }
 
         // in future, create my own runtime because why not complexity is fun.
-        window.setTimeout(f, delay)
+        return window.setTimeout(f, delay)
     }
+
+    unschedule(id: number) {
+        window.clearTimeout(id);
+    }   
 }
