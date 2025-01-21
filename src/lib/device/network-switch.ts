@@ -14,18 +14,18 @@ export enum NetworkSwitchPortState {
     FORWARDING = 4
 }
 
-type NetworkSwitchPort = {
+export type NetworkSwitchPort = {
     /** reference to iface */
     iface: BaseInterface;
-    port_id: number; // 
-    state: NetworkSwitchPortState;
+    type?: unknown;
 
-    /* additional stp parameters will be related due the fact that the object can be extended */
+    port_no: number;
+    state: NetworkSwitchPortState;
 };
 
 /** KEY for switch store data  */
-const NETWORK_SWITCH_STORE_KEY = "network_switch_data";
-type NetworkSwitchData = {
+export const NETWORK_SWITCH_STORE_KEY = "network_switch_data";
+export type NetworkSwitchData = {
 
     /* macaddresses allow for actually time and stuff if that were to be actually saved */
     macaddresses: { destination: BaseAddress, outgoing_port: number }[];
@@ -65,10 +65,10 @@ export class NetworkSwitch extends Device {
         }
 
         // create port id
-        const port_id = this.interfaces.length;
-        this.data.ports[port_id] = {
+        const port_no = this.interfaces.length;
+        this.data.ports[port_no] = {
             iface: iface,
-            port_id: port_id,
+            port_no: port_no,
 
             state: NetworkSwitchPortState.FORWARDING, // stp does not exist for now
         }
@@ -82,12 +82,12 @@ export class NetworkSwitch extends Device {
         return { success: true, data: iface };
     }
 
-    port_set_state(port_id: number, state: NetworkSwitchPortState) {
-        this.data.ports[port_id].state = state;
+    port_set_state(port_no: number, state: NetworkSwitchPortState) {
+        this.data.ports[port_no].state = state;
     }
     port_iface_set_state(iface: BaseInterface, state: NetworkSwitchPortState) {
         let port = Object.values(this.data.ports).find(({ iface: _iface }) => _iface === iface);
-        !!port && this.port_set_state(port?.port_id, state);
+        !!port && this.port_set_state(port?.port_no, state);
     }
 }
 
@@ -114,11 +114,11 @@ const NETWORK_SWITCH_BRIDGING_DAEMON: Program = {
             }, new BaseAddress(etherheader.getBuffer().subarray(0, ETHERNET_HEADER.getMinSize())));
         }
 
-        function flood(port_id: number, etherheader: typeof ETHERNET_HEADER) {
+        function flood(port_no: number, etherheader: typeof ETHERNET_HEADER) {
             for (let port of Object.values(data.ports)) {
-                if (port.port_id == port_id) continue;
+                if (port.port_no == port_no) continue;
 
-                forward(port.port_id, etherheader);
+                forward(port.port_no, etherheader);
             }
         }
 
@@ -156,7 +156,7 @@ const NETWORK_SWITCH_BRIDGING_DAEMON: Program = {
 
             data.macaddresses.push({
                 destination: etherheader.get("smac"),
-                outgoing_port: port.port_id
+                outgoing_port: port.port_no
             })
 
             if (port.state != NetworkSwitchPortState.FORWARDING) {
@@ -168,7 +168,7 @@ const NETWORK_SWITCH_BRIDGING_DAEMON: Program = {
             if (macentry) {
                 forward(macentry.outgoing_port, etherheader);
             } else {
-                flood(port.port_id, etherheader);
+                flood(port.port_no, etherheader);
             }
         }, { promiscuous: true });
 
