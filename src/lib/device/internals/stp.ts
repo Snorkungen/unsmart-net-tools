@@ -517,7 +517,7 @@ function hello_timer_expiry(bdata: NetworkSwitchDataSTP) {
 function start_hello_timer(bdata: NetworkSwitchDataSTP) {
     let device = Object.values(bdata.ports)[0].iface.device;
     device.unschedule(bdata.timer_ref_hello)
-    bdata.timer_ref_hello = device.schedule(() => { hello_timer_expiry(bdata) }, bdata.hello_time);
+    bdata.timer_ref_hello = device.schedule(() => { hello_timer_expiry(bdata) }, bdata.hello_time * 1000);
 };
 function stop_hello_timer(bdata: NetworkSwitchDataSTP) { let device = Object.values(bdata.ports)[0].iface.device; device.unschedule(bdata.timer_ref_hello); };
 
@@ -528,7 +528,7 @@ function tcn_timer_expiry(bdata: NetworkSwitchDataSTP) {
 function start_tcn_timer(bdata: NetworkSwitchDataSTP) {
     let device = Object.values(bdata.ports)[0].iface.device;
     device.unschedule(bdata.timer_ref_tcn)
-    bdata.timer_ref_tcn = device.schedule(() => { tcn_timer_expiry(bdata) }, bdata.bridge_hello_time);
+    bdata.timer_ref_tcn = device.schedule(() => { tcn_timer_expiry(bdata) }, bdata.bridge_hello_time * 1000);
 };
 function stop_tcn_timer(bdata: NetworkSwitchDataSTP) { let device = Object.values(bdata.ports)[0].iface.device; device.unschedule(bdata.timer_ref_tcn); };
 
@@ -539,7 +539,7 @@ function topology_change_expiry(bdata: NetworkSwitchDataSTP) {
 function start_topology_change_timer(bdata: NetworkSwitchDataSTP) {
     let device = Object.values(bdata.ports)[0].iface.device;
     device.unschedule(bdata.timer_ref_topology_change)
-    bdata.timer_ref_topology_change = device.schedule(() => { topology_change_expiry(bdata) }, bdata.topology_change_time);
+    bdata.timer_ref_topology_change = device.schedule(() => { topology_change_expiry(bdata) }, bdata.topology_change_time * 1000);
 };
 function stop_topology_change_timer(bdata: NetworkSwitchDataSTP) { let device = Object.values(bdata.ports)[0].iface.device; device.unschedule(bdata.timer_ref_topology_change) };
 
@@ -565,7 +565,7 @@ function message_age_expiry(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPort
 function start_message_age_timer(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPortSTP, message_age: number) {
     let device = Object.values(bdata.ports)[0].iface.device;
     device.unschedule(bdata.timer_ref_message_age[port.port_id]);
-    bdata.timer_ref_message_age[port.port_id] = device.schedule(() => { message_age_expiry(bdata, port) }, message_age);
+    bdata.timer_ref_message_age[port.port_id] = device.schedule(() => { message_age_expiry(bdata, port) }, message_age * 1000);
 };
 function stop_message_age_timer(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPortSTP) { let device = Object.values(bdata.ports)[0].iface.device; device.unschedule(bdata.timer_ref_message_age[port.port_id]); };
 
@@ -593,7 +593,7 @@ function forward_delay_expiry(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPo
 function start_forward_delay_timer(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPortSTP) {
     let device = Object.values(bdata.ports)[0].iface.device;
     device.unschedule(bdata.timer_ref_forward_delay[port.port_id]);
-    bdata.timer_ref_forward_delay[port.port_id] = device.schedule(() => { forward_delay_expiry(bdata, port) }, bdata.forward_delay);
+    bdata.timer_ref_forward_delay[port.port_id] = device.schedule(() => { forward_delay_expiry(bdata, port) }, bdata.forward_delay * 1000);
 };
 function stop_forward_delay_timer(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPortSTP) { let device = Object.values(bdata.ports)[0].iface.device; device.unschedule(bdata.timer_ref_forward_delay[port.port_id]); };
 
