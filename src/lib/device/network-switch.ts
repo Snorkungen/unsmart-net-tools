@@ -1,10 +1,12 @@
-import { Device, DeviceResult, ProcessSignal, Program } from "./device";
+import { Device, DeviceResult, NetworkData, ProcessSignal, Program } from "./device";
 import { BaseAddress } from "../address/base";
 import { EthernetInterface, type BaseInterface } from "./interface";
-import { ETHERNET_HEADER } from "../header/ethernet";
+import { ETHER_TYPES, ETHERNET_HEADER } from "../header/ethernet";
 import { createMask } from "../address/mask";
 import { MACAddress } from "../address/mac";
 import { uint8_equals } from "../binary/uint8-array";
+import { initialization, received_config_bpdu, received_tcn_bpdu, STP_DESTINATION } from "./internals/stp";
+import { BPDU_C_HEADER, BPDU_TCN_HEADER } from "../header/bpdu";
 
 export enum NetworkSwitchPortState {
     DISABLED = 0,
@@ -49,6 +51,19 @@ export class NetworkSwitch extends Device {
 
         // start bridging daemon
         this.process_start(NETWORK_SWITCH_BRIDGING_DAEMON);
+    }
+
+    /** Hacky thing to prevent the log spam of stp messages */
+    log(data: NetworkData, type: "SEND" | "RECEIVE" | "LOOPBACK", record?: boolean) {
+        // filter bpdu's
+        // let port = Object.values(this.data.ports).find(({ iface: _iface }) => _iface === data.rcvif)
+        // if (port && (port.type == "stp") &&
+        //     (data.buffer.length > ETHERNET_HEADER.getMinSize()) &&
+        //     uint8_equals(ETHERNET_HEADER.from(data.buffer).get("dmac").buffer, STP_DESTINATION.buffer)) {
+        //     return // filter;
+        // }
+
+        super.log(data, type, record)
     }
 
     interface_add<F extends BaseInterface>(iface: F): F {
@@ -163,7 +178,6 @@ const NETWORK_SWITCH_BRIDGING_DAEMON: Program = {
                 return; // do not forward
             }
 
-
             let macentry = data.macaddresses.find(({ destination }) => uint8_equals(destination.buffer, etherheader.get("dmac").buffer));
             if (macentry) {
                 forward(macentry.outgoing_port, etherheader);
@@ -171,6 +185,55 @@ const NETWORK_SWITCH_BRIDGING_DAEMON: Program = {
                 flood(port.port_no, etherheader);
             }
         }, { promiscuous: true });
+
+        return ProcessSignal.__EXPLICIT__;
+    },
+}
+
+export const NETWORK_SWITCH_STP_DAEMON: Program = {
+    name: "network_switch_stp_daemon",
+    __NODATA__: true,
+
+    init({ device },) {
+        const bdata = device.store.get(NETWORK_SWITCH_STORE_KEY) as NetworkSwitchData;
+        // start listening for messages
+
+        if (!bdata || !(device instanceof NetworkSwitch)) return ProcessSignal.ERROR;
+
+        // enumerate ports and subscribe to the mcast address
+        for (let port of Object.values(bdata.ports)) {
+            device.interface_mcast_subscribe(port.iface, STP_DESTINATION);
+        }
+
+        let initialized = false;
+        const contact = device.contact_create("RAW", "RAW").data!;
+        contact.receive(contact, (_, data) => {
+            if (!initialized) return;
+
+            let port = Object.values(bdata.ports).find(({ iface }) => iface == data.rcvif)
+            if (!port || port.iface.header != ETHERNET_HEADER) {
+                return; // not a port
+            }
+
+            // this is incorrect the ethernet header is different
+            let etherheader = ETHERNET_HEADER.from(data.buffer);
+            if (!uint8_equals(etherheader.get("dmac").buffer, STP_DESTINATION.buffer)) return;
+
+            let payload = etherheader.get("payload");
+            if (etherheader.get("ethertype") == ETHER_TYPES.VLAN) payload = payload.subarray(4)
+
+            if (payload.length < BPDU_TCN_HEADER.getMinSize()) return;
+            let tcn = BPDU_TCN_HEADER.from(payload);
+            if (tcn.get("type") == 128) {
+                received_tcn_bpdu(bdata as any /* trust */, port as any /* trust */, tcn)
+            } else if (payload.length >= BPDU_C_HEADER.getMinSize()) {
+                let config = BPDU_C_HEADER.from(payload);
+                received_config_bpdu(bdata as any /* trust */, port as any /* trust */, config);
+            }
+        }, { promiscuous: true });
+
+        initialization(device);
+        initialized = true;
 
         return ProcessSignal.__EXPLICIT__;
     },

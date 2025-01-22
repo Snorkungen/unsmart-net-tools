@@ -1,15 +1,11 @@
 // Quelling a broadcast storm
 
-import { createSignal, Setter } from "solid-js";
+import { createSignal } from "solid-js";
 import { IPV4Address } from "../lib/address/ipv4";
 import { createMask } from "../lib/address/mask";
-import { Contact, Device, ProcessSignal, Program } from "../lib/device/device";
+import { Device } from "../lib/device/device";
 import { BaseInterface, EthernetInterface } from "../lib/device/interface";
-import { NetworkSwitch, NetworkSwitchPortState } from "../lib/device/network-switch";
-import { uint8_concat, uint8_equals, uint8_fromNumber, uint8_readUint32BE } from "../lib/binary/uint8-array";
-import { ETHERNET_HEADER } from "../lib/header/ethernet";
-import { MACAddress } from "../lib/address/mac";
-import { BaseAddress } from "../lib/address/base";
+import { NETWORK_SWITCH_STP_DAEMON, NetworkSwitch, NetworkSwitchPortState } from "../lib/device/network-switch";
 
 function network_switch_set_port_state(device: Device, iface: BaseInterface, state: NetworkSwitchPortState) {
     if (!(device instanceof NetworkSwitch)) {
@@ -17,64 +13,6 @@ function network_switch_set_port_state(device: Device, iface: BaseInterface, sta
     }
 
     device.port_iface_set_state(iface, state);
-}
-
-// for switch loop prevention create a program for loop prevention ...
-const loop_prevention_dameon: Program = {
-    name: "loop_prevention_daemon",
-    init(proc, _, data) {
-        // send a configuration message or some shit
-
-        let initial_id = uint8_readUint32BE(proc.device.interfaces.filter(iface => iface instanceof EthernetInterface)[0].macAddress.buffer.slice(2));
-
-        let mcast_destination = new MACAddress("01-80-C2-00-00-00");
-
-        let conf = {
-            root_id: initial_id,
-            root_dist: 0
-        }
-
-        function send_inforamtion(id: number, dist: number, rcvif?: EthernetInterface) {
-            console.log(proc.device.name, "sending switch information");
-
-            proc.device.interfaces.filter(iface => iface instanceof EthernetInterface).forEach(iface => rcvif != iface && iface.output({
-                buffer: uint8_concat([
-                    uint8_fromNumber(id, 4),
-                    uint8_fromNumber(dist + 1, 4),
-                ]),
-            }, new BaseAddress(ETHERNET_HEADER.create({ dmac: mcast_destination }).getBuffer())))
-        }
-
-        // setup listener ...
-        let contact = proc.device.contact_create("RAW", "RAW").data!;
-        contact.receive(contact, (_, d) => {
-            if (!(d.rcvif instanceof EthernetInterface)) return;
-
-            let ethhdr = ETHERNET_HEADER.from(d.buffer);
-
-            if (!uint8_equals(ethhdr.get("dmac").buffer, mcast_destination.buffer)) return;
-            let rid = uint8_readUint32BE(ethhdr.get("payload"), 4);
-            let rdist = uint8_readUint32BE(ethhdr.get("payload"), 8);
-
-            if (rid < conf.root_id || (rid == conf.root_id && rdist < conf.root_dist)) {
-                conf.root_id = rid;
-                conf.root_dist = rdist;
-
-                // send something
-                console.log(proc.device.name, conf)
-                send_inforamtion(conf.root_id, conf.root_dist, d.rcvif)
-            } else if (rid == conf.root_id) {
-                console.log("loop detected")
-                network_switch_set_port_state(proc.device, d.rcvif, NetworkSwitchPortState.BLOCKING);
-            }
-
-            // read payload
-        }, { promiscuous: true })
-
-        send_inforamtion(conf.root_id, conf.root_dist);
-
-        return ProcessSignal.__EXPLICIT__;
-    }
 }
 
 const [redundant_connection, set_redundant_connection] = createSignal(true)
@@ -149,6 +87,7 @@ function initiateStorm() {
     let target_contact = target_device.contact_create("IPv4", "UDP").data!;
     target_contact.receiveFrom(target_contact, () => {
         console.log("TARGET RECEIVED MESSAGE")
+        alert("received message")
         target_contact.close(target_contact)
     }, { sport: 100 });
 
@@ -162,9 +101,9 @@ export function BroadcastStorm() {
         <button onclick={toggle_redundant_link}>Turn {redundant_connection() ? "Off 🟥" : "On 🟢"} redundant connection</button>
         <button onclick={initiateStorm}>Act!</button>
         <button onclick={() => {
-            sw1.process_start(loop_prevention_dameon)
-            sw2.process_start(loop_prevention_dameon)
-            sw3.process_start(loop_prevention_dameon)
+            sw1.process_start(NETWORK_SWITCH_STP_DAEMON)
+            sw2.process_start(NETWORK_SWITCH_STP_DAEMON)
+            sw3.process_start(NETWORK_SWITCH_STP_DAEMON)
         }}>test</button>
     </div>;
 }

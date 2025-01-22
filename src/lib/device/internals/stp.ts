@@ -17,7 +17,7 @@ import { type NetworkSwitchPort, type NetworkSwitchData, NETWORK_SWITCH_STORE_KE
 const DEFAULT_PRIORITY = 32768;
 const DEFAULT_PORT_PRIORITY = 128;
 const DEFAULT_PATH_COST = 10; // Arbitrary number
-const DEFAULT_HELLO_TIME = 1;
+const DEFAULT_HELLO_TIME = 2;
 const DEFAULT_MAX_AGE = 6;
 const DEFAULT_FORWARD_DELAY = 4;
 
@@ -160,9 +160,9 @@ function transmit_config(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPortSTP
     });
 
     if (root_bridge(bdata)) {
-        bpdu.set("message_age", 0);
+        bpdu.set("message_age", encode_time(0));
     } else {
-        bpdu.set("message_age", 1); // !TODO: message timer should actually count how long it takes to forward the message /* (8.6.1.3.2(f)) */
+        bpdu.set("message_age", encode_time(5 /* no reason for number */)); // !TODO: message timer should actually count how long it takes to forward the message /* (8.6.1.3.2(f)) */
     }
 
     let flags = 0;
@@ -566,9 +566,9 @@ function message_age_expiry(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPort
 function start_message_age_timer(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPortSTP, message_age: number) {
     let device = Object.values(bdata.ports)[0].iface.device;
     device.unschedule(bdata.timer_ref_message_age[port.port_id]);
-    bdata.timer_ref_message_age[port.port_id] = device.schedule(() => { message_age_expiry(bdata, port) }, message_age * 1000);
+    bdata.timer_ref_message_age[port.port_no] = device.schedule(() => { message_age_expiry(bdata, port) }, message_age * 1000);
 };
-function stop_message_age_timer(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPortSTP) { let device = Object.values(bdata.ports)[0].iface.device; device.unschedule(bdata.timer_ref_message_age[port.port_id]); };
+function stop_message_age_timer(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPortSTP) { let device = Object.values(bdata.ports)[0].iface.device; device.unschedule(bdata.timer_ref_message_age[port.port_no]); };
 
 function designated_for_some_port(bdata: NetworkSwitchDataSTP) {
     for (let port of Object.values(bdata.ports)) {
@@ -594,9 +594,9 @@ function forward_delay_expiry(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPo
 function start_forward_delay_timer(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPortSTP) {
     let device = Object.values(bdata.ports)[0].iface.device;
     device.unschedule(bdata.timer_ref_forward_delay[port.port_id]);
-    bdata.timer_ref_forward_delay[port.port_id] = device.schedule(() => { forward_delay_expiry(bdata, port) }, bdata.forward_delay * 1000);
+    bdata.timer_ref_forward_delay[port.port_no] = device.schedule(() => { forward_delay_expiry(bdata, port) }, bdata.forward_delay * 1000);
 };
-function stop_forward_delay_timer(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPortSTP) { let device = Object.values(bdata.ports)[0].iface.device; device.unschedule(bdata.timer_ref_forward_delay[port.port_id]); };
+function stop_forward_delay_timer(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPortSTP) { let device = Object.values(bdata.ports)[0].iface.device; device.unschedule(bdata.timer_ref_forward_delay[port.port_no]); };
 
 function create_bridge_identifier(addr: MACAddress, priority: number): bigint {
     let result = 0n;

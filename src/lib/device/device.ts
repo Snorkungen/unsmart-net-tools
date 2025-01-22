@@ -271,7 +271,7 @@ export class Device {
 
         let iface = data.rcvif;
         if (!iface) {
-            console.warn("rcif missing")
+            console.warn("rcvif missing")
             return;
         }
 
