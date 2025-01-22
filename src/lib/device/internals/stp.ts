@@ -120,6 +120,7 @@ function acknowledge_topology_change(bdata: NetworkSwitchDataSTP, port: NetworkS
 }
 
 function send_bpdu(port: NetworkSwitchPort, bpdu: typeof BPDU_C_HEADER | typeof BPDU_TCN_HEADER) {
+    // this is incorrect
     port.iface.output({
         buffer: bpdu.getBuffer(),
     }, new BaseAddress(ETHERNET_HEADER.create({
@@ -128,7 +129,7 @@ function send_bpdu(port: NetworkSwitchPort, bpdu: typeof BPDU_C_HEADER | typeof 
 }
 
 function transmit_tcn(bdata: NetworkSwitchDataSTP) {
-    let port = bdata.ports[bdata.root_port];
+    let port = bdata.ports[bdata.root_port & 0x0FFF];
     if (!port) throw "this is what I mean the root port is never set i belive"
 
     const bpdu = BPDU_TCN_HEADER.create({
@@ -362,8 +363,8 @@ export function initialization(device: NetworkSwitch) {
     if (!bdata) throw "something went wrong";
 
     let macaddress = undefined;
-    for (let i in bdata.ports) if (bdata.ports[i] instanceof EthernetInterface) {
-        macaddress = bdata.ports[i].macAddress;
+    for (let i in bdata.ports) if (bdata.ports[i].iface instanceof EthernetInterface) {
+        macaddress = bdata.ports[i].iface.macAddress;
         break;
     }
 
