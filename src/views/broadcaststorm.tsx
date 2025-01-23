@@ -3,7 +3,7 @@
 import { createSignal } from "solid-js";
 import { IPV4Address } from "../lib/address/ipv4";
 import { createMask } from "../lib/address/mask";
-import { Device } from "../lib/device/device";
+import { Device, Process, ProcessSignal } from "../lib/device/device";
 import { BaseInterface, EthernetInterface } from "../lib/device/interface";
 import { NETWORK_SWITCH_STP_DAEMON, NetworkSwitch, NetworkSwitchPortState } from "../lib/device/network-switch";
 
@@ -97,13 +97,20 @@ function initiateStorm() {
 
 export function BroadcastStorm() {
     toggle_redundant_link()
+
+    let procs: Process[] = [];
+
     return <div>
         <button onclick={toggle_redundant_link}>Turn {redundant_connection() ? "Off 🟥" : "On 🟢"} redundant connection</button>
         <button onclick={initiateStorm}>Act!</button>
         <button onclick={() => {
-            sw1.process_start(NETWORK_SWITCH_STP_DAEMON)
-            sw2.process_start(NETWORK_SWITCH_STP_DAEMON)
-            sw3.process_start(NETWORK_SWITCH_STP_DAEMON)
-        }}>test</button>
+            procs.push(sw1.process_start(NETWORK_SWITCH_STP_DAEMON)!,
+                sw2.process_start(NETWORK_SWITCH_STP_DAEMON)!,
+                sw3.process_start(NETWORK_SWITCH_STP_DAEMON)!)
+        }}>Start</button>
+        <button onclick={() => {
+            procs.forEach(p => p.close(p, ProcessSignal.INTERRUPT));
+            procs.length = 0;
+        }}>Stop</button>
     </div>;
 }

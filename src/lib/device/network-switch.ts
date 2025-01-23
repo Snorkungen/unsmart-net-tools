@@ -5,7 +5,7 @@ import { ETHER_TYPES, ETHERNET_HEADER } from "../header/ethernet";
 import { createMask } from "../address/mask";
 import { MACAddress } from "../address/mac";
 import { uint8_equals } from "../binary/uint8-array";
-import { initialization, received_config_bpdu, received_tcn_bpdu, STP_DESTINATION } from "./internals/stp";
+import { deinitialize, initialization, received_config_bpdu, received_tcn_bpdu, STP_DESTINATION } from "./internals/stp";
 import { BPDU_C_HEADER, BPDU_TCN_HEADER } from "../header/bpdu";
 
 export enum NetworkSwitchPortState {
@@ -194,10 +194,10 @@ export const NETWORK_SWITCH_STP_DAEMON: Program = {
     name: "network_switch_stp_daemon",
     __NODATA__: true,
 
-    init({ device },) {
+    init(proc) {
+        const device = proc.device;
         const bdata = device.store.get(NETWORK_SWITCH_STORE_KEY) as NetworkSwitchData;
         // start listening for messages
-
         if (!bdata || !(device instanceof NetworkSwitch)) return ProcessSignal.ERROR;
 
         // enumerate ports and subscribe to the mcast address
@@ -234,6 +234,12 @@ export const NETWORK_SWITCH_STP_DAEMON: Program = {
 
         initialization(device);
         initialized = true;
+
+        proc.handle(proc, () => {
+            deinitialize(device);
+            initialized = false;
+            contact.close(contact);
+        })
 
         return ProcessSignal.__EXPLICIT__;
     },

@@ -414,6 +414,26 @@ export function initialization(device: NetworkSwitch) {
     start_hello_timer(bdata);
 }
 
+export function deinitialize(device: NetworkSwitch) {
+    const bdata = device.store.get(NETWORK_SWITCH_STORE_KEY) as NetworkSwitchDataSTP;
+    if (!bdata) throw "something went wrong";
+
+    stop_hello_timer(bdata);
+    stop_tcn_timer(bdata);
+    stop_topology_change_timer(bdata);
+
+    // set port's to forwarding unless port is disabled
+    for (let port of Object.values(bdata.ports)) {
+        if (validate_port(port)) {
+            stop_forward_delay_timer(bdata, port);
+            stop_message_age_timer(bdata, port);
+        }
+
+        if (port.state == NetworkSwitchPortState.DISABLED || !port.iface.up) continue;
+        port.state = NetworkSwitchPortState.FORWARDING;
+    }
+}
+
 export function enable_port(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPortSTP) {
     initialize_port(bdata, port);
     port_state_selection(bdata);
@@ -512,6 +532,8 @@ function make_blocking(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPortSTP) 
 }
 
 function hello_timer_expiry(bdata: NetworkSwitchDataSTP) {
+    if (bdata.timer_ref_hello < 0) return;
+
     config_bpdu_generation(bdata);
     start_hello_timer(bdata);
 }
@@ -520,9 +542,15 @@ function start_hello_timer(bdata: NetworkSwitchDataSTP) {
     device.unschedule(bdata.timer_ref_hello)
     bdata.timer_ref_hello = device.schedule(() => { hello_timer_expiry(bdata) }, bdata.hello_time * 1000);
 };
-function stop_hello_timer(bdata: NetworkSwitchDataSTP) { let device = Object.values(bdata.ports)[0].iface.device; device.unschedule(bdata.timer_ref_hello); };
+function stop_hello_timer(bdata: NetworkSwitchDataSTP) {
+    let device = Object.values(bdata.ports)[0].iface.device;
+    device.unschedule(bdata.timer_ref_hello);
+    bdata.timer_ref_hello = -1;
+};
 
 function tcn_timer_expiry(bdata: NetworkSwitchDataSTP) {
+    if (bdata.timer_ref_tcn < 0) return;
+
     transmit_tcn(bdata);
     start_tcn_timer(bdata);
 }
@@ -531,9 +559,15 @@ function start_tcn_timer(bdata: NetworkSwitchDataSTP) {
     device.unschedule(bdata.timer_ref_tcn)
     bdata.timer_ref_tcn = device.schedule(() => { tcn_timer_expiry(bdata) }, bdata.bridge_hello_time * 1000);
 };
-function stop_tcn_timer(bdata: NetworkSwitchDataSTP) { let device = Object.values(bdata.ports)[0].iface.device; device.unschedule(bdata.timer_ref_tcn); };
+function stop_tcn_timer(bdata: NetworkSwitchDataSTP) {
+    let device = Object.values(bdata.ports)[0].iface.device;
+    device.unschedule(bdata.timer_ref_tcn);
+    bdata.timer_ref_tcn = -1;
+};
 
 function topology_change_expiry(bdata: NetworkSwitchDataSTP) {
+    if (bdata.timer_ref_topology_change < 0) return;
+
     bdata.topology_change_detected = false;
     bdata.topology_change = false;
 }
@@ -542,9 +576,15 @@ function start_topology_change_timer(bdata: NetworkSwitchDataSTP) {
     device.unschedule(bdata.timer_ref_topology_change)
     bdata.timer_ref_topology_change = device.schedule(() => { topology_change_expiry(bdata) }, bdata.topology_change_time * 1000);
 };
-function stop_topology_change_timer(bdata: NetworkSwitchDataSTP) { let device = Object.values(bdata.ports)[0].iface.device; device.unschedule(bdata.timer_ref_topology_change) };
+function stop_topology_change_timer(bdata: NetworkSwitchDataSTP) {
+    let device = Object.values(bdata.ports)[0].iface.device;
+    device.unschedule(bdata.timer_ref_topology_change);
+    bdata.timer_ref_topology_change = -1;
+};
 
 function message_age_expiry(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPortSTP) {
+    if (bdata.timer_ref_message_age[port.port_no] < 0) return;
+
     let root = root_bridge(bdata);
 
     become_designated_port(bdata, port);
@@ -568,7 +608,11 @@ function start_message_age_timer(bdata: NetworkSwitchDataSTP, port: NetworkSwitc
     device.unschedule(bdata.timer_ref_message_age[port.port_id]);
     bdata.timer_ref_message_age[port.port_no] = device.schedule(() => { message_age_expiry(bdata, port) }, message_age * 1000);
 };
-function stop_message_age_timer(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPortSTP) { let device = Object.values(bdata.ports)[0].iface.device; device.unschedule(bdata.timer_ref_message_age[port.port_no]); };
+function stop_message_age_timer(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPortSTP) {
+    let device = Object.values(bdata.ports)[0].iface.device;
+    device.unschedule(bdata.timer_ref_message_age[port.port_no]);
+    bdata.timer_ref_message_age[port.port_no] = -1;
+};
 
 function designated_for_some_port(bdata: NetworkSwitchDataSTP) {
     for (let port of Object.values(bdata.ports)) {
@@ -580,6 +624,8 @@ function designated_for_some_port(bdata: NetworkSwitchDataSTP) {
     return false;
 }
 function forward_delay_expiry(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPortSTP) {
+    if (bdata.timer_ref_forward_delay[port.port_no] < 0) return;
+
     if (port.state == NetworkSwitchPortState.LISTENING) {
         port.state = NetworkSwitchPortState.LEARNING;
         start_forward_delay_timer(bdata, port);
@@ -596,7 +642,11 @@ function start_forward_delay_timer(bdata: NetworkSwitchDataSTP, port: NetworkSwi
     device.unschedule(bdata.timer_ref_forward_delay[port.port_id]);
     bdata.timer_ref_forward_delay[port.port_no] = device.schedule(() => { forward_delay_expiry(bdata, port) }, bdata.forward_delay * 1000);
 };
-function stop_forward_delay_timer(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPortSTP) { let device = Object.values(bdata.ports)[0].iface.device; device.unschedule(bdata.timer_ref_forward_delay[port.port_no]); };
+function stop_forward_delay_timer(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPortSTP) {
+    let device = Object.values(bdata.ports)[0].iface.device;
+    device.unschedule(bdata.timer_ref_forward_delay[port.port_no]);
+    bdata.timer_ref_forward_delay[port.port_no] = -1;
+};
 
 function create_bridge_identifier(addr: MACAddress, priority: number): bigint {
     let result = 0n;
