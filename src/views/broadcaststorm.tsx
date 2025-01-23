@@ -111,6 +111,11 @@ export function BroadcastStorm() {
         <button onclick={() => {
             procs.forEach(p => p.close(p, ProcessSignal.INTERRUPT));
             procs.length = 0;
+
+            if (!redundant_connection()) { // fix state
+                network_switch_set_port_state(sw2, sw2_sw3_iface, NetworkSwitchPortState.BLOCKING);
+                network_switch_set_port_state(sw3, sw3_sw2_iface, NetworkSwitchPortState.BLOCKING);
+            }
         }}>Stop</button>
     </div>;
 }
