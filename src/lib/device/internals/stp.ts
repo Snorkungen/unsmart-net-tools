@@ -162,7 +162,7 @@ function transmit_config(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPortSTP
     if (root_bridge(bdata)) {
         bpdu.set("message_age", encode_time(0));
     } else {
-        bpdu.set("message_age", encode_time(5 /* no reason for number */)); // !TODO: message timer should actually count how long it takes to forward the message /* (8.6.1.3.2(f)) */
+        bpdu.set("message_age", encode_time(1)); // !TODO: message timer should actually count how long it takes to forward the message /* (8.6.1.3.2(f)) */
     }
 
     let flags = 0;
@@ -583,8 +583,6 @@ function stop_topology_change_timer(bdata: NetworkSwitchDataSTP) {
 };
 
 function message_age_expiry(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPortSTP) {
-    if (bdata.timer_ref_message_age[port.port_no] < 0) return;
-
     let root = root_bridge(bdata);
 
     become_designated_port(bdata, port);
@@ -606,12 +604,12 @@ function message_age_expiry(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPort
 function start_message_age_timer(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPortSTP, message_age: number) {
     let device = Object.values(bdata.ports)[0].iface.device;
     device.unschedule(bdata.timer_ref_message_age[port.port_id]);
-    bdata.timer_ref_message_age[port.port_no] = device.schedule(() => { message_age_expiry(bdata, port) }, message_age * 1000);
+
+    // !TODO: implement a counter, sheduling an event won't work
+    // NOTE: Assume that the time to process a message takes less time than max age
 };
 function stop_message_age_timer(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPortSTP) {
     let device = Object.values(bdata.ports)[0].iface.device;
-    device.unschedule(bdata.timer_ref_message_age[port.port_no]);
-    bdata.timer_ref_message_age[port.port_no] = -1;
 };
 
 function designated_for_some_port(bdata: NetworkSwitchDataSTP) {
