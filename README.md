@@ -1,6 +1,6 @@
 #  ![](./src/assets/brand.svg) Unsmart Net-Tools
 
-An attempt at implementing the TCP/IP stach within a browser context.
+An attempt at implementing the TCP/IP stack within a browser context.
 
 ## Tasks
 
