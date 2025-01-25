@@ -1,8 +1,10 @@
-import { For, createMemo, createSignal } from "solid-js";
-import { PacketCapture, PacketCaptureRecordStatus } from "../lib/packet-capture";
+import { For, Show, createMemo, createSignal } from "solid-js";
+import { PacketCapture, PacketCaptureRecord, PacketCaptureRecordStatus } from "../lib/packet-capture";
 import { uint8_fromBase64 } from "../lib/binary/uint8array/base64";
 import { StructViewer } from "./struct-viewer";
 import { PCAPNG_BLOCK } from "../lib/header/pcapng";
+import { ETHERNET_HEADER } from "../lib/header/ethernet";
+import { AnyStruct } from "../lib/struct-viewer/struct-viewer";
 
 export default function PacketCaptureViewer() {
     let buffer = uint8_fromBase64(base64EncodedPCAPFile);
@@ -10,11 +12,19 @@ export default function PacketCaptureViewer() {
     let [state, setState] = createSignal<PacketCapture>(new PacketCapture(buffer))
     let struct = createMemo(() => PCAPNG_BLOCK.from(state().buffer.subarray(0, 32 * 10)))
 
+    let ref: any = undefined;
+    const [selected_record, set_selected_record] = createSignal<undefined | PacketCaptureRecord>(undefined);
+    createMemo(() => set_selected_record(state().records[0]))
+
+    function handle_row_click(record: PacketCaptureRecord) {
+        ref && ref.scrollIntoView()
+        set_selected_record(record);
+    }
+
     return <div>
-        <StructViewer struct={struct()} />
         <header>
             <h1>Packet Capture</h1>
-            <input type="file" onInput={(event: any) => {
+            <input type="file" accept=".cap, .pcap, .pcapng" onInput={(event: any) => {
                 let file = event.target.files[0] as File
                 let reader = new FileReader()
                 reader.readAsArrayBuffer(file)
@@ -25,32 +35,41 @@ export default function PacketCaptureViewer() {
                 }
             }} />
         </header>
-        <table>
-            <thead>
-                <tr>
-                    <th>No.</th>
-                    <th>Timestamp</th>
-                    <th>Source</th>
-                    <th>Destination</th>
-                    <th>Protocol</th>
-                    <th>Length</th>
-                    <th>Info</th>
-                </tr>
-            </thead>
-            <tbody>
-                <For each={state().records} >{(record) => (
-                    <tr style={(record.status == PacketCaptureRecordStatus.ERROR || record.status == PacketCaptureRecordStatus.WARNING) ? { background: "red" } : undefined} title={record.info.join("; ")}>
-                        <td>{record.index + 1}</td>
-                        <td>{record.timestamp.toJSON()}</td>
-                        <td>{record.saddr.toString()}</td>
-                        <td>{record.daddr.toString()}</td>
-                        <td>{record.protocol}</td>
-                        <td>{record.fullLength}</td>
-                        <td>{record.info.join("; ")}</td>
+        <main style={{ overflow: "none", height: "100%" }}>
+            <table>
+                <thead>
+                    <tr>
+                        <th>No.</th>
+                        <th>Time</th>
+                        <th>Source</th>
+                        <th>Destination</th>
+                        <th>Protocol</th>
+                        <th>Length</th>
+                        <th>Info</th>
                     </tr>
-                )}</For>
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                    <For each={state().records} >{(record) => (
+                        <tr style={{
+                            background: (record.status == PacketCaptureRecordStatus.ERROR || record.status == PacketCaptureRecordStatus.WARNING) ? "red" : "inherit",
+                        }} title={record.info.join("; ")} onclick={() => handle_row_click(record)}>
+                            <td>{record.index + 1}</td>
+                            <td>{record.timestamp.getTime() - state().records[0].timestamp.getTime()}</td>
+                            <td>{record.saddr.toString()}</td>
+                            <td>{record.daddr.toString()}</td>
+                            <td>{record.protocol}</td>
+                            <td>{record.fullLength}</td>
+                            <td>{record.info.join("; ")}</td>
+                        </tr>
+                    )}</For>
+                </tbody>
+            </table>
+            <div ref={e => ref = e}>
+                <Show when={selected_record()} >
+                    <StructViewer struct={ETHERNET_HEADER.from(selected_record()!.buffer)} />
+                </Show>
+            </div>
+        </main>
     </div>
 }
 

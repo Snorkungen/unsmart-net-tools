@@ -28,6 +28,9 @@ export interface PacketCaptureRecordMetaData {
     timestamp: Date;
     length: number;
     fullLength: number;
+
+    /* slice into the data */
+    buffer: Uint8Array;
 }
 
 export interface PacketCaptureRecordData {
@@ -311,6 +314,7 @@ export class PacketCaptureLibpcapReader implements PacketCaptureReader {
             timestamp: new Date(ms),
             length: hdr.get("inclLen"),
             fullLength: hdr.get("origLen"),
+            buffer: this.buffer.subarray(this.pointer + PCAP_RECORD_HEADER.size, this.pointer + PCAP_RECORD_HEADER.size + hdr.get("inclLen"))
         }
 
         // increment pointer after reading record header
@@ -507,6 +511,8 @@ export class PacketCapturePcapngReader implements PacketCaptureReader {
                         timestamp: new Date(NaN), // force invalid date due to no timestamp being provided
                         length: spacket.get("incLen"),
                         fullLength: spacket.get("origLen"),
+
+                        buffer: spacket.get("body")
                     };
 
                     // link-type 1: ethernet
@@ -542,6 +548,8 @@ export class PacketCapturePcapngReader implements PacketCaptureReader {
                         timestamp: new Date(ms),
                         length: epacket.get("incLen"),
                         fullLength: epacket.get("origLen"),
+
+                        buffer: epacket.get("body")
                     }
 
                     // do something about the options
