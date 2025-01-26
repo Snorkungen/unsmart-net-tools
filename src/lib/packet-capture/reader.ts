@@ -8,6 +8,7 @@ import { IPV4_HEADER, IPV6_HEADER, PROTOCOLS } from "../header/ip";
 import { ICMPV4_CODES, ICMPV4_TYPES, ICMPV6_TYPES, ICMP_ECHO_HEADER, ICMP_HEADER, ICMP_NDP_HEADER, ICMP_UNUSED_HEADER } from "../header/icmp";
 import { TCP_HEADER } from "../header/tcp";
 import { UDP_HEADER } from "../header/udp";
+import { Struct } from "../binary";
 
 const getKeyByValue = <N extends number, T extends Record<string, N>>(obj: T, value: N): keyof T => Object.keys(obj).find(key => obj[key] === value) ?? "";
 
@@ -31,6 +32,7 @@ export interface PacketCaptureRecordMetaData {
 
     /* slice into the data */
     buffer: Uint8Array;
+    structs: Struct<any>[];
 }
 
 export interface PacketCaptureRecordData {
@@ -66,6 +68,7 @@ export class PacketCaptureEthernetReader implements PacketCaptureReader {
     }
 
     private readEthernet(buf: Uint8Array, begin?: number, data?: PacketCaptureRecordData): PacketCaptureRecordData {
+        this.metadata.structs.push(ETHERNET_HEADER);
         let hdr = ETHERNET_HEADER.from(buf.subarray(begin || 0));
 
         if (!data) {
@@ -95,6 +98,7 @@ export class PacketCaptureEthernetReader implements PacketCaptureReader {
     }
 
     private readVLAN(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): PacketCaptureRecordData {
+        this.metadata.structs.push(ETHERNET_DOT1Q_HEADER);
         let hdr = ETHERNET_DOT1Q_HEADER.from(buf.subarray(begin));
 
         data.info = ["VLAN/" + hdr.get("vid")]
@@ -109,6 +113,7 @@ export class PacketCaptureEthernetReader implements PacketCaptureReader {
     }
 
     private readARP(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): PacketCaptureRecordData {
+        this.metadata.structs.push(ARP_HEADER)
         let hdr = ARP_HEADER.from(buf.subarray(begin));
 
         if (hdr.get("ptype") != ETHER_TYPES.IPv4) {
@@ -127,6 +132,7 @@ export class PacketCaptureEthernetReader implements PacketCaptureReader {
     }
 
     private readIPv4(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): PacketCaptureRecordData {
+        this.metadata.structs.push(IPV4_HEADER);
         let hdr = IPV4_HEADER.from(buf.subarray(begin));
 
         data.saddr = hdr.get("saddr");
@@ -148,22 +154,27 @@ export class PacketCaptureEthernetReader implements PacketCaptureReader {
     }
 
     private readICMPv4(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): typeof data {
+        this.metadata.structs.push(ICMP_HEADER);
         let hdr = ICMP_HEADER.from(buf.subarray(begin));
         let echoHdr = ICMP_ECHO_HEADER.from(hdr.get("data")),
             dstUnrchbleHdr = ICMP_UNUSED_HEADER.from(hdr.get("data"))
         switch (hdr.get("type")) {
             case ICMPV4_TYPES.ECHO_REPLY:
+                this.metadata.structs.push(ICMP_ECHO_HEADER);
                 data.info.push(`Echo Reply: id=${echoHdr.get("id")}, seq=${echoHdr.get("seq")}`)
                 break;
             case ICMPV4_TYPES.ECHO_REQUEST:
+                this.metadata.structs.push(ICMP_ECHO_HEADER);
                 data.info.push(`Echo Request: id=${echoHdr.get("id")}, seq=${echoHdr.get("seq")}`)
                 break;
             case ICMPV4_TYPES.DESTINATION_UNREACHABLE:
+                this.metadata.structs.push(ICMP_UNUSED_HEADER);
                 data.info.push(`Destination Unreachable`, getKeyByValue(ICMPV4_CODES[ICMPV4_TYPES.DESTINATION_UNREACHABLE], hdr.get("code")))
                 data.status = PacketCaptureRecordStatus.WARNING;
                 data.info = this.readIPv4(dstUnrchbleHdr.get("data"), 0, data).info
                 break;
             case ICMPV4_TYPES.TIME_EXCEEDED:
+                this.metadata.structs.push(ICMP_UNUSED_HEADER);
                 data.info.push(`Time Exceeded`, getKeyByValue(ICMPV4_CODES[ICMPV4_TYPES.TIME_EXCEEDED], hdr.get("code")))
                 data.status = PacketCaptureRecordStatus.WARNING;
                 data.info = this.readIPv4(dstUnrchbleHdr.get("data"), 0, data).info
@@ -175,6 +186,7 @@ export class PacketCaptureEthernetReader implements PacketCaptureReader {
     }
 
     private readIPv6(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): typeof data {
+        this.metadata.structs.push(IPV6_HEADER);
         let hdr = IPV6_HEADER.from(buf.subarray(begin));
 
         data.saddr = hdr.get("saddr");
@@ -195,18 +207,22 @@ export class PacketCaptureEthernetReader implements PacketCaptureReader {
 
     private readICMPv6(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): typeof data {
         let ipHdr = IPV6_HEADER.from(buf);
+        this.metadata.structs.push(ICMP_HEADER);
         let hdr = ICMP_HEADER.from(buf.subarray(begin));
         let echoHdr = ICMP_ECHO_HEADER.from(hdr.get("data"))
         let ndpHdr = ICMP_NDP_HEADER.from(hdr.get("data"))
 
         switch (hdr.get("type")) {
             case ICMPV6_TYPES.ECHO_REPLY:
+                this.metadata.structs.push(ICMP_ECHO_HEADER);
                 data.info.push(`Echo Reply: id=${echoHdr.get("id")}, seq=${echoHdr.get("seq")}`)
                 break;
             case ICMPV6_TYPES.ECHO_REQUEST:
+                this.metadata.structs.push(ICMP_ECHO_HEADER);
                 data.info.push(`Echo Request: id=${echoHdr.get("id")}, seq=${echoHdr.get("seq")}`)
                 break;
             case ICMPV6_TYPES.NEIGHBOR_SOLICITATION:
+                this.metadata.structs.push(ICMP_NDP_HEADER);
                 data.info.push(`${ipHdr.get("saddr")} asks who has ${ndpHdr.get("targetAddress")};`)
             case ICMPV6_TYPES.NEIGHBOR_ADVERTISMENT:
                 break;
@@ -215,6 +231,7 @@ export class PacketCaptureEthernetReader implements PacketCaptureReader {
     }
 
     private readUDP(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): typeof data {
+        this.metadata.structs.push(UDP_HEADER);
         let hdr = UDP_HEADER.from(buf.subarray(begin));
         data.info.push(`port: ${hdr.get("sport")} => ${hdr.get("dport")}`);
 
@@ -224,6 +241,7 @@ export class PacketCaptureEthernetReader implements PacketCaptureReader {
     }
 
     private readTCP(buf: Uint8Array, begin: number, data: PacketCaptureRecordData): typeof data {
+        this.metadata.structs.push(TCP_HEADER);
         let hdr = TCP_HEADER.from(buf.subarray(begin));
         data.info.push(`port: ${hdr.get("sport")} => ${hdr.get("dport")}`);
 
@@ -314,7 +332,9 @@ export class PacketCaptureLibpcapReader implements PacketCaptureReader {
             timestamp: new Date(ms),
             length: hdr.get("inclLen"),
             fullLength: hdr.get("origLen"),
-            buffer: this.buffer.subarray(this.pointer + PCAP_RECORD_HEADER.size, this.pointer + PCAP_RECORD_HEADER.size + hdr.get("inclLen"))
+
+            buffer: this.buffer.subarray(this.pointer + PCAP_RECORD_HEADER.size, this.pointer + PCAP_RECORD_HEADER.size + hdr.get("inclLen")),
+            structs: [],
         }
 
         // increment pointer after reading record header
@@ -512,7 +532,8 @@ export class PacketCapturePcapngReader implements PacketCaptureReader {
                         length: spacket.get("incLen"),
                         fullLength: spacket.get("origLen"),
 
-                        buffer: spacket.get("body")
+                        buffer: spacket.get("body"),
+                        structs: [],
                     };
 
                     // link-type 1: ethernet
@@ -549,7 +570,8 @@ export class PacketCapturePcapngReader implements PacketCaptureReader {
                         length: epacket.get("incLen"),
                         fullLength: epacket.get("origLen"),
 
-                        buffer: epacket.get("body")
+                        buffer: epacket.get("body"),
+                        structs: [],
                     }
 
                     // do something about the options

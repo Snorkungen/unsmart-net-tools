@@ -293,7 +293,10 @@ const ActiveValueViewer: Component<{
     </div>
 }
 
-export const StructViewer: Component<{ struct?: AnyStruct }> = (props) => {
+export const StructViewer: Component<{ struct?: AnyStruct, unknown_buffer?: false }> = (props) => {
+
+    const struct_is_known = props.struct && !props.unknown_buffer;
+
     if (!props.struct) {
         props.struct = UDP_HEADER.create({
             sport: 9023,
@@ -317,6 +320,12 @@ export const StructViewer: Component<{ struct?: AnyStruct }> = (props) => {
         }
         set_svd(struct_viewer_create_svd(props.struct))
         set_active_key(-1)
+
+    })
+
+    createEffect(() => {
+
+        console.log(active_key())
     })
 
     return <div>
@@ -337,7 +346,9 @@ export const StructViewer: Component<{ struct?: AnyStruct }> = (props) => {
                 <div>
                     Some this is a struct with x amount of values and y amount of data
                     <p>{JSON.stringify(struct_get_options(props.struct))} {active_field().name}</p>
-                    <StructConfigureBytes svd={svd} set_svd={set_svd} set_active_key={set_active_key} active_field={active_field} />
+                    <Show when={!struct_is_known || (typeof active_key() != "number")} >
+                        <StructConfigureBytes svd={svd} set_svd={set_svd} set_active_key={set_active_key} active_field={active_field} />
+                    </Show>
                 </div>
             </Show>
         </div>

@@ -1,5 +1,6 @@
 import { SLICE, Struct, StructOptions, StructType } from "../binary/struct";
 import { ARP_HEADER } from "../header/arp";
+import { BPDU_C_HEADER, BPDU_TCN_HEADER } from "../header/bpdu";
 import { DHCP_HEADER, DHCP_OPTION, DHCP_CHADDR } from "../header/dhcp/dhcp";
 import { ETHERNET_HEADER, ETHERNET_DOT1Q_HEADER } from "../header/ethernet";
 import { ICMP_HEADER, ICMP_UNUSED_HEADER, ICMP_ECHO_HEADER, ICMP_NDP_HEADER, ICMP_DESTINATION_UNREACHABLE } from "../header/icmp";
@@ -47,6 +48,8 @@ export const DEFINED_STRUCTS: Record<string, AnyStruct> = {
     DHCP_OPTION,
     DHCP_CHADDR,
 
+    BPDU_C_HEADER,
+    BPDU_TCN_HEADER
 };
 
 export function struct_get_types(struct: AnyStruct): Record<number | string | symbol, StructType<any>> {

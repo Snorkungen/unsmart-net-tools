@@ -1,25 +1,40 @@
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
 import { PacketCapture, PacketCaptureRecord, PacketCaptureRecordStatus } from "../lib/packet-capture";
 import { uint8_fromBase64 } from "../lib/binary/uint8array/base64";
 import { StructViewer } from "./struct-viewer";
-import { PCAPNG_BLOCK } from "../lib/header/pcapng";
-import { ETHERNET_HEADER } from "../lib/header/ethernet";
-import { AnyStruct } from "../lib/struct-viewer/struct-viewer";
+import { defineStruct, StructType } from "../lib/binary";
 
 export default function PacketCaptureViewer() {
     let buffer = uint8_fromBase64(base64EncodedPCAPFile);
 
     let [state, setState] = createSignal<PacketCapture>(new PacketCapture(buffer))
-    let struct = createMemo(() => PCAPNG_BLOCK.from(state().buffer.subarray(0, 32 * 10)))
 
     let ref: any = undefined;
     const [selected_record, set_selected_record] = createSignal<undefined | PacketCaptureRecord>(undefined);
-    createMemo(() => set_selected_record(state().records[0]))
+    createEffect(() => set_selected_record(state().records[0]))
 
     function handle_row_click(record: PacketCaptureRecord) {
         ref && ref.scrollIntoView()
         set_selected_record(record);
     }
+
+    const struct = createMemo(() => {
+        let record = selected_record();
+        if (!record) return undefined;
+
+        let keys: any = {}
+        record.structs.forEach((s, i) => {
+            // @ts-expect-error
+            let entries = Object.entries(s.types);
+            entries.forEach(([n, v]) => {
+                if ((v as StructType<unknown>).bitLength < 0 && (i + 1) !== record.structs.length) { return };
+
+                keys[i + "." + n] = v;
+            })
+        });
+
+        return defineStruct(keys);
+    });
 
     return <div>
         <header>
@@ -65,8 +80,8 @@ export default function PacketCaptureViewer() {
                 </tbody>
             </table>
             <div ref={e => ref = e}>
-                <Show when={selected_record()} >
-                    <StructViewer struct={ETHERNET_HEADER.from(selected_record()!.buffer)} />
+                <Show when={struct()} >
+                    <StructViewer struct={struct()!.from(selected_record()!.buffer)} />
                 </Show>
             </div>
         </main>
