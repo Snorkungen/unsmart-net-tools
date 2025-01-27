@@ -323,11 +323,6 @@ export const StructViewer: Component<{ struct?: AnyStruct, unknown_buffer?: fals
 
     })
 
-    createEffect(() => {
-
-        console.log(active_key())
-    })
-
     return <div>
         <button onclick={() => set_active_key(key => {
             let k = struct_viewer_key(key).slice(0, -1);

@@ -275,7 +275,7 @@ export class Device {
             return;
         }
 
-        let reader = new PacketCaptureEthernetReader(data.buffer, 0, {} as any)
+        let reader = new PacketCaptureEthernetReader(data.buffer, 0, { structs: [] } as any)
         let frame_info: PacketCaptureRecordData = reader.read()
 
         let iface_name = iface.name + iface.unit;
@@ -2239,5 +2239,5 @@ export class Device {
 
     unschedule(id: number) {
         window.clearTimeout(id);
-    }   
+    }
 }
