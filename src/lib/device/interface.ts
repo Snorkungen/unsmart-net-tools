@@ -195,9 +195,6 @@ export class EthernetInterface extends BaseInterface {
     onRecv?: () => void;
     receive_delay: number | undefined = undefined;
     private receive(etherheader: typeof ETHERNET_HEADER) {
-        // on recieive
-        this.onRecv && this.onRecv();
-
         vlan_handler: if (this.vlan) {
             if (this.vlan.type == "access") {
                 if (etherheader.get("ethertype") != ETHER_TYPES.VLAN) {
@@ -232,12 +229,20 @@ export class EthernetInterface extends BaseInterface {
             }
         }
 
+
+        let data = { rcvif: this, rcvif_hwaddress: this.macAddress, buffer: etherheader.getBuffer(), broadcast: etherheader.get("dmac").isBroadcast() }
+
+        if (this.device.interface_filter(this, data)) {
+            return; // Drop Frame
+        }
+
         this.device.schedule(() => {
-            let data = { rcvif: this, rcvif_hwaddress: this.macAddress, buffer: etherheader.getBuffer(), broadcast: etherheader.get("dmac").isBroadcast() }
 
             this.device.log(data, "RECEIVE");
             this.device.input_ether(etherheader, data);
         }, this.receive_delay)
+
+        this.onRecv && this.onRecv();
     }
 
     onDisconnect?: (iface: EthernetInterface) => void;
@@ -339,9 +344,13 @@ export class VlanInterface extends BaseInterface {
         // !TODO: maybe pass other vlan information forward to the device
         this.macaddresses.set(etherframe.get("smac").toString(), data.rcvif);
 
-        this.device.schedule(() => {
-            data = { rcvif: this, rcvif_hwaddress: data.rcvif_hwaddress, buffer: etherframe.getBuffer(), broadcast: data.broadcast }
+        data = { rcvif: this, rcvif_hwaddress: data.rcvif_hwaddress, buffer: etherframe.getBuffer(), broadcast: data.broadcast }
 
+        if (this.device.interface_filter(this, data)) {
+            return; // Drop Frame
+        }
+
+        this.device.schedule(() => {
             if (this.log_input) {
                 // this.device.log(data, "RECEIVE")
             }

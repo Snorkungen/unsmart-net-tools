@@ -1431,6 +1431,53 @@ export class Device {
         return { success: true, data: undefined };
     }
 
+    /** Returns wheter frame should be dropped */
+    interface_filter(iface: BaseInterface, data: NetworkData): boolean {
+        if (iface.header == ETHERNET_HEADER && (data.rcvif_hwaddress instanceof MACAddress)) {
+            let etherheader = ETHERNET_HEADER.from(data.buffer), dmac = etherheader.get("dmac");
+
+            if (dmac.isBroadcast()) {
+                return false
+            }
+
+            if (dmac.isUnicast() && uint8_equals(data.rcvif_hwaddress.buffer, dmac.buffer)) {
+                return false
+            }
+
+            // check for a promiscous listener...
+            if (this.contact_receivers.find(v => v?.contact.addressFamily === "RAW" && v.options.promiscuous)) {
+                return false;
+            }
+
+            // consider VlanInterfaces 
+            if (!(iface instanceof VlanInterface) && etherheader.get("ethertype") == ETHER_TYPES.VLAN) {
+                // read vlan header ...
+                let vlanhdr = ETHERNET_DOT1Q_HEADER.from(etherheader.get("payload"));
+                let vid = vlanhdr.get("vid");
+                let vlanif: VlanInterface | undefined = undefined;
+
+                for (let v of this.interfaces) if (v instanceof VlanInterface && v.vid == vid) {
+                    vlanif = v;
+                    break
+                }
+
+                if (vlanif && !this.interface_filter(vlanif, data)) {
+                    return false; // there exists a vlan-interface that will accept the incoming frame
+                }
+            }
+
+            let matched = false; // Check multicast messages
+            for (let addr of this.interfaces_mcast_subscriptions[iface.id()]) {
+                if (matched = (dmac.constructor == addr.constructor) && uint8_equals(dmac.buffer, addr.buffer))
+                    break
+            }
+
+            return !matched;
+        }
+
+        return false
+    }
+
     /** this is to ensure that contacts get given unique ephemeral ports */
     private contact_ephemport = 4001
     private contacts: (Contact<ContactAF, ContactProto> | undefined)[] = [];
