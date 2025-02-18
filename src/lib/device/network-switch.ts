@@ -75,8 +75,8 @@ export class NetworkSwitch extends Device {
     }
 
     port_create<F extends BaseInterface>(iface: F): DeviceResult<undefined, F> {
-        if (iface.header != ETHERNET_HEADER) {
-            return { success: false, message: "unsupporte interface type", error: undefined };
+        if (!(iface instanceof EthernetInterface)) { /* port must be an EthernetInterface */
+            return { success: false, message: "unsupported interface type", error: undefined };
         }
 
         // create port id
@@ -132,7 +132,7 @@ const NETWORK_SWITCH_BRIDGING_DAEMON: Program = {
         function flood(port_no: number, etherheader: typeof ETHERNET_HEADER) {
             for (let port of Object.values(data.ports)) {
                 if (port.port_no == port_no) continue;
-
+   
                 forward(port.port_no, etherheader);
             }
         }
@@ -164,7 +164,6 @@ const NETWORK_SWITCH_BRIDGING_DAEMON: Program = {
                 }
             }
 
-
             if (port.state < NetworkSwitchPortState.LEARNING) {
                 return; // drop received frame
             }
@@ -185,6 +184,10 @@ const NETWORK_SWITCH_BRIDGING_DAEMON: Program = {
                 flood(port.port_no, etherheader);
             }
         }, { promiscuous: true });
+
+        proc.handle(proc, () => {
+            contact.close(contact)
+        });
 
         return ProcessSignal.__EXPLICIT__;
     },

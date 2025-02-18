@@ -36,11 +36,10 @@ networkSwitch.name = "SW1"
 networkSwitch2.name = "SW2"
 
 let networkRouter = new NetworkSwitch(); networkRouter.name = "R1"
-networkRouter.processes.forEach(p => p && networkRouter.process_close(p, ProcessSignal.EXIT));// kill all running proceesses
 
 networkRouter.process_start(DAEMON_ROUTING); // start routing daemon
 
-let rtr_iface = networkRouter.interface_add(new EthernetInterface(networkRouter)); delete rtr_iface.vlan; // remove switch configurations
+let rtr_iface = networkRouter.interface_add(new EthernetInterface(networkRouter)); rtr_iface.vlan = { vids: [10, 20], "type": "trunk" };
 let rtr_vlanif10 = networkRouter.interface_add(new VlanInterface(networkRouter, 10));
 let rtr_vlanif20 = networkRouter.interface_add(new VlanInterface(networkRouter, 20));
 
