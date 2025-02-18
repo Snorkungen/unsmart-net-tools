@@ -16,14 +16,16 @@ import { calculateChecksum } from "../lib/binary/checksum";
 import { ICMP_ECHO_HEADER, ICMPV4_TYPES, ICMP_HEADER } from "../lib/header/icmp";
 import { IPV4_HEADER, PROTOCOLS, createIPV4Header } from "../lib/header/ip";
 import { DEVICE_PROGRAM_DAEMAN } from "../lib/device/program/daeman";
+import { ASCIICodes } from "../lib/terminal/shared";
 
 export const TestingComponent2: Component = () => {
+    let shellproc: any
     let terminal: Terminal;
 
     createEffect(() => {
         terminal.write(uint8_fromString("Hello wte"))
         newdevice.terminal_attach(terminal);
-        newdevice.process_start(DAEMON_SHELL, []);
+        shellproc = newdevice.process_start(DAEMON_SHELL, []);
     });
 
     let newdevice = new Device();
@@ -120,9 +122,17 @@ export const TestingComponent2: Component = () => {
             let string = new TextDecoder("utf-8").decode(d.buffer);
             console.log(string);
 
-            contact.send(contact, {buffer: uint8_fromString(string + " --reply")});
+            contact.send(contact, { buffer: uint8_fromString(string + " --reply") });
             contact.close(contact)
         }, {})
+    }
+
+    function fill_terminal_with_junk() {
+        let n = 55;
+        for (let i = 0; i < n; i++) {
+            terminal.write(uint8_fromString(`Hello, World ${i + 1}\n`), false);
+        }
+        newdevice.process_termwriteto(shellproc, new Uint8Array([10]))
     }
 
     return (
@@ -131,9 +141,18 @@ export const TestingComponent2: Component = () => {
             <button onclick={send_ping}>send packet over wire</button>
             <button onclick={send_udp}>send udp packet over wire</button>
             <button onclick={connect_tcp}>connect tcp</button>
+            <div>
+                <button onclick={fill_terminal_with_junk}>Junk</button>
+                <button onclick={() => terminal.write(new Uint8Array([
+                    ASCIICodes.Escape, ASCIICodes.OpenSquareBracket, ASCIICodes.One, ASCIICodes.A
+                ]))}>Up</button>
+                <button onclick={() => (terminal.write(new Uint8Array([
+                    ASCIICodes.Escape, ASCIICodes.OpenSquareBracket, ASCIICodes.One, ASCIICodes.B
+                ])))}>Down</button>
+            </div>
             <div ref={(el) => {
                 terminal = new Terminal(el)
             }}></div>
-        </div>
+        </div >
     )
 }

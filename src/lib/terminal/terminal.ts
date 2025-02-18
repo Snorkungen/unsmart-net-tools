@@ -12,14 +12,14 @@ export default class Terminal {
         this.container.tabIndex = 0;
 
         /**
-         * The following is a work-around because chromium based browswers be havin' issues 
+         * The following is a work-around because chromium based browswers be havin' issues
          */
         if (!navigator.userAgent.includes("Chrome")) {
             this.renderer = new TerminalRenderer(canvas);
         } else {
             this.renderer = new TerminalRenderer(canvas);
             /*
-                work-around for chromium based browsers that i was having issues with 
+                work-around for chromium based browsers that i was having issues with
             */
             setTimeout(() => {
                 this.renderer.draw();
@@ -109,7 +109,7 @@ export default class Terminal {
                         }
 
                         if (c >= ASCIICodes.A && c <= ASCIICodes.Underscore) {
-                            code = c - (ASCIICodes.A - 1) // 64 
+                            code = c - (ASCIICodes.A - 1) // 64
                         }
 
                         if (code == ASCIICodes.Space) {
@@ -139,6 +139,11 @@ export default class Terminal {
         this.container.addEventListener("blur", () => {
             console.log("focused")
             this.container.style.border = "none"; // in future change cursor style
+        })
+
+        this.container.addEventListener("wheel", (event) => {
+            event.preventDefault()
+            this.renderer.scrollWindow(event.deltaY > 0 ? 1 : -1)
         })
 
         // render to screen ?
@@ -267,21 +272,56 @@ export class TerminalRenderer {
         this.ctx.fillText(String.fromCharCode(byte), x * width + this.cell_xpad, y * height + (width / 5) + this.cell_ypad)
     }
 
+    private draw_cursor() {
+        let cy = this.cursor.y - this.yOffset, cx = this.cursor.x;
+        let cell = this.rows[this.cursor.y][this.cursor.x];
+        // draw current cursor
+        this.cell_draw_text(cell.byte, cx, cy, cell.bg, cell.fg)
+
+        // clear previous cursor
+        if (this.prevCursor.y == this.cursor.y && this.prevCursor.x == this.cursor.x) {
+            return
+        }
+        if ((this.prevCursor.y >= this.yOffset) && this.prevCursor.y < this.rows.length) {
+            cy = this.prevCursor.y - this.yOffset, cx = this.prevCursor.x;
+
+            // figure out what goes here
+            if (this.rows[this.prevCursor.y]) {
+                let cell = this.rows[this.prevCursor.y][this.prevCursor.x];
+                this.cell_draw_text(cell.byte, cx, cy, cell.fg, cell.bg);
+            };
+        }
+
+        this.prevCursor.x = this.cursor.x;
+        this.prevCursor.y = this.cursor.y;
+    }
+
     private cell_xpad = 0;
     private cell_ypad = 0;
 
     draw() {
-        for (let y = this.yOffset; y < this.rows.length; y++) {
-            for (let x = 0; x < this.rows[y].length; x++) {
-                let cell = this.rows[y][x];
-                this.cell_draw_text(cell.byte, x, y, cell.fg, cell.bg)
+        // clear canvas
+        this.ctx.fillStyle = this.color(this.COLOR_BG_DEFAULT);
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height)
+
+        // shift container rows
+        for (let j = 0; j < this.ROW_HEIGHT; j++) {
+            for (let i = 0; i < this.COLUMN_WIDTH; i++) {
+                let cellData = this.rows[j + this.yOffset][i];
+                let cy = j, cx = i;
+
+                this.cell_draw_text(cellData.byte, cx, cy, cellData.fg, cellData.bg)
             }
         }
 
-        // draw cursor
-        let cury = this.cursor.y - this.yOffset, curx = this.cursor.x;
-        let cell = this.rows[this.cursor.y][this.cursor.x];
-        this.cell_draw_text(cell.byte, curx, cury, cell.bg, cell.fg)
+        if (this.cursorInView()) {
+            this.draw_cursor()
+        }
+    }
+
+    scrollWindow(direction: number) {
+        this.yOffset = (Math.max(0, Math.min(this.yOffset + direction, this.rows.length - this.ROW_HEIGHT)))
+        this.draw();
     }
 
     constructor(canvas: HTMLCanvasElement) {
@@ -322,10 +362,15 @@ export class TerminalRenderer {
         y: 0
     }
 
+    private cursorInView(): boolean {
+        return this.cursor.y >= this.yOffset && this.cursor.y < this.yOffset + this.ROW_HEIGHT;
+    }
+
     private _eraseCell(x: number, y: number) {
+        this.handleScroll();
+
         this.cell_draw_background(x, y - this.yOffset, this.COLOR_BG)
 
-        this.handleScroll();
         if (y - this.yOffset < 0) return;
 
         if (this.rows[y] && this.rows[y][x]) {
@@ -334,6 +379,7 @@ export class TerminalRenderer {
             this.rows[y][x].byte = 0;
         }
     }
+
 
     // NOTE THIS FUNCTION BELOW NEEDS TO BE REWORKED DUE "SCROLLING"
     private handleEraseDisplay(p: number) {
@@ -385,6 +431,7 @@ export class TerminalRenderer {
         }
     }
     private handleEraseInLine(p: number) {
+        if (!this.cursorInView()) throw new Error("Erasing is not supported when cursor not in view")
         if (p == 0) {
             // clear from cursor to end
             for (let x = this.cursor.x; x < this.COLUMN_WIDTH; x++) {
@@ -404,6 +451,7 @@ export class TerminalRenderer {
             }
         }
     }
+
     private handleSelectGraphicRendition(n: number) {
         if (n == 0) {
             // reset all attributes
@@ -458,13 +506,12 @@ export class TerminalRenderer {
                 return -1; // error
             }
 
-            let finalByte = rawParams[rawParams.length - 1]; rawParams.pop();
+            let finalByte = rawParams.pop();
 
             switch (finalByte) {
                 case ASCIICodes.A: {
                     // handle Cursor up
                     let params = readParams(rawParams, 1, 1)
-
                     this.cursor.y = Math.max(
                         this.cursor.y - params[0],
                         0
@@ -676,38 +723,25 @@ export class TerminalRenderer {
         }
 
         this.handleScroll();
+        this.draw_cursor();
 
-        let cy = this.cursor.y - this.yOffset, cx = this.cursor.x;
-        let cursorbyte = this.rows[this.cursor.y][this.cursor.x].byte;
-        this.cell_draw_text(cursorbyte, cx, cy, this.COLOR_BG, this.COLOR_FG)
-
-        // clear previous cursor
-        if ((this.prevCursor.y >= this.yOffset)) {
-            cy = this.prevCursor.y - this.yOffset, cx = this.prevCursor.x;
-
-            // figure out what goes here
-            if (this.rows[this.prevCursor.y]) {
-                let cell = this.rows[this.prevCursor.y][this.prevCursor.x];
-                this.cell_draw_text(cell.byte, cx, cy, cell.fg, cell.bg);
-            };
-        }
-
-        // draw current cursor
-        this.prevCursor.x = this.cursor.x;
-        this.prevCursor.y = this.cursor.y;
-
-        // empty buffer 
+        // empty buffer
         this.buffer = new Uint8Array();
     }
 
-    /** This method automagically scrolls the view */
+    /** This method automagically scrolls the view \
+     * Ensures that the cursor is in view, and create new rows if needed
+     */
     private handleScroll() {
-        // scroll to new line if y is larger than container
-        if ((this.cursor.y - this.yOffset) >= this.ROW_HEIGHT) {
-            // scroll down
-            let diff = (this.cursor.y - this.yOffset + 1) - (this.ROW_HEIGHT);
-            // add extra rows to `this.rows`
-            for (let i = 0; i < diff; i++) {
+        // check if the cursor is in view
+        if (this.cursorInView()) return;
+
+        let diff = this.cursor.y - (this.yOffset + (this.ROW_HEIGHT - 1));
+        this.yOffset = Math.max(0, this.yOffset + diff);
+
+        // create new rows if required
+        if ((this.yOffset + this.ROW_HEIGHT) > this.rows.length) {
+            for (let i = 0; i < ((this.yOffset + this.ROW_HEIGHT + 1) - this.rows.length); i++) {
                 let row = new Array<TerminalRendererCell>(this.COLUMN_WIDTH);
                 for (let j = 0; j < row.length; j++) {
                     row[j] = { ...this.EMPTY_CELL }
@@ -716,30 +750,13 @@ export class TerminalRenderer {
                     row
                 )
             }
-            this.yOffset += (diff);
-        } else if (this.cursor.y < this.yOffset) {
-            this.yOffset -= (this.yOffset - this.cursor.y);
-
-            if (this.yOffset < 0) {
-                this.yOffset = 0;
-            }
-        } else {
-            return;
         }
 
-        this.ctx.fillStyle = this.color(this.COLOR_BG_DEFAULT);
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height)
-
-        // shift container rows
-        for (let j = 0; j < this.ROW_HEIGHT; j++) {
-            for (let i = 0; i < this.COLUMN_WIDTH; i++) {
-                let cellData = this.rows[j + this.yOffset][i];
-                let cy = j, cx = i;
-
-                this.cell_draw_text(cellData.byte, cx, cy, cellData.fg, cellData.bg)
-            }
+        if (this.cursor.y >= this.rows.length) {
+            throw new Error("cursor still not in view")
         }
 
+        this.draw();
     }
 
     private color(n: number) {
