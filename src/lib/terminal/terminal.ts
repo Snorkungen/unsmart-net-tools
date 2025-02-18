@@ -31,6 +31,11 @@ export default class Terminal {
             })
         }
 
+        this.container.addEventListener("mousedown", this.handle_mousedown.bind(this));
+        this.container.addEventListener("mousemove", this.handle_mousemove.bind(this));
+        this.container.addEventListener("mouseup", this.handle_mouseup.bind(this));
+        this.container.addEventListener("mouseleave", this.handle_mouseup.bind(this));
+
         this.container.addEventListener("click", (event) => {
             (event.currentTarget instanceof HTMLElement) && event.currentTarget.focus()
         })
@@ -197,7 +202,103 @@ export default class Terminal {
     flush() {
         this.renderer.render();
     }
+
+
+    private mousedepressed: boolean = false;
+    /** [y, xSTart, xEnd] */
+    private mouse_cell_selections: TerminalRendererHiglight[] = [];
+    private mouse_cell_selection_idx = -1;
+
+    // private methods dealing with the selection of text and stuff
+    private handle_mousedown(event: MouseEvent) {
+        this.renderer.highlight_clear();
+        this.mouse_cell_selections.length = 0;
+        this.mouse_cell_selection_idx = -1;
+
+        if (!!event.button) return;
+        this.mousedepressed = true;
+        let [x, y] = this.renderer.get_cell_by_mouseevent(event);
+
+        // create a new selection
+        let selection: TerminalRendererHiglight = [y, x, -1,];
+        this.mouse_cell_selection_idx = 0;
+        this.mouse_cell_selections.length = 1;
+        this.mouse_cell_selections[0] = selection;
+    }
+
+    private handle_mousemove(event: MouseEvent) {
+        if (!this.mousedepressed) return;
+        if (this.mouse_cell_selection_idx < 0) return;
+
+
+        let [x, y] = this.renderer.get_cell_by_mouseevent(event);
+
+        let [yPos, xStart, xEnd] = this.mouse_cell_selections[this.mouse_cell_selection_idx];
+
+        this.renderer.highlight_clear()
+
+        // TODO: reuse selections
+
+        // peek at the top selection
+        // if (this.mouse_cell_selections.length > 1) {
+        //     let last_selection = this.mouse_cell_selections[this.mouse_cell_selections.length - 1];
+
+        //     while (this.mouse_cell_selections.length > 1 && last_selection[0] > y) {
+        //         // remove selections until y + 1
+        //         this.mouse_cell_selections.pop();
+        //         last_selection = this.mouse_cell_selections[this.mouse_cell_selections.length - 1];
+        //     }
+
+        //     // set the last selections values
+        //     this.mouse_cell_selections[this.mouse_cell_selections.length - 1][1] = x;
+        //     this.mouse_cell_selections[this.mouse_cell_selections.length - 1][2] = this.renderer.COLUMN_WIDTH - 1;
+
+        //     // tell the renderer to highligt the current selection
+        //     for (let [yp, xs, xe] of this.mouse_cell_selections) {
+        //         this.renderer.highlight_in_row(yp, xs, xe);
+        //     }
+        //     return;
+        // }
+
+
+
+        this.mouse_cell_selections.length = 1;
+
+        // create a multiline selection
+        if (y < yPos) {
+            // set the xEnd to begining of the row
+            this.mouse_cell_selections[this.mouse_cell_selection_idx][2] = 0;
+            for (let i = yPos; i > y; i--) {
+                this.mouse_cell_selections.push([i, 0, this.renderer.COLUMN_WIDTH - 1])
+            }
+
+            this.mouse_cell_selections.push([y, x, this.renderer.COLUMN_WIDTH - 1])
+        } else if (y > yPos) {
+            // set the xEnd to begining of the row
+            this.mouse_cell_selections[this.mouse_cell_selection_idx][2] = this.renderer.COLUMN_WIDTH - 1;
+            for (let i = yPos; i < y; i++) {
+                this.mouse_cell_selections.push([i, 0, this.renderer.COLUMN_WIDTH - 1])
+            }
+
+            this.mouse_cell_selections.push([y, 0, x])
+        } else {
+            xEnd = x;
+            this.mouse_cell_selections[this.mouse_cell_selection_idx][2] = xEnd;
+        }
+
+        // tell the renderer to highligt the current selection
+        for (let [yp, xs, xe] of this.mouse_cell_selections) {
+            this.renderer.highlight_in_row(yp, xs, xe);
+        }
+    }
+
+    private handle_mouseup(event: MouseEvent) {
+        this.mousedepressed = false;
+        // do nothing
+    }
 }
+
+type TerminalRendererHiglight = [row: number, xStart: number, xEnd: number];
 
 type TerminalRendererCursor = {
     x: number;
@@ -761,5 +862,61 @@ export class TerminalRenderer {
 
     private color(n: number) {
         return this.COLORS[n % this.COLORS.length];
+    }
+
+
+    private higlights: TerminalRendererHiglight[] = [];
+    // clear all active highligts
+    highlight_clear() {
+        for (let higlight of this.higlights) {
+            if (higlight[0] < this.yOffset || higlight[0] >= (this.yOffset + this.ROW_HEIGHT)) continue;
+
+            let row = this.rows[higlight[0]];
+            for (let x = higlight[1]; x <= higlight[2]; x++) {
+                let cell = row[x];
+                this.cell_draw_text(cell.byte, x, higlight[0] - this.yOffset, cell.fg, cell.bg);
+            }
+
+            if (this.cursor.y == higlight[0]) {
+                this.draw_cursor()
+            }
+        }
+
+        this.higlights.length = 0;
+    }
+    highlight_in_row(y: number, xStart: number, xEnd: number) {
+        if (xEnd < xStart) {
+            let tmp = xStart;
+            xStart = xEnd;
+            xEnd = tmp;
+        }
+
+        if (y < this.yOffset || y >= (this.yOffset + this.ROW_HEIGHT)) {
+            return
+        };
+
+        // TODO: check if an existiing highligt exist to prevent unnecessary drawing
+
+        this.higlights.push([y, xStart, xEnd]);
+
+        let row = this.rows[y];
+        for (let x = xStart; x <= xEnd; x++) {
+            this.cell_draw_text(row[x].byte, x, y - this.yOffset, this.COLOR_BG, this.COLOR_FG);
+        }
+    }
+
+    get_cell_by_mouseevent(event: MouseEvent): [x: number, y: number] {
+        let [cw, ch] = this.cell_dimensions();
+        let rect = (event.target as HTMLElement).getBoundingClientRect();
+        let x = event.clientX - rect.left, y = event.clientY - rect.top;
+        let max_width = cw * this.COLUMN_WIDTH,
+            max_height = ch * this.ROW_HEIGHT;
+
+        if (x > max_width || y > max_height) {
+            return [this.COLUMN_WIDTH - 1, this.yOffset + this.ROW_HEIGHT - 1];
+        }
+
+        x = Math.floor(x / cw), y = this.yOffset + Math.floor(y / ch);
+        return [x, y]
     }
 }
