@@ -1,4 +1,4 @@
-import { uint8_concat, uint8_mutateSet, uint8_set } from "../binary/uint8-array";
+import { uint8_concat, uint8_fromString, uint8_mutateSet, uint8_set } from "../binary/uint8-array";
 import { ASCIICodes, CSI, readParams } from "./shared";
 export default class Terminal {
     private renderer: TerminalRenderer;
@@ -123,6 +123,20 @@ export default class Terminal {
                     }
 
                     buffer = new Uint8Array([code])
+                }
+            }
+
+            // Q: should this behaviour be toggled ?
+            if (event.key == "Insert" && event.shiftKey) {
+                // paste
+                let r = this.read;
+                navigator.clipboard.readText().then((value) => {
+                    r(uint8_fromString(value))
+                });
+            } else if (event.key == "Insert" && event.ctrlKey) {
+                let text = this.renderer.get_text_by_cell_selections(this.mouse_cell_selections);
+                if (text) {
+                    navigator.clipboard.writeText(text);
                 }
             }
 
@@ -263,7 +277,7 @@ export default class Terminal {
         }
 
         let [yPos, xStart, xEnd] = this.mouse_cell_selections[this.mouse_cell_selection_idx];
-        
+
         // TODO: reuse selections
         // peek at the top selection
         // if (this.mouse_cell_selections.length > 1) {
