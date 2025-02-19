@@ -185,7 +185,7 @@ export default class Terminal {
 
         let [yPos, , xEnd] = this.mouse_cell_selections[this.mouse_cell_selection_idx];
 
-        // this.renderer.highlight_clear()
+        this.renderer.highlight_clear()
         this.mouse_cell_selections.length = 1;
 
         // create a multiline selection
@@ -371,8 +371,8 @@ export class TerminalRenderer {
     COLOR_BG = this.COLOR_BG_DEFAULT;
     COLOR_FG_DEFAULT = 7 % this.COLORS.length;
     COLOR_FG = this.COLOR_FG_DEFAULT;
-
-    EMPTY_CHAR = "&nbsp;"
+    FONT = "18px monospace";
+    TEXT_BASE_LINE: CanvasTextBaseline = "top";
     EMPTY_CELL = {
         byte: 0,
         fg: this.COLOR_FG,
@@ -391,8 +391,8 @@ export class TerminalRenderer {
         if (this.cell_dimensions_cached) {
             return this.cell_dimensions_cached;
         }
-        this.ctx.textBaseline = "top"
-        this.ctx.font = "18px monospace";
+        this.ctx.textBaseline = this.TEXT_BASE_LINE
+        this.ctx.font = this.FONT;
         let mt = this.ctx.measureText("_");
         this.cell_dimensions_cached = [Math.ceil(mt.width) || 11, Math.ceil(mt.fontBoundingBoxDescent + mt.fontBoundingBoxAscent) || 23];
         return this.cell_dimensions_cached;
@@ -401,16 +401,73 @@ export class TerminalRenderer {
     private cell_draw_background(x: number, y: number, color: number) {
         let [width, height] = this.cell_dimensions();
         this.ctx.fillStyle = this.color(color);
-        this.ctx.fillRect(x * width + this.cell_xpad, y * height + this.cell_ypad, width, height)
+        this.ctx.fillRect(x * width, y * height, width, height)
     }
 
     private cell_draw_text(byte: number, x: number, y: number, fg: number = this.COLOR_FG, bg: number = this.COLOR_BG) {
         this.cell_draw_background(x, y, bg);
         let [width, height] = this.cell_dimensions();
         if (byte <= 0) return; this.ctx.fillStyle = this.color(fg)
-        this.ctx.textBaseline = "top"
-        this.ctx.font = "18px monospace";
-        this.ctx.fillText(String.fromCharCode(byte), x * width + this.cell_xpad, y * height + (width / 5) + this.cell_ypad)
+        this.ctx.textBaseline = this.TEXT_BASE_LINE
+        this.ctx.font = this.FONT;
+        this.ctx.fillText(String.fromCharCode(byte), x * width, y * height + (width / 5))
+    }
+
+    private _actually_draw_cells(y: number, start: number, end: number, fg: number, bg: number, type: number, buffer: number[],) {
+        let [width, height] = this.cell_dimensions();
+
+        // draw blank lines
+        this.ctx.fillStyle = this.color(bg);
+        this.ctx.fillRect(start * width, (y - this.yOffset) * height, width * (end - start + 1), height)
+
+        if (type > 0 && buffer.length) { // TODO: fillText in one go, there are some text spacing issues
+            this.ctx.textBaseline = this.TEXT_BASE_LINE
+            this.ctx.font = this.FONT;
+            // this.ctx.fillStyle = this.color(fg);
+            // this.ctx.fillText(String.fromCharCode(...buffer), start * width, (y - this.yOffset) * height + (width / 5))
+
+            for (let j = 0; j < buffer.length; j++) {
+                if (buffer[j] <= 0) continue;
+                this.ctx.fillStyle = this.color(fg)
+                this.ctx.textBaseline = this.TEXT_BASE_LINE
+                this.ctx.font = this.FONT;
+                this.ctx.fillText(String.fromCharCode(buffer[j]), (start + j) * width, (y - this.yOffset) * height + (width / 5))
+            }
+        }
+
+    }
+
+    /** Attempt to draw multiple cells at once */
+    private draw_cells(y: number, start: number, end: number): void;
+    private draw_cells(y: number, start: number, end: number, fg: number, bg: number): void;
+    private draw_cells(y: number, start: number, end: number, fg: number = -1, bg: number = -1) {
+        let colors_given = fg >= 0 && bg >= 0;
+        let row = this.rows[y];
+
+        let type = 0;
+        let buffer: number[] = [];
+        for (let i = start; i < Math.min(row.length, end); i++) {
+            let cell = row[i];
+
+            if ((!colors_given && (fg != cell.fg || bg != cell.bg)) || (type == 0 && cell.byte > 0) || (type > 0 && cell.byte == 0)) {
+                this._actually_draw_cells(y, start, i, fg, bg, type, buffer);
+
+                start = i;
+                if (!colors_given) {
+                    fg = cell.fg;
+                    bg = cell.bg;
+                }
+                type = cell.byte;
+                buffer.length = 0;
+            }
+
+            // record information
+            if (type > 0) {
+                buffer.push(cell.byte)
+            }
+        }
+
+        this._actually_draw_cells(y, start, end, fg, bg, type, buffer);
     }
 
     private draw_cursor() {
@@ -437,9 +494,6 @@ export class TerminalRenderer {
         this.prevCursor.y = this.cursor.y;
     }
 
-    private cell_xpad = 0;
-    private cell_ypad = 0;
-
     draw() {
         // clear canvas
         this.ctx.fillStyle = this.color(this.COLOR_BG_DEFAULT);
@@ -447,12 +501,7 @@ export class TerminalRenderer {
 
         // shift container rows
         for (let j = 0; j < this.ROW_HEIGHT; j++) {
-            for (let i = 0; i < this.COLUMN_WIDTH; i++) {
-                let cellData = this.rows[j + this.yOffset][i];
-                let cy = j, cx = i;
-
-                this.cell_draw_text(cellData.byte, cx, cy, cellData.fg, cellData.bg)
-            }
+            this.draw_cells((j + this.yOffset), 0, this.rows[j + this.yOffset].length - 1);
         }
 
         if (this.cursorInView()) {
@@ -474,10 +523,10 @@ export class TerminalRenderer {
         this.ctx = this.canvas.getContext("2d")!;
 
         let [width, height] = this.cell_dimensions();
-        this.canvas.width = this.COLUMN_WIDTH * width + this.cell_xpad * 2;
-        this.canvas.height = this.ROW_HEIGHT * height + this.cell_ypad * 2;
+        this.canvas.width = this.COLUMN_WIDTH * width;
+        this.canvas.height = this.ROW_HEIGHT * height;
 
-        this.ctx.fillStyle = "black"
+        this.ctx.fillStyle = this.color(this.COLOR_BG_DEFAULT);
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         // init rows
@@ -951,10 +1000,7 @@ export class TerminalRenderer {
         for (let higlight of this.higlights) {
             if (higlight[0] < this.yOffset || higlight[0] >= (this.yOffset + this.ROW_HEIGHT)) continue;
 
-            let row = this.rows[higlight[0]];
-            for (let x = higlight[1]; x <= higlight[2]; x++) {
-                this.cell_draw_text(row[x].byte, x, higlight[0] - this.yOffset, this.COLOR_BG, this.COLOR_FG);
-            }
+            this.draw_cells(higlight[0], higlight[1], higlight[2], this.COLOR_BG, this.COLOR_FG);
 
             if (this.cursor.y == higlight[0]) {
                 this.draw_cursor()
@@ -964,8 +1010,8 @@ export class TerminalRenderer {
 
     get_cell_by_mouseevent(event: MouseEvent): [x: number, y: number, rx: number, ry: number] {
         let [cw, ch] = this.cell_dimensions();
-        let rect = (event.target as HTMLElement).getBoundingClientRect();
-        let rx = event.clientX - rect.left, ry = event.clientY - rect.top;
+        let rect = (this.canvas as HTMLElement).getBoundingClientRect();
+        let rx = Math.max(0, event.clientX - rect.left), ry = Math.max(0, event.clientY - rect.top);
         let max_width = cw * this.COLUMN_WIDTH,
             max_height = ch * this.ROW_HEIGHT;
 
