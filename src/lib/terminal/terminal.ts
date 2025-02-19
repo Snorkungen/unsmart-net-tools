@@ -211,7 +211,7 @@ export default class Terminal {
     private mouse_cell_selections: TerminalRendererHiglight[] = [];
     private mouse_cell_selection_idx = -1;
 
-    private mouse_clear_selections () {
+    private mouse_clear_selections() {
         this.mouse_cell_selection_idx = -1;
         this.mouse_cell_selections.length = 0;
         this.renderer.highlight_clear();
@@ -232,38 +232,54 @@ export default class Terminal {
         this.mouse_cell_selections[0] = selection;
     }
 
+    /** reference to a handle that */
+    private mousemove_scroll_zone = 4;
+    private mousemove_timeout_time = 500; // 500ms
+    private mousemove_timeout = -1;
     private handle_mousemove(event: MouseEvent) {
+        window.clearTimeout(this.mousemove_timeout);
+        this.mousemove_timeout = -1;
+
         if (!this.mousedepressed) return;
         if (this.mouse_cell_selection_idx < 0) return;
 
-        let [x, y] = this.renderer.get_cell_by_mouseevent(event);
+        let [x, y, , cy] = this.renderer.get_cell_by_mouseevent(event);
         let [yPos, xStart, xEnd] = this.mouse_cell_selections[this.mouse_cell_selection_idx];
-        
+
+        // detect a scroll intention
+        let last_selection = this.mouse_cell_selections[this.mouse_cell_selections.length - 1];
+        // TODO: setup timer to keep scrolling even if mouse does not move
+        if (last_selection[0] > 0 && cy <= this.mousemove_scroll_zone) { // scroll up
+            this.renderer.scrollWindow(-1);
+        } else if (cy >= (this.renderer.canvas.height) - this.mousemove_scroll_zone) { // scroll down
+            this.renderer.scrollWindow(1);
+        }
+
         // TODO: reuse selections
-        
+
         // peek at the top selection
         // if (this.mouse_cell_selections.length > 1) {
-            //     let last_selection = this.mouse_cell_selections[this.mouse_cell_selections.length - 1];
-            
+        //     let last_selection = this.mouse_cell_selections[this.mouse_cell_selections.length - 1];
+
         //     while (this.mouse_cell_selections.length > 1 && last_selection[0] > y) {
         //         // remove selections until y + 1
         //         this.mouse_cell_selections.pop();
         //         last_selection = this.mouse_cell_selections[this.mouse_cell_selections.length - 1];
         //     }
-        
+
         //     // set the last selections values
         //     this.mouse_cell_selections[this.mouse_cell_selections.length - 1][1] = x;
         //     this.mouse_cell_selections[this.mouse_cell_selections.length - 1][2] = this.renderer.COLUMN_WIDTH - 1;
-        
+
         //     // tell the renderer to highligt the current selection
         //     for (let [yp, xs, xe] of this.mouse_cell_selections) {
         //         this.renderer.highlight_in_row(yp, xs, xe);
         //     }
         //     return;
         // }
-        
-        
-        
+
+
+
         this.renderer.highlight_clear()
         this.mouse_cell_selections.length = 1;
 
@@ -298,6 +314,8 @@ export default class Terminal {
     private handle_mouseup(event: MouseEvent) {
         this.mousedepressed = false;
         // do nothing
+        window.clearTimeout(this.mousemove_timeout);
+        this.mousemove_timeout = -1;
 
         if (this.mouse_cell_selection_idx >= 0 && this.mouse_cell_selections[this.mouse_cell_selection_idx][2] < 0) {
             this.mouse_clear_selections()
@@ -426,6 +444,8 @@ export class TerminalRenderer {
         if (this.cursorInView()) {
             this.draw_cursor()
         }
+
+        this.higlight_draw();
     }
 
     scrollWindow(direction: number) {
@@ -913,19 +933,34 @@ export class TerminalRenderer {
         }
     }
 
-    get_cell_by_mouseevent(event: MouseEvent): [x: number, y: number] {
+    private higlight_draw() {
+        for (let higlight of this.higlights) {
+            if (higlight[0] < this.yOffset || higlight[0] >= (this.yOffset + this.ROW_HEIGHT)) continue;
+
+            let row = this.rows[higlight[0]];
+            for (let x = higlight[1]; x <= higlight[2]; x++) {
+                this.cell_draw_text(row[x].byte, x, higlight[0] - this.yOffset, this.COLOR_BG, this.COLOR_FG);
+            }
+
+            if (this.cursor.y == higlight[0]) {
+                this.draw_cursor()
+            }
+        }
+    }
+
+    get_cell_by_mouseevent(event: MouseEvent): [x: number, y: number, rx: number, ry: number] {
         let [cw, ch] = this.cell_dimensions();
         let rect = (event.target as HTMLElement).getBoundingClientRect();
-        let x = event.clientX - rect.left, y = event.clientY - rect.top;
+        let rx = event.clientX - rect.left, ry = event.clientY - rect.top;
         let max_width = cw * this.COLUMN_WIDTH,
             max_height = ch * this.ROW_HEIGHT;
 
-        if (x > max_width || y > max_height) {
-            return [this.COLUMN_WIDTH - 1, this.yOffset + this.ROW_HEIGHT - 1];
+        if (rx > max_width || ry > max_height) {
+            return [this.COLUMN_WIDTH - 1, this.yOffset + this.ROW_HEIGHT - 1, rx, ry];
         }
 
-        x = Math.floor(x / cw), y = this.yOffset + Math.floor(y / ch);
-        return [x, y]
+        let x = Math.floor(rx / cw), y = this.yOffset + Math.floor(ry / ch);
+        return [x, y, rx, ry]
     }
 
     get_text_by_cell_selections(selections: TerminalRendererHiglight[]): string {
