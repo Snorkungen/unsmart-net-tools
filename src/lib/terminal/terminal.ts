@@ -37,116 +37,7 @@ export default class Terminal {
         this.container.addEventListener("mouseleave", this.handle_mouseup.bind(this));
         this.container.addEventListener("click", this.handle_click.bind(this));
 
-        this.container.addEventListener("keydown", (event) => {
-            if (!this.read) {
-                return; // no reader attached
-            }
-
-            // What i want to do is to support 7-bit ASCII
-
-            let key = event.key;
-            let buffer: Uint8Array | undefined;
-
-            let CSI_NAVIGATION = (id: ASCIICodes) => (event.ctrlKey && event.shiftKey) ? (
-                CSI(ASCIICodes.One, ASCIICodes.Semicolon, ASCIICodes.Six, id)
-            ) : event.shiftKey ? (
-                CSI(ASCIICodes.One, ASCIICodes.Semicolon, ASCIICodes.Two, id)
-            ) : event.ctrlKey ? (
-                CSI(ASCIICodes.One, ASCIICodes.Semicolon, ASCIICodes.Five, id)
-            ) : CSI(id)
-
-            let CSI_TILDE = (p: ASCIICodes) => (event.ctrlKey && event.shiftKey) ? (
-                CSI(p, ASCIICodes.Semicolon, ASCIICodes.Six, ASCIICodes.Tilde)
-            ) : event.shiftKey ? (
-                CSI(p, ASCIICodes.Semicolon, ASCIICodes.Two, ASCIICodes.Tilde)
-            ) : event.ctrlKey ? (
-                CSI(p, ASCIICodes.Semicolon, ASCIICodes.Five, ASCIICodes.Tilde)
-            ) : CSI(ASCIICodes.Tilde)
-
-            // not the best way but i don't know if the key code from the browser API is reliable
-            // Source : <https://developer.mozilla.org/en-US/docs/Web/API/UI_Events/Keyboard_event_key_values>
-            // Source 2 : <https://www.man7.org/linux/man-pages/man4/console_codes.4.html>
-            switch (key) {
-                // White space
-                case "Enter": buffer = new Uint8Array([ASCIICodes.CarriageReturn]); break;
-                case "Tab": buffer = event.shiftKey ? (
-                    CSI(ASCIICodes.Z)
-                ) : new Uint8Array([ASCIICodes.Tab]); break;
-
-                // Navigation
-                case "ArrowUp": buffer = CSI_NAVIGATION(ASCIICodes.A); break;
-                case "ArrowDown": buffer = CSI_NAVIGATION(ASCIICodes.B); break;
-                case "ArrowRight": buffer = CSI_NAVIGATION(ASCIICodes.C); break;
-                case "ArrowLeft": buffer = CSI_NAVIGATION(ASCIICodes.D); break;
-                case "End": buffer = CSI_NAVIGATION(ASCIICodes.F); break;
-                case "Home": buffer = CSI_NAVIGATION(ASCIICodes.H); break;
-
-                case "PageUp": buffer = CSI_TILDE(ASCIICodes.Five); break;
-                case "PageDown": buffer = CSI_TILDE(ASCIICodes.Six); break;
-
-                case "Insert": buffer = CSI_TILDE(ASCIICodes.Two); break;
-                case "Delete": buffer = CSI_TILDE(ASCIICodes.Three); break;
-
-                case "Backspace": buffer = event.ctrlKey ? (
-                    new Uint8Array([ASCIICodes.BackSpace])
-                ) : new Uint8Array([ASCIICodes.Delete]); break;
-
-                case "Escape": buffer = new Uint8Array([ASCIICodes.Escape]); break;
-
-                default: {
-                    if (key.length > 1) {
-                        return;
-                    }
-
-                    let code = key.charCodeAt(0);
-                    if (code > 0x7f) {
-                        return;
-                    }
-
-                    if (event.ctrlKey) {
-                        let c = code;
-
-                        if (c >= ASCIICodes.a && c <= ASCIICodes.z) {
-                            c -= 32;
-                        }
-
-                        if (c >= ASCIICodes.A && c <= ASCIICodes.Underscore) {
-                            code = c - (ASCIICodes.A - 1) // 64
-                        }
-
-                        if (code == ASCIICodes.Space) {
-                            code = 0;
-                        }
-                    }
-
-                    buffer = new Uint8Array([code])
-                }
-            }
-
-            // Q: should this behaviour be toggled ?
-            if (event.key == "Insert" && event.shiftKey) {
-                // paste
-                let r = this.read;
-                navigator.clipboard.readText().then((value) => {
-                    r(uint8_fromString(value))
-                }).catch(() => null);
-            } else if (event.key == "Insert" && event.ctrlKey) {
-                let text = this.renderer.get_text_by_cell_selections(this.mouse_cell_selections);
-                if (text) {
-                    navigator.clipboard.writeText(text).catch(() => null);
-                }
-            }
-
-            if (buffer == undefined) {
-                return;
-            }
-
-            this.read(buffer);
-
-            // PREVENT Something unexpected
-            event.preventDefault();
-            event.stopPropagation()
-        })
+        this.container.addEventListener("keydown", this.handle_keydown.bind(this))
 
         this.container.addEventListener("focus", () => {
             console.log("focused")
@@ -292,38 +183,13 @@ export default class Terminal {
             }
         }
 
-        let [yPos, xStart, xEnd] = this.mouse_cell_selections[this.mouse_cell_selection_idx];
+        let [yPos, , xEnd] = this.mouse_cell_selections[this.mouse_cell_selection_idx];
 
-        // TODO: reuse selections
-        // peek at the top selection
-        // if (this.mouse_cell_selections.length > 1) {
-        //     let last_selection = this.mouse_cell_selections[this.mouse_cell_selections.length - 1];
-
-        //     while (this.mouse_cell_selections.length > 1 && last_selection[0] > y) {
-        //         // remove selections until y + 1
-        //         this.mouse_cell_selections.pop();
-        //         last_selection = this.mouse_cell_selections[this.mouse_cell_selections.length - 1];
-        //     }
-
-        //     // set the last selections values
-        //     this.mouse_cell_selections[this.mouse_cell_selections.length - 1][1] = x;
-        //     this.mouse_cell_selections[this.mouse_cell_selections.length - 1][2] = this.renderer.COLUMN_WIDTH - 1;
-
-        //     // tell the renderer to highligt the current selection
-        //     for (let [yp, xs, xe] of this.mouse_cell_selections) {
-        //         this.renderer.highlight_in_row(yp, xs, xe);
-        //     }
-        //     return;
-        // }
-
-
-
-        this.renderer.highlight_clear()
+        // this.renderer.highlight_clear()
         this.mouse_cell_selections.length = 1;
 
         // create a multiline selection
         if (y < yPos) {
-            // set the xEnd to begining of the row
             this.mouse_cell_selections[this.mouse_cell_selection_idx][2] = 0;
             for (let i = yPos - 1; i > y; i--) {
                 this.mouse_cell_selections.push([i, 0, this.renderer.COLUMN_WIDTH - 1])
@@ -331,7 +197,6 @@ export default class Terminal {
 
             this.mouse_cell_selections.push([y, x, this.renderer.COLUMN_WIDTH - 1])
         } else if (y > yPos) {
-            // set the xEnd to begining of the row
             this.mouse_cell_selections[this.mouse_cell_selection_idx][2] = this.renderer.COLUMN_WIDTH - 1;
             for (let i = yPos + 1; i < y; i++) {
                 this.mouse_cell_selections.push([i, 0, this.renderer.COLUMN_WIDTH - 1])
@@ -349,7 +214,7 @@ export default class Terminal {
         }
     }
 
-    private handle_mouseup(event: MouseEvent) {
+    private handle_mouseup(_: MouseEvent) {
         this.mousedepressed = false;
 
         window.clearInterval(this.mousemove_interval);
@@ -359,6 +224,117 @@ export default class Terminal {
             this.mouse_clear_selections()
             return; // mouse never moved
         }
+    }
+
+    private handle_keydown(event: KeyboardEvent) {
+        if (!this.read) {
+            return; // no reader attached
+        }
+
+        // What i want to do is to support 7-bit ASCII
+
+        let key = event.key;
+        let buffer: Uint8Array | undefined;
+
+        let CSI_NAVIGATION = (id: ASCIICodes) => (event.ctrlKey && event.shiftKey) ? (
+            CSI(ASCIICodes.One, ASCIICodes.Semicolon, ASCIICodes.Six, id)
+        ) : event.shiftKey ? (
+            CSI(ASCIICodes.One, ASCIICodes.Semicolon, ASCIICodes.Two, id)
+        ) : event.ctrlKey ? (
+            CSI(ASCIICodes.One, ASCIICodes.Semicolon, ASCIICodes.Five, id)
+        ) : CSI(id)
+
+        let CSI_TILDE = (p: ASCIICodes) => (event.ctrlKey && event.shiftKey) ? (
+            CSI(p, ASCIICodes.Semicolon, ASCIICodes.Six, ASCIICodes.Tilde)
+        ) : event.shiftKey ? (
+            CSI(p, ASCIICodes.Semicolon, ASCIICodes.Two, ASCIICodes.Tilde)
+        ) : event.ctrlKey ? (
+            CSI(p, ASCIICodes.Semicolon, ASCIICodes.Five, ASCIICodes.Tilde)
+        ) : CSI(ASCIICodes.Tilde)
+
+        // not the best way but i don't know if the key code from the browser API is reliable
+        // Source : <https://developer.mozilla.org/en-US/docs/Web/API/UI_Events/Keyboard_event_key_values>
+        // Source 2 : <https://www.man7.org/linux/man-pages/man4/console_codes.4.html>
+        switch (key) {
+            // White space
+            case "Enter": buffer = new Uint8Array([ASCIICodes.CarriageReturn]); break;
+            case "Tab": buffer = event.shiftKey ? (
+                CSI(ASCIICodes.Z)
+            ) : new Uint8Array([ASCIICodes.Tab]); break;
+
+            // Navigation
+            case "ArrowUp": buffer = CSI_NAVIGATION(ASCIICodes.A); break;
+            case "ArrowDown": buffer = CSI_NAVIGATION(ASCIICodes.B); break;
+            case "ArrowRight": buffer = CSI_NAVIGATION(ASCIICodes.C); break;
+            case "ArrowLeft": buffer = CSI_NAVIGATION(ASCIICodes.D); break;
+            case "End": buffer = CSI_NAVIGATION(ASCIICodes.F); break;
+            case "Home": buffer = CSI_NAVIGATION(ASCIICodes.H); break;
+
+            case "PageUp": buffer = CSI_TILDE(ASCIICodes.Five); break;
+            case "PageDown": buffer = CSI_TILDE(ASCIICodes.Six); break;
+
+            case "Insert": buffer = CSI_TILDE(ASCIICodes.Two); break;
+            case "Delete": buffer = CSI_TILDE(ASCIICodes.Three); break;
+
+            case "Backspace": buffer = event.ctrlKey ? (
+                new Uint8Array([ASCIICodes.BackSpace])
+            ) : new Uint8Array([ASCIICodes.Delete]); break;
+
+            case "Escape": buffer = new Uint8Array([ASCIICodes.Escape]); break;
+
+            default: {
+                if (key.length > 1) {
+                    return;
+                }
+
+                let code = key.charCodeAt(0);
+                if (code > 0x7f) {
+                    return;
+                }
+
+                if (event.ctrlKey) {
+                    let c = code;
+
+                    if (c >= ASCIICodes.a && c <= ASCIICodes.z) {
+                        c -= 32;
+                    }
+
+                    if (c >= ASCIICodes.A && c <= ASCIICodes.Underscore) {
+                        code = c - (ASCIICodes.A - 1) // 64
+                    }
+
+                    if (code == ASCIICodes.Space) {
+                        code = 0;
+                    }
+                }
+
+                buffer = new Uint8Array([code])
+            }
+        }
+
+        // Q: should this behaviour be toggled ?
+        if (event.key == "Insert" && event.shiftKey) {
+            // paste
+            let r = this.read;
+            navigator.clipboard.readText().then((value) => {
+                r(uint8_fromString(value))
+            }).catch(() => null);
+        } else if (event.key == "Insert" && event.ctrlKey) {
+            let text = this.renderer.get_text_by_cell_selections(this.mouse_cell_selections);
+            if (text) {
+                navigator.clipboard.writeText(text).catch(() => null);
+            }
+        }
+
+        if (buffer == undefined) {
+            return;
+        }
+
+        this.read(buffer);
+
+        // PREVENT Something unexpected
+        event.preventDefault();
+        event.stopPropagation()
     }
 }
 
@@ -549,8 +525,6 @@ export class TerminalRenderer {
         }
     }
 
-
-    // NOTE THIS FUNCTION BELOW NEEDS TO BE REWORKED DUE "SCROLLING"
     private handleEraseDisplay(p: number) {
         const clear_from_cursor_to_end = () => {
             // clear from cursor to end of screen
@@ -961,7 +935,6 @@ export class TerminalRenderer {
             xEnd = tmp;
         }
 
-        // TODO: check if an existiing highligt exist to prevent unnecessary drawing
         this.higlights.push([y, xStart, xEnd]);
 
         if (y < this.yOffset || y >= (this.yOffset + this.ROW_HEIGHT)) {
@@ -1004,7 +977,6 @@ export class TerminalRenderer {
         return [x, y, rx, ry]
     }
 
-    /** */
     get_cells_in_row(x: number, y: number): TerminalRendererHiglight {
         let start = x, end = x;
         // find the start of the thing
