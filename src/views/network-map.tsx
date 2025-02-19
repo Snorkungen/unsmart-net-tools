@@ -15,7 +15,7 @@ import { DEVICE_PROGRAM_ROUTEINFO } from "../lib/device/program/routeinfo";
 import { NMDevice, NetworkMap } from "../components/network-map";
 
 
-const INTERFACE_ANIM_DELAY = 900;
+const INTERFACE_ANIM_DELAY = 550;
 
 function init_programs(device: Device) {
     device.process_start(DAEMON_ECHO_REPLIER);
@@ -39,7 +39,7 @@ let networkRouter = new NetworkSwitch(); networkRouter.name = "R1"
 
 networkRouter.process_start(DAEMON_ROUTING); // start routing daemon
 
-let rtr_iface = networkRouter.interface_add(new EthernetInterface(networkRouter)); rtr_iface.vlan = { vids: [10, 20], "type": "trunk" };
+let rtr_iface = networkRouter.interface_add(new EthernetInterface(networkRouter)); rtr_iface.vlan_set("trunk", 1, 10, 20)
 let rtr_vlanif10 = networkRouter.interface_add(new VlanInterface(networkRouter, 10));
 let rtr_vlanif20 = networkRouter.interface_add(new VlanInterface(networkRouter, 20));
 
@@ -167,7 +167,7 @@ function add_device_to_nmap(nmap: NetworkMap, ndev: NMDevice) {
 
     ndev.device.interfaces.forEach(f => {
         if (f instanceof EthernetInterface) {
-            f.receive_delay = 600
+            f.receive_delay = INTERFACE_ANIM_DELAY
         }
     })
 

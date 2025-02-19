@@ -30,8 +30,8 @@ const OSINTERFACER = {
     transactions: new Map<number, [opcode: number, iface: OSInterface]>(),
 
 
-    _pending_messages: <ArrayBufferLike[]>[],
-    send(_: ArrayBufferLike) {/* stub do nothing ... logic defined elsewhere ... */ },
+    _pending_messages: <Uint8Array[]>[],
+    send(_: Uint8Array) {/* stub do nothing ... logic defined elsewhere ... */ },
     connect(url: string, auto_connect: boolean = true) {
         this.url = url;
 
@@ -39,7 +39,7 @@ const OSINTERFACER = {
         if (auto_connect != true) {
             /* define logic for lazy send which checks am i connected ... connect to client for real ... otherwise do nothing */
 
-            this.send = ((data: ArrayBufferLike) => {
+            this.send = ((data: Uint8Array) => {
                 this._pending_messages.push(data)
                 if (!this.websocket && this.url == url) {
                     this.connect(this.url, true); /* auto_connect */
@@ -184,6 +184,7 @@ export class OSInterface extends BaseInterface {
             0xfffe,
         )
 
+        this.virtual = true;
         this.header = null;
         this.up = false;
     }

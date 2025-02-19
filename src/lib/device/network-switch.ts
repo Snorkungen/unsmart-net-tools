@@ -75,7 +75,7 @@ export class NetworkSwitch extends Device {
     }
 
     port_create<F extends BaseInterface>(iface: F): DeviceResult<undefined, F> {
-        if (!(iface instanceof EthernetInterface)) { /* port must be an EthernetInterface */
+        if (iface.virtual || iface.header != ETHERNET_HEADER) {
             return { success: false, message: "unsupported interface type", error: undefined };
         }
 
@@ -132,7 +132,7 @@ const NETWORK_SWITCH_BRIDGING_DAEMON: Program = {
         function flood(port_no: number, etherheader: typeof ETHERNET_HEADER) {
             for (let port of Object.values(data.ports)) {
                 if (port.port_no == port_no) continue;
-   
+
                 forward(port.port_no, etherheader);
             }
         }

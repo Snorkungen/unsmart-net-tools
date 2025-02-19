@@ -31,6 +31,8 @@ export class BaseInterface {
 
     /** hw header, a header that the interface uses */
     header: null | Struct<any> = null;
+    /** flag that denotes if the interface is virtual, i.e. some construct that the device uses */
+    virtual: boolean = true;
 
     constructor(
         device: Device,
@@ -70,6 +72,7 @@ export class EthernetInterface extends BaseInterface {
     private target: EthernetInterface | undefined;
     macAddress: MACAddress;
     header = ETHERNET_HEADER;
+    virtual = false;
 
     constructor(device: Device, macAddress: MACAddress = createMacAddress()) {
         super(device, "eth",
@@ -284,6 +287,8 @@ export class LoopbackInterface extends BaseInterface {
             device.interfaces.reduce((s, { name }) => s + ((name == "lo") as unknown as number), 0),
             0xfffe
         )
+
+        this.virtual = true;
     }
 
     output(data: NetworkData, destination: BaseAddress, route?: DeviceRoute): DeviceResult<"UDUMB"> {
@@ -320,6 +325,7 @@ export class VlanInterface extends BaseInterface {
 
         this.header = ETHERNET_HEADER;
         this.up = true;
+        this.virtual = true;
     }
 
     private macaddresses = new Map<string, BaseInterface>()
