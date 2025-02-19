@@ -126,8 +126,6 @@ export default class Terminal {
                 }
             }
 
-            // TODO: Check for shift insert and ctrl insert keypresses to copy and paste ...
-
             if (buffer == undefined) {
                 return;
             }
@@ -226,37 +224,47 @@ export default class Terminal {
         let [x, y] = this.renderer.get_cell_by_mouseevent(event);
 
         // create a new selection
-        let selection: TerminalRendererHiglight = [y, x, -1,];
+        let selection: TerminalRendererHiglight = [y, x, -1];
         this.mouse_cell_selection_idx = 0;
         this.mouse_cell_selections.length = 1;
         this.mouse_cell_selections[0] = selection;
     }
 
-    /** reference to a handle that */
     private mousemove_scroll_zone = 4;
-    private mousemove_timeout_time = 500; // 500ms
-    private mousemove_timeout = -1;
-    private handle_mousemove(event: MouseEvent) {
-        window.clearTimeout(this.mousemove_timeout);
-        this.mousemove_timeout = -1;
-
+    private mousemove_interval_time = 233;
+    private mousemove_interval = 0;
+    private handle_mousemove(event: MouseEvent, synthetic = false) {
         if (!this.mousedepressed) return;
         if (this.mouse_cell_selection_idx < 0) return;
 
+        if (!synthetic) { // clear interval
+            window.clearInterval(this.mousemove_interval);
+            this.mousemove_interval = 0;
+        }
+
         let [x, y, , cy] = this.renderer.get_cell_by_mouseevent(event);
-        let [yPos, xStart, xEnd] = this.mouse_cell_selections[this.mouse_cell_selection_idx];
 
         // detect a scroll intention
         let last_selection = this.mouse_cell_selections[this.mouse_cell_selections.length - 1];
-        // TODO: setup timer to keep scrolling even if mouse does not move
         if (last_selection[0] > 0 && cy <= this.mousemove_scroll_zone) { // scroll up
-            this.renderer.scrollWindow(-1);
+            y += this.renderer.scrollWindow(-1);
+
+            if (!this.mousemove_interval && !synthetic) {
+                this.mousemove_interval =
+                    window.setInterval(this.handle_mousemove.bind(this), this.mousemove_interval_time, event, true)
+            }
         } else if (cy >= (this.renderer.canvas.height) - this.mousemove_scroll_zone) { // scroll down
-            this.renderer.scrollWindow(1);
+            y += this.renderer.scrollWindow(1);
+
+            if (!this.mousemove_interval && !synthetic) {
+                this.mousemove_interval =
+                    window.setInterval(this.handle_mousemove.bind(this), this.mousemove_interval_time, event, true)
+            }
         }
 
+        let [yPos, xStart, xEnd] = this.mouse_cell_selections[this.mouse_cell_selection_idx];
+        
         // TODO: reuse selections
-
         // peek at the top selection
         // if (this.mouse_cell_selections.length > 1) {
         //     let last_selection = this.mouse_cell_selections[this.mouse_cell_selections.length - 1];
@@ -313,9 +321,9 @@ export default class Terminal {
 
     private handle_mouseup(event: MouseEvent) {
         this.mousedepressed = false;
-        // do nothing
-        window.clearTimeout(this.mousemove_timeout);
-        this.mousemove_timeout = -1;
+
+        window.clearInterval(this.mousemove_interval);
+        this.mousemove_interval = 0;
 
         if (this.mouse_cell_selection_idx >= 0 && this.mouse_cell_selections[this.mouse_cell_selection_idx][2] < 0) {
             this.mouse_clear_selections()
@@ -448,9 +456,11 @@ export class TerminalRenderer {
         this.higlight_draw();
     }
 
-    scrollWindow(direction: number) {
+    scrollWindow(direction: number): number {
+        let tmp = this.yOffset;
         this.yOffset = (Math.max(0, Math.min(this.yOffset + direction, this.rows.length - this.ROW_HEIGHT)))
         this.draw();
+        return this.yOffset - tmp;
     }
 
     constructor(canvas: HTMLCanvasElement) {
@@ -762,6 +772,8 @@ export class TerminalRenderer {
             throw new Error("container missing can't render")
         }
 
+        this.highlight_clear()
+
         let i = 0;
         char_parse_loop: while (i < this.buffer.byteLength) {
             let byte = this.buffer[i];
@@ -919,13 +931,12 @@ export class TerminalRenderer {
             xEnd = tmp;
         }
 
+        // TODO: check if an existiing highligt exist to prevent unnecessary drawing
+        this.higlights.push([y, xStart, xEnd]);
+
         if (y < this.yOffset || y >= (this.yOffset + this.ROW_HEIGHT)) {
             return
         };
-
-        // TODO: check if an existiing highligt exist to prevent unnecessary drawing
-
-        this.higlights.push([y, xStart, xEnd]);
 
         let row = this.rows[y];
         for (let x = xStart; x <= xEnd; x++) {
