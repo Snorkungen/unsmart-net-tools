@@ -35,10 +35,7 @@ export default class Terminal {
         this.container.addEventListener("mousemove", this.handle_mousemove.bind(this));
         this.container.addEventListener("mouseup", this.handle_mouseup.bind(this));
         this.container.addEventListener("mouseleave", this.handle_mouseup.bind(this));
-
-        this.container.addEventListener("click", (event) => {
-            (event.currentTarget instanceof HTMLElement) && event.currentTarget.focus()
-        })
+        this.container.addEventListener("click", this.handle_click.bind(this));
 
         this.container.addEventListener("keydown", (event) => {
             if (!this.read) {
@@ -132,11 +129,11 @@ export default class Terminal {
                 let r = this.read;
                 navigator.clipboard.readText().then((value) => {
                     r(uint8_fromString(value))
-                });
+                }).catch(() => null);
             } else if (event.key == "Insert" && event.ctrlKey) {
                 let text = this.renderer.get_text_by_cell_selections(this.mouse_cell_selections);
                 if (text) {
-                    navigator.clipboard.writeText(text);
+                    navigator.clipboard.writeText(text).catch(() => null);
                 }
             }
 
@@ -149,7 +146,6 @@ export default class Terminal {
             // PREVENT Something unexpected
             event.preventDefault();
             event.stopPropagation()
-            this.mouse_clear_selections()
         })
 
         this.container.addEventListener("focus", () => {
@@ -200,6 +196,7 @@ export default class Terminal {
 
             this.renderer.render()
             this.write_waiting = false;
+            this.mouse_clear_selections()
             return;
         }
 
@@ -222,6 +219,25 @@ export default class Terminal {
     private mousedepressed: boolean = false;
     private mouse_cell_selections: TerminalRendererHiglight[] = [];
     private mouse_cell_selection_idx = -1;
+    private mouse_click_time = 0;
+    private mouse_double_click_time = 233;
+
+    private handle_click(event: MouseEvent) {
+        (event.currentTarget instanceof HTMLElement) && event.currentTarget.focus()
+
+        if (this.mouse_double_click_time > (event.timeStamp - this.mouse_click_time)) {
+            let [x, y] = this.renderer.get_cell_by_mouseevent(event);
+            let selection = this.renderer.get_cells_in_row(x, y)
+            if (selection[0] == y) {
+                this.mouse_cell_selections.length = 1;
+                this.mouse_cell_selection_idx = 0;
+                this.mouse_cell_selections[this.mouse_cell_selection_idx] = selection;
+                this.renderer.highlight_in_row(...selection)
+            }
+        }
+
+        this.mouse_click_time = event.timeStamp;
+    }
 
     private mouse_clear_selections() {
         this.mouse_cell_selection_idx = -1;
@@ -986,6 +1002,27 @@ export class TerminalRenderer {
 
         let x = Math.floor(rx / cw), y = this.yOffset + Math.floor(ry / ch);
         return [x, y, rx, ry]
+    }
+
+    /** */
+    get_cells_in_row(x: number, y: number): TerminalRendererHiglight {
+        let start = x, end = x;
+        // find the start of the thing
+        let row = this.rows[y];
+
+        if (row[x].byte == 0 || row[x].byte == 32) { // nothing to select
+            return [-1, -1, -1]
+        }
+
+        for (start -= 1; start >= 0; start--) {
+            if (row[start].byte == 0 || row[start].byte == 32) break;
+        }
+
+        for (end += 1; end < row.length; end++) {
+            if (row[end].byte == 0 || row[end].byte == 32) break;
+        }
+
+        return [y, start + 1, end - 1];
     }
 
     get_text_by_cell_selections(selections: TerminalRendererHiglight[]): string {
