@@ -126,6 +126,8 @@ export default class Terminal {
                 }
             }
 
+            // TODO: Check for shift insert and ctrl insert keypresses to copy and paste ...
+
             if (buffer == undefined) {
                 return;
             }
@@ -135,6 +137,7 @@ export default class Terminal {
             // PREVENT Something unexpected
             event.preventDefault();
             event.stopPropagation()
+            this.mouse_clear_selections()
         })
 
         this.container.addEventListener("focus", () => {
@@ -205,15 +208,18 @@ export default class Terminal {
 
 
     private mousedepressed: boolean = false;
-    /** [y, xSTart, xEnd] */
     private mouse_cell_selections: TerminalRendererHiglight[] = [];
     private mouse_cell_selection_idx = -1;
 
+    private mouse_clear_selections () {
+        this.mouse_cell_selection_idx = -1;
+        this.mouse_cell_selections.length = 0;
+        this.renderer.highlight_clear();
+    }
+
     // private methods dealing with the selection of text and stuff
     private handle_mousedown(event: MouseEvent) {
-        this.renderer.highlight_clear();
-        this.mouse_cell_selections.length = 0;
-        this.mouse_cell_selection_idx = -1;
+        this.mouse_clear_selections();
 
         if (!!event.button) return;
         this.mousedepressed = true;
@@ -230,45 +236,42 @@ export default class Terminal {
         if (!this.mousedepressed) return;
         if (this.mouse_cell_selection_idx < 0) return;
 
-
         let [x, y] = this.renderer.get_cell_by_mouseevent(event);
-
         let [yPos, xStart, xEnd] = this.mouse_cell_selections[this.mouse_cell_selection_idx];
-
-        this.renderer.highlight_clear()
-
+        
         // TODO: reuse selections
-
+        
         // peek at the top selection
         // if (this.mouse_cell_selections.length > 1) {
-        //     let last_selection = this.mouse_cell_selections[this.mouse_cell_selections.length - 1];
-
+            //     let last_selection = this.mouse_cell_selections[this.mouse_cell_selections.length - 1];
+            
         //     while (this.mouse_cell_selections.length > 1 && last_selection[0] > y) {
         //         // remove selections until y + 1
         //         this.mouse_cell_selections.pop();
         //         last_selection = this.mouse_cell_selections[this.mouse_cell_selections.length - 1];
         //     }
-
+        
         //     // set the last selections values
         //     this.mouse_cell_selections[this.mouse_cell_selections.length - 1][1] = x;
         //     this.mouse_cell_selections[this.mouse_cell_selections.length - 1][2] = this.renderer.COLUMN_WIDTH - 1;
-
+        
         //     // tell the renderer to highligt the current selection
         //     for (let [yp, xs, xe] of this.mouse_cell_selections) {
         //         this.renderer.highlight_in_row(yp, xs, xe);
         //     }
         //     return;
         // }
-
-
-
+        
+        
+        
+        this.renderer.highlight_clear()
         this.mouse_cell_selections.length = 1;
 
         // create a multiline selection
         if (y < yPos) {
             // set the xEnd to begining of the row
             this.mouse_cell_selections[this.mouse_cell_selection_idx][2] = 0;
-            for (let i = yPos; i > y; i--) {
+            for (let i = yPos - 1; i > y; i--) {
                 this.mouse_cell_selections.push([i, 0, this.renderer.COLUMN_WIDTH - 1])
             }
 
@@ -276,7 +279,7 @@ export default class Terminal {
         } else if (y > yPos) {
             // set the xEnd to begining of the row
             this.mouse_cell_selections[this.mouse_cell_selection_idx][2] = this.renderer.COLUMN_WIDTH - 1;
-            for (let i = yPos; i < y; i++) {
+            for (let i = yPos + 1; i < y; i++) {
                 this.mouse_cell_selections.push([i, 0, this.renderer.COLUMN_WIDTH - 1])
             }
 
@@ -295,6 +298,11 @@ export default class Terminal {
     private handle_mouseup(event: MouseEvent) {
         this.mousedepressed = false;
         // do nothing
+
+        if (this.mouse_cell_selection_idx >= 0 && this.mouse_cell_selections[this.mouse_cell_selection_idx][2] < 0) {
+            this.mouse_clear_selections()
+            return; // mouse never moved
+        }
     }
 }
 
@@ -918,5 +926,41 @@ export class TerminalRenderer {
 
         x = Math.floor(x / cw), y = this.yOffset + Math.floor(y / ch);
         return [x, y]
+    }
+
+    get_text_by_cell_selections(selections: TerminalRendererHiglight[]): string {
+        // do not trust the given selections order sort so that smallest y is first
+        let result = "";
+        if (!selections.length) return result;
+
+        selections.sort(([a], [b]) => a - b);
+        let last_row = selections[selections.length - 1][0];
+
+        let row: TerminalRendererCell[];
+        for (let [y, xs, xe] of selections) {
+            if (xs > xe) { // swapping
+                xs = xs + xe;
+                xe = xs - xe;
+                xs = xs - xe;
+            }
+
+            row = this.rows[y];
+
+            // find edge and stuff ...
+            for (; xe >= xs; xe--) {
+                if (row[xe].byte != 0) break;
+            }
+
+            for (; xs <= xe; xs++) {
+                result += String.fromCharCode(row[xs].byte);
+            }
+
+            if (y < last_row) {
+                // add newline
+                result += String.fromCharCode(ASCIICodes.NewLine)
+            }
+        }
+
+        return result;
     }
 }
