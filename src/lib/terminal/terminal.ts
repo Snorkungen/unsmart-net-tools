@@ -386,15 +386,19 @@ export class TerminalRenderer {
     canvas: HTMLCanvasElement;
     ctx: CanvasRenderingContext2D;
 
-    private cell_dimensions_cached?: [width: number, height: number];
-    private cell_dimensions(): [width: number, height: number] {
+    private cell_dimensions_cached?: [width: number, height: number, wdiff: number];
+    private cell_dimensions(): [width: number, height: number, wdiff: number] {
         if (this.cell_dimensions_cached) {
             return this.cell_dimensions_cached;
         }
         this.ctx.textBaseline = this.TEXT_BASE_LINE
         this.ctx.font = this.FONT;
         let mt = this.ctx.measureText("_");
-        this.cell_dimensions_cached = [Math.ceil(mt.width) || 11, Math.ceil(mt.fontBoundingBoxDescent + mt.fontBoundingBoxAscent) || 23];
+        this.cell_dimensions_cached = [
+            Math.ceil(mt.width) || 11,
+            Math.ceil(mt.fontBoundingBoxDescent + mt.fontBoundingBoxAscent) || 23,
+            Math.ceil(mt.width) - mt.width || 0
+        ];
         return this.cell_dimensions_cached;
     }
 
@@ -414,27 +418,19 @@ export class TerminalRenderer {
     }
 
     private _actually_draw_cells(y: number, start: number, end: number, fg: number, bg: number, type: number, buffer: number[],) {
-        let [width, height] = this.cell_dimensions();
+        let [width, height, letterSpacing] = this.cell_dimensions();
 
         // draw blank lines
         this.ctx.fillStyle = this.color(bg);
         this.ctx.fillRect(start * width, (y - this.yOffset) * height, width * (end - start + 1), height)
 
-        if (type > 0 && buffer.length) { // TODO: fillText in one go, there are some text spacing issues
+        if (type > 0 && buffer.length) {
             this.ctx.textBaseline = this.TEXT_BASE_LINE
             this.ctx.font = this.FONT;
-            // this.ctx.fillStyle = this.color(fg);
-            // this.ctx.fillText(String.fromCharCode(...buffer), start * width, (y - this.yOffset) * height + (width / 5))
-
-            for (let j = 0; j < buffer.length; j++) {
-                if (buffer[j] <= 0) continue;
-                this.ctx.fillStyle = this.color(fg)
-                this.ctx.textBaseline = this.TEXT_BASE_LINE
-                this.ctx.font = this.FONT;
-                this.ctx.fillText(String.fromCharCode(buffer[j]), (start + j) * width, (y - this.yOffset) * height + (width / 5))
-            }
+            this.ctx.fillStyle = this.color(fg);
+            this.ctx.letterSpacing = letterSpacing.toString() + "px";
+            this.ctx.fillText(String.fromCharCode(...buffer), start * width, (y - this.yOffset) * height + (width / 5))
         }
-
     }
 
     /** Attempt to draw multiple cells at once */
