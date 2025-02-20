@@ -64,7 +64,7 @@ export default class Terminal {
     read?: (bytes: Uint8Array) => void;
 
     // this is a temporary implementation
-    write_buffer = new Uint8Array(100);
+    write_buffer = new Uint8Array(512);
     write_buffer_length = 0;
     write_waiting = false;
     write_timeout = 50;
@@ -81,7 +81,7 @@ export default class Terminal {
             if (this.write_buffer_length === 0)
                 this.renderer.buffer = bytes;
             else {
-                this.renderer.buffer = uint8_concat([this.write_buffer, bytes]);
+                this.renderer.buffer = uint8_concat([this.write_buffer.subarray(0, this.write_buffer_length), bytes]);
                 this.write_buffer_length = 0;
             }
 

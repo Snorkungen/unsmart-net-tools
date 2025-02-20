@@ -20,7 +20,7 @@ An attempt at implementing the TCP/IP stack within a browser context.
     - [x] UDP protocol support
     - [x] TCP protocol support*
 - [ ] Terminal & Shell
-  - [ ] batch rendering for more efficient rendering
+  - [x] batch rendering for more efficient rendering
   - [x] `TerminalRenderer` make rendering faster
   - [ ] *Auto resize `TerminaleRenderer` View* haven't decided on what this means
   - [ ] Enviroment Variables & Variable expansion `Shell.promptBuffer`
