@@ -442,7 +442,7 @@ export class TerminalRenderer {
 
         let type = 0;
         let buffer: number[] = [];
-        for (let i = start; i < Math.min(row.length, end); i++) {
+        for (let i = start; i <= Math.min(row.length - 1, end); i++) {
             let cell = row[i];
 
             if ((!colors_given && (fg != cell.fg || bg != cell.bg)) || (type == 0 && cell.byte > 0) || (type > 0 && cell.byte == 0)) {
@@ -505,6 +505,8 @@ export class TerminalRenderer {
         }
 
         this.higlight_draw();
+
+        this.handleScrollResult = false;
     }
 
     scrollWindow(direction: number): number {
@@ -822,6 +824,7 @@ export class TerminalRenderer {
         }
 
         this.highlight_clear()
+        const cells_touched: { [y: number]: [first: number, last: number] } = [];
 
         let i = 0;
         char_parse_loop: while (i < this.buffer.byteLength) {
@@ -895,8 +898,16 @@ export class TerminalRenderer {
 
             this.handleScroll();
 
-            let cy = this.cursor.y - this.yOffset, cx = this.cursor.x;
-            this.cell_draw_text(byte, cx, cy, this.COLOR_FG, this.COLOR_BG);
+            if (cells_touched[this.cursor.y]) {
+                //  expand the range of cells etc
+                if (cells_touched[this.cursor.y][0] > this.cursor.x) {
+                    cells_touched[this.cursor.y][0] = this.cursor.x;
+                } else if (cells_touched[this.cursor.y][1] < this.cursor.x) {
+                    cells_touched[this.cursor.y][1] = this.cursor.x;
+                }
+            } else {
+                cells_touched[this.cursor.y] = [this.cursor.x, this.cursor.x]
+            }
 
             this.rows[this.cursor.y][this.cursor.x].bg = this.COLOR_BG;
             this.rows[this.cursor.y][this.cursor.x].fg = this.COLOR_FG;
@@ -913,12 +924,23 @@ export class TerminalRenderer {
         }
 
         this.handleScroll();
-        this.draw_cursor();
+
+        if (this.handleScrollResult) {
+            this.draw();
+        } else { // draw the touched cells
+            for (let [sy, [xs, xe]] of Object.entries(cells_touched)) {
+                this.draw_cells(parseInt(sy), xs, xe)
+            }
+
+            this.draw_cursor();
+        }
 
         // empty buffer
         this.buffer = new Uint8Array();
     }
 
+    /** flag that denotes wether handleScroll updated the state, and for the consumer to call draw */
+    private handleScrollResult = false;
     /** This method automagically scrolls the view \
      * Ensures that the cursor is in view, and create new rows if needed
      */
@@ -946,7 +968,7 @@ export class TerminalRenderer {
             throw new Error("cursor still not in view")
         }
 
-        this.draw();
+        this.handleScrollResult = true;
     }
 
     private color(n: number) {
