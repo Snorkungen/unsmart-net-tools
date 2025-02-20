@@ -402,21 +402,6 @@ export class TerminalRenderer {
         return this.cell_dimensions_cached;
     }
 
-    private cell_draw_background(x: number, y: number, color: number) {
-        let [width, height] = this.cell_dimensions();
-        this.ctx.fillStyle = this.color(color);
-        this.ctx.fillRect(x * width, y * height, width, height)
-    }
-
-    private cell_draw_text(byte: number, x: number, y: number, fg: number = this.COLOR_FG, bg: number = this.COLOR_BG) {
-        this.cell_draw_background(x, y, bg);
-        let [width, height] = this.cell_dimensions();
-        if (byte <= 0) return; this.ctx.fillStyle = this.color(fg)
-        this.ctx.textBaseline = this.TEXT_BASE_LINE
-        this.ctx.font = this.FONT;
-        this.ctx.fillText(String.fromCharCode(byte), x * width, y * height + (width / 5))
-    }
-
     private _actually_draw_cells(y: number, start: number, end: number, fg: number, bg: number, type: number, buffer: number[],) {
         let [width, height, letterSpacing] = this.cell_dimensions();
 
@@ -445,7 +430,11 @@ export class TerminalRenderer {
         for (let i = start; i <= Math.min(row.length - 1, end); i++) {
             let cell = row[i];
 
-            if ((!colors_given && (fg != cell.fg || bg != cell.bg)) || (type == 0 && cell.byte > 0) || (type > 0 && cell.byte == 0)) {
+            if (
+                (!colors_given && (fg != cell.fg || bg != cell.bg)) ||
+                (type == 0 && cell.byte > 0) ||
+                (type > 0 && cell.byte == 0)
+            ) {
                 this._actually_draw_cells(y, start, i, fg, bg, type, buffer);
 
                 start = i;
@@ -467,23 +456,17 @@ export class TerminalRenderer {
     }
 
     private draw_cursor() {
-        let cy = this.cursor.y - this.yOffset, cx = this.cursor.x;
-        let cell = this.rows[this.cursor.y][this.cursor.x];
         // draw current cursor
-        this.cell_draw_text(cell.byte, cx, cy, cell.bg, cell.fg)
+        let cell = this.rows[this.cursor.y][this.cursor.x];
+        this.draw_cells(this.cursor.y, this.cursor.x, this.cursor.x, cell.bg, cell.fg);
 
         // clear previous cursor
         if (this.prevCursor.y == this.cursor.y && this.prevCursor.x == this.cursor.x) {
             return
         }
-        if ((this.prevCursor.y >= this.yOffset) && this.prevCursor.y < this.rows.length) {
-            cy = this.prevCursor.y - this.yOffset, cx = this.prevCursor.x;
 
-            // figure out what goes here
-            if (this.rows[this.prevCursor.y]) {
-                let cell = this.rows[this.prevCursor.y][this.prevCursor.x];
-                this.cell_draw_text(cell.byte, cx, cy, cell.fg, cell.bg);
-            };
+        if ((this.prevCursor.y >= this.yOffset) && this.prevCursor.y < this.rows.length) {
+            this.draw_cells(this.prevCursor.y, this.prevCursor.x, this.prevCursor.x);
         }
 
         this.prevCursor.x = this.cursor.x;
@@ -507,6 +490,7 @@ export class TerminalRenderer {
         this.higlight_draw();
 
         this.handleScrollResult = false;
+        this.modified_cells = [];
     }
 
     scrollWindow(direction: number): number {
@@ -561,11 +545,9 @@ export class TerminalRenderer {
     private _eraseCell(x: number, y: number) {
         this.handleScroll();
 
-        this.cell_draw_background(x, y - this.yOffset, this.COLOR_BG)
-
-        if (y - this.yOffset < 0) return;
 
         if (this.rows[y] && this.rows[y][x]) {
+            this.mark_cell_as_modified(x, y)
             this.rows[y][x].bg = this.COLOR_BG;
             this.rows[y][x].fg = this.COLOR_FG;
             this.rows[y][x].byte = 0;
@@ -818,13 +800,27 @@ export class TerminalRenderer {
         return -1
     }
 
+
+    private modified_cells: { [y: number]: [first: number, last: number] } = [];
+    private mark_cell_as_modified(x: number, y: number) {
+        if (this.modified_cells[this.cursor.y]) {
+            //  expand the range of cells etc
+            if (this.modified_cells[this.cursor.y][0] > this.cursor.x) {
+                this.modified_cells[this.cursor.y][0] = this.cursor.x;
+            } else if (this.modified_cells[this.cursor.y][1] < this.cursor.x) {
+                this.modified_cells[this.cursor.y][1] = this.cursor.x;
+            }
+        } else {
+            this.modified_cells[this.cursor.y] = [this.cursor.x, this.cursor.x]
+        }
+    }
+
     render() {
         if (!this.canvas) {
             throw new Error("container missing can't render")
         }
 
         this.highlight_clear()
-        const cells_touched: { [y: number]: [first: number, last: number] } = [];
 
         let i = 0;
         char_parse_loop: while (i < this.buffer.byteLength) {
@@ -898,17 +894,7 @@ export class TerminalRenderer {
 
             this.handleScroll();
 
-            if (cells_touched[this.cursor.y]) {
-                //  expand the range of cells etc
-                if (cells_touched[this.cursor.y][0] > this.cursor.x) {
-                    cells_touched[this.cursor.y][0] = this.cursor.x;
-                } else if (cells_touched[this.cursor.y][1] < this.cursor.x) {
-                    cells_touched[this.cursor.y][1] = this.cursor.x;
-                }
-            } else {
-                cells_touched[this.cursor.y] = [this.cursor.x, this.cursor.x]
-            }
-
+            this.mark_cell_as_modified(this.cursor.x, this.cursor.y)
             this.rows[this.cursor.y][this.cursor.x].bg = this.COLOR_BG;
             this.rows[this.cursor.y][this.cursor.x].fg = this.COLOR_FG;
             this.rows[this.cursor.y][this.cursor.x].byte = byte;
@@ -928,10 +914,10 @@ export class TerminalRenderer {
         if (this.handleScrollResult) {
             this.draw();
         } else { // draw the touched cells
-            for (let [sy, [xs, xe]] of Object.entries(cells_touched)) {
+            for (let [sy, [xs, xe]] of Object.entries(this.modified_cells)) {
                 this.draw_cells(parseInt(sy), xs, xe)
             }
-
+            this.modified_cells = [];
             this.draw_cursor();
         }
 
@@ -982,11 +968,7 @@ export class TerminalRenderer {
         for (let higlight of this.higlights) {
             if (higlight[0] < this.yOffset || higlight[0] >= (this.yOffset + this.ROW_HEIGHT)) continue;
 
-            let row = this.rows[higlight[0]];
-            for (let x = higlight[1]; x <= higlight[2]; x++) {
-                let cell = row[x];
-                this.cell_draw_text(cell.byte, x, higlight[0] - this.yOffset, cell.fg, cell.bg);
-            }
+            this.draw_cells(higlight[0], higlight[1], higlight[2])
 
             if (this.cursor.y == higlight[0]) {
                 this.draw_cursor()
@@ -1008,10 +990,7 @@ export class TerminalRenderer {
             return
         };
 
-        let row = this.rows[y];
-        for (let x = xStart; x <= xEnd; x++) {
-            this.cell_draw_text(row[x].byte, x, y - this.yOffset, this.COLOR_BG, this.COLOR_FG);
-        }
+        this.draw_cells(y, xStart, xEnd, this.COLOR_BG, this.COLOR_FG);
     }
 
     private higlight_draw() {
