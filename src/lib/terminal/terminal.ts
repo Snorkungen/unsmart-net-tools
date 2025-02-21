@@ -49,8 +49,9 @@ export default class Terminal {
         })
 
         this.container.addEventListener("wheel", (event) => {
-            event.preventDefault()
-            this.renderer.scrollWindow(event.deltaY > 0 ? 1 : -1)
+            if (this.renderer.scrollWindow(event.deltaY > 0 ? 1 : -1)) {
+                event.preventDefault()
+            }
         })
 
         // render to screen ?
