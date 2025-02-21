@@ -546,7 +546,6 @@ export class TerminalRenderer {
     private _eraseCell(x: number, y: number) {
         this.handleScroll();
 
-
         if (this.rows[y] && this.rows[y][x]) {
             this.mark_cell_as_modified(x, y)
             this.rows[y][x].bg = this.COLOR_BG;
@@ -804,15 +803,15 @@ export class TerminalRenderer {
 
     private modified_cells: { [y: number]: [first: number, last: number] } = [];
     private mark_cell_as_modified(x: number, y: number) {
-        if (this.modified_cells[this.cursor.y]) {
+        if (this.modified_cells[y]) {
             //  expand the range of cells etc
-            if (this.modified_cells[this.cursor.y][0] > this.cursor.x) {
-                this.modified_cells[this.cursor.y][0] = this.cursor.x;
-            } else if (this.modified_cells[this.cursor.y][1] < this.cursor.x) {
-                this.modified_cells[this.cursor.y][1] = this.cursor.x;
+            if (this.modified_cells[y][0] > x) {
+                this.modified_cells[y][0] = x;
+            } else if (this.modified_cells[y][1] < x) {
+                this.modified_cells[y][1] = x;
             }
         } else {
-            this.modified_cells[this.cursor.y] = [this.cursor.x, this.cursor.x]
+            this.modified_cells[y] = [x, x]
         }
     }
 
