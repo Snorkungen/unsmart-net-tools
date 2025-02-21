@@ -357,7 +357,6 @@ export class TerminalRenderer {
     // options start
     COLUMN_WIDTH = 80;
     ROW_HEIGHT = 2 * 8;
-    visible_columns = this.COLUMN_WIDTH;
 
     COLORS = [
         "#000000",
@@ -502,27 +501,6 @@ export class TerminalRenderer {
         return this.yOffset - tmp;
     }
 
-    private view_initialized = false;
-    init_view() {
-        if (this.canvas.parentElement && this.canvas.parentElement.clientWidth != 0) {
-            let cw = this.canvas.parentElement.clientWidth;
-            let [width] = this.cell_dimensions();
-
-            let max_columns = Math.floor(cw / width);
-            if (max_columns < this.COLUMN_WIDTH && max_columns != this.visible_columns) {
-                this.visible_columns = max_columns;
-                this.canvas.width = width * max_columns;
-
-                this.view_initialized = false;
-            }
-        }
-
-        if (this.view_initialized) return
-
-        this.draw();
-        this.view_initialized = true;
-    }
-
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
         this.ctx = this.canvas.getContext("2d")!;
@@ -531,8 +509,12 @@ export class TerminalRenderer {
         this.canvas.width = this.COLUMN_WIDTH * width;
         this.canvas.height = this.ROW_HEIGHT * height;
 
+        this.ctx.fillStyle = this.color(this.COLOR_BG_DEFAULT);
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
         // init rows
         this.rows = new Array<TerminalRendererCell[]>(this.ROW_HEIGHT);
+
         // fill container with rows
         for (let i = 0; i < this.ROW_HEIGHT; i++) {
             // duplicate state
@@ -544,9 +526,6 @@ export class TerminalRenderer {
                 }
             }
         }
-
-        window.setTimeout(this.init_view.bind(this), 1);
-        window.addEventListener("resize", this.init_view.bind(this));
     }
 
     buffer: Uint8Array = new Uint8Array();
