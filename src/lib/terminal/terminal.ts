@@ -1,5 +1,6 @@
 import { uint8_concat, uint8_fromString, uint8_mutateSet, uint8_set } from "../binary/uint8-array";
-import { ASCIICodes, CSI, readParams } from "./shared";
+import { TerminalRendererCursor, TerminalRendererCell, TerminalRendererState, terminal_render } from "./renderer";
+import { ASCIICodes, CSI } from "./shared";
 export default class Terminal {
     private renderer: TerminalRenderer;
     private container: HTMLElement;
@@ -341,23 +342,7 @@ export default class Terminal {
 
 type TerminalRendererHiglight = [row: number, xStart: number, xEnd: number];
 
-type TerminalRendererCursor = {
-    x: number;
-    y: number;
-}
-
-/** i want to make this just a linear Uint8Array */
-type TerminalRendererCell = {
-    byte: number;
-    fg: number;
-    bg: number;
-    // space for future
-}
-export class TerminalRenderer {
-    // options start
-    COLUMN_WIDTH = 80;
-    ROW_HEIGHT = 2 * 8;
-
+export class TerminalRenderer implements TerminalRendererState {
     COLORS = [
         "#000000",
         "#b21818",
@@ -368,24 +353,60 @@ export class TerminalRenderer {
         "#18b2b2",
         "#b2b2b2"
     ]
-    COLOR_BG_DEFAULT = 0 % this.COLORS.length;
-    COLOR_BG = this.COLOR_BG_DEFAULT;
-    COLOR_FG_DEFAULT = 7 % this.COLORS.length;
-    COLOR_FG = this.COLOR_FG_DEFAULT;
+
+    view_columns = 80;
+    view_rows = 2 * 8;
+
+    view_modified = false;
+    modified_cells: { [y: number]: [first: number, last: number] } = [];
+
+    DEFAULT_COLOR_BG = 0 % this.COLORS.length;
+    DEFAULT_COLOR_FG = 7 % this.COLORS.length;
+    color_bg = this.DEFAULT_COLOR_BG;
+    color_fg = this.DEFAULT_COLOR_FG;
+
+    prev_cursor: TerminalRendererCursor = { x: 0, y: 0 };
+    cursor: TerminalRendererCursor = { x: 0, y: 0 };
+    y_offset = 0;
+
+    // options start
+    COLUMN_WIDTH = 80;
+    ROW_HEIGHT = 2 * 8;
+
     FONT = "18px monospace";
     TEXT_BASE_LINE: CanvasTextBaseline = "top";
-    EMPTY_CELL = {
-        byte: 0,
-        fg: this.COLOR_FG,
-        bg: this.COLOR_BG,
-    };
+
     // options end
 
-    private rows: TerminalRendererCell[][];
-    private yOffset: number = 0;
+    rows: TerminalRendererCell[][];
 
     canvas: HTMLCanvasElement;
     ctx: CanvasRenderingContext2D;
+
+    constructor(canvas: HTMLCanvasElement) {
+        this.canvas = canvas;
+        this.ctx = this.canvas.getContext("2d")!;
+
+        let [width, height] = this.cell_dimensions();
+        this.canvas.width = this.COLUMN_WIDTH * width;
+        this.canvas.height = this.ROW_HEIGHT * height;
+
+        this.ctx.fillStyle = this.color(this.DEFAULT_COLOR_BG);
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+        // init rows
+        this.rows = new Array<TerminalRendererCell[]>(this.ROW_HEIGHT);
+
+        // fill container with rows
+        for (let i = 0; i < this.ROW_HEIGHT; i++) {
+            // duplicate state
+            this.rows[i] = new Array<TerminalRendererCell>(this.COLUMN_WIDTH);
+            for (let j = 0; j < this.COLUMN_WIDTH; j++) {
+                // duplicate state
+                this.rows[i][j] = { fg: this.color_fg, bg: this.color_bg, byte: 0 }
+            }
+        }
+    }
 
     private cell_dimensions_cached?: [width: number, height: number, wdiff: number];
     private cell_dimensions(): [width: number, height: number, wdiff: number] {
@@ -408,14 +429,14 @@ export class TerminalRenderer {
 
         // draw blank lines
         this.ctx.fillStyle = this.color(bg);
-        this.ctx.fillRect(start * width, (y - this.yOffset) * height, width * (end - start + 1), height)
+        this.ctx.fillRect(start * width, (y - this.y_offset) * height, width * (end - start + 1), height)
 
         if (type > 0 && buffer.length) {
             this.ctx.textBaseline = this.TEXT_BASE_LINE
             this.ctx.font = this.FONT;
             this.ctx.fillStyle = this.color(fg);
             this.ctx.letterSpacing = letterSpacing.toString() + "px";
-            this.ctx.fillText(String.fromCharCode(...buffer), start * width, (y - this.yOffset) * height + (width / 5))
+            this.ctx.fillText(String.fromCharCode(...buffer), start * width, (y - this.y_offset) * height + (width / 5))
         }
     }
 
@@ -462,26 +483,22 @@ export class TerminalRenderer {
         this.draw_cells(this.cursor.y, this.cursor.x, this.cursor.x, cell.bg, cell.fg);
 
         // clear previous cursor
-        if (this.prevCursor.y == this.cursor.y && this.prevCursor.x == this.cursor.x) {
+        if (this.prev_cursor.y == this.cursor.y && this.prev_cursor.x == this.cursor.x) {
             return
         }
 
-        if ((this.prevCursor.y >= this.yOffset) && this.prevCursor.y < this.rows.length) {
-            this.draw_cells(this.prevCursor.y, this.prevCursor.x, this.prevCursor.x);
+        if ((this.prev_cursor.y >= this.y_offset) && this.prev_cursor.y < this.rows.length) {
+            this.draw_cells(this.prev_cursor.y, this.prev_cursor.x, this.prev_cursor.x);
         }
 
-        this.prevCursor.x = this.cursor.x;
-        this.prevCursor.y = this.cursor.y;
+        this.prev_cursor.x = this.cursor.x;
+        this.prev_cursor.y = this.cursor.y;
     }
 
     draw() {
-        // clear canvas
-        this.ctx.fillStyle = this.color(this.COLOR_BG_DEFAULT);
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height)
-
         // shift container rows
         for (let j = 0; j < this.ROW_HEIGHT; j++) {
-            this.draw_cells((j + this.yOffset), 0, this.rows[j + this.yOffset].length - 1);
+            this.draw_cells((j + this.y_offset), 0, this.rows[j + this.y_offset].length - 1);
         }
 
         if (this.cursorInView()) {
@@ -490,329 +507,21 @@ export class TerminalRenderer {
 
         this.higlight_draw();
 
-        this.handleScrollResult = false;
+        this.view_modified = false;
         this.modified_cells = [];
     }
 
     scrollWindow(direction: number): number {
-        let tmp = this.yOffset;
-        this.yOffset = (Math.max(0, Math.min(this.yOffset + direction, this.rows.length - this.ROW_HEIGHT)))
+        let tmp = this.y_offset;
+        this.y_offset = (Math.max(0, Math.min(this.y_offset + direction, this.rows.length - this.ROW_HEIGHT)))
         this.draw();
-        return this.yOffset - tmp;
-    }
-
-    constructor(canvas: HTMLCanvasElement) {
-        this.canvas = canvas;
-        this.ctx = this.canvas.getContext("2d")!;
-
-        let [width, height] = this.cell_dimensions();
-        this.canvas.width = this.COLUMN_WIDTH * width;
-        this.canvas.height = this.ROW_HEIGHT * height;
-
-        this.ctx.fillStyle = this.color(this.COLOR_BG_DEFAULT);
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-        // init rows
-        this.rows = new Array<TerminalRendererCell[]>(this.ROW_HEIGHT);
-
-        // fill container with rows
-        for (let i = 0; i < this.ROW_HEIGHT; i++) {
-            // duplicate state
-            this.rows[i] = new Array<TerminalRendererCell>(this.COLUMN_WIDTH);
-            for (let j = 0; j < this.COLUMN_WIDTH; j++) {
-                // duplicate state
-                this.rows[i][j] = {
-                    ...this.EMPTY_CELL
-                }
-            }
-        }
+        return this.y_offset - tmp;
     }
 
     buffer: Uint8Array = new Uint8Array();
 
-    private prevCursor: TerminalRendererCursor = {
-        x: 0,
-        y: 0
-    }
-    private cursor: TerminalRendererCursor = {
-        x: 0,
-        y: 0
-    }
-
     private cursorInView(): boolean {
-        return this.cursor.y >= this.yOffset && this.cursor.y < this.yOffset + this.ROW_HEIGHT;
-    }
-
-    private _eraseCell(x: number, y: number) {
-        this.handleScroll();
-
-        if (this.rows[y] && this.rows[y][x]) {
-            this.mark_cell_as_modified(x, y)
-            this.rows[y][x].bg = this.COLOR_BG;
-            this.rows[y][x].fg = this.COLOR_FG;
-            this.rows[y][x].byte = 0;
-        }
-    }
-
-    private handleEraseDisplay(p: number) {
-        const clear_from_cursor_to_end = () => {
-            // clear from cursor to end of screen
-
-            // loop thru rows
-            // truncate rows not in view
-            let posInView = this.cursor.y - this.yOffset;
-            let rowsAfterView = this.rows.length - (this.cursor.y + (this.ROW_HEIGHT - 1) + posInView) - 1
-            for (let i = 1; i <= rowsAfterView; i++) {
-                this.rows.pop()
-            }
-
-            let rowsInViewToBeErased = (this.ROW_HEIGHT - 1) - posInView;
-
-            for (let y = this.cursor.y; y <= this.cursor.y + rowsInViewToBeErased; y++) {
-                for (let x = 0; x < this.COLUMN_WIDTH; x++) {
-                    this._eraseCell(x, y);
-                }
-            }
-        }
-        const clear_from_cursor_to_start = () => {
-            let posInView = this.cursor.y - this.yOffset;
-            let rowsBeforeView = this.cursor.y - posInView;
-            for (let i = 0; i < rowsBeforeView; i++) {
-                this.rows.shift()
-            }
-
-            this.prevCursor.y -= (rowsBeforeView);
-            this.cursor.y = posInView;
-            this.yOffset = 0;
-
-            for (let y = this.cursor.y; y >= 0; y--) {
-                for (let x = 0; x < this.COLUMN_WIDTH; x++) {
-                    this._eraseCell(x, y);
-                }
-            }
-        }
-
-        if (p == 0) clear_from_cursor_to_end();
-        else if (p == 1) clear_from_cursor_to_start();
-        else if (p == 2) {
-            // clear entire screen
-            this.cursor.x = 0
-            this.cursor.y = 0
-            this.handleScroll()
-            clear_from_cursor_to_end()
-        }
-    }
-    private handleEraseInLine(p: number) {
-        if (!this.cursorInView()) throw new Error("Erasing is not supported when cursor not in view")
-        if (p == 0) {
-            // clear from cursor to end
-            for (let x = this.cursor.x; x < this.COLUMN_WIDTH; x++) {
-                this._eraseCell(x, this.cursor.y);
-            }
-        }
-        else if (p == 1) {
-            // clear from cursor to start
-            for (let x = this.cursor.x; x >= 0; x--) {
-                this._eraseCell(x, this.cursor.y);
-            }
-        }
-        else if (p == 2) {
-            // clear entire screen
-            for (let x = 0; x < this.COLUMN_WIDTH; x++) {
-                this._eraseCell(x, this.cursor.y);
-            }
-        }
-    }
-
-    private handleSelectGraphicRendition(n: number) {
-        if (n == 0) {
-            // reset all attributes
-            this.COLOR_BG = this.COLOR_BG_DEFAULT;
-            this.COLOR_FG = this.COLOR_FG_DEFAULT;
-        }
-
-        // only support colors for now
-
-        if (n == 7) {
-            // invert colors
-            let tmp = this.COLOR_BG;
-            this.COLOR_BG = this.COLOR_FG;
-            this.COLOR_FG = tmp;
-        }
-
-        if (n >= 30 && n <= 37) {
-            // set foreground color
-            this.COLOR_FG = n - 30;
-        }
-
-        if (n >= 40 && n <= 47) {
-            // set background color
-            this.COLOR_BG = n - 40;
-        }
-
-    }
-    private handleEscapeSequences(i: number): number {
-        let byte = this.buffer[i];
-        if (byte == ASCIICodes.OpenSquareBracket) {
-            // for now only handle cursor movement
-            let rawParams: number[] = [];
-            while (++i < this.buffer.byteLength) {
-                byte = this.buffer[i];
-                if (
-                    byte >= 0x30 &&
-                    byte <= 0x3f
-                ) {
-                    rawParams.push(byte);
-                } else if (
-                    byte >= 0x40 &&
-                    byte <= 0x7E
-                ) {
-                    rawParams.push(byte);
-                    break;
-                } else {
-                    return -1; // Something unexpected happened
-                }
-            }
-
-            if (rawParams.length == 0) {
-                return -1; // error
-            }
-
-            let finalByte = rawParams.pop();
-
-            switch (finalByte) {
-                case ASCIICodes.A: {
-                    // handle Cursor up
-                    let params = readParams(rawParams, 1, 1)
-                    this.cursor.y = Math.max(
-                        this.cursor.y - params[0],
-                        0
-                    )
-                }; break;
-                case ASCIICodes.A + 1: { // B
-                    // handle Cursor down
-                    let params = readParams(rawParams, 1, 1)
-                    this.cursor.y += params[0];
-                }; break;
-                case ASCIICodes.A + 2: { // C
-                    // handle Cursor forward
-                    let params = readParams(rawParams, 1, 1)
-
-                    this.cursor.x = Math.min(this.cursor.x + params[0], this.COLUMN_WIDTH)
-                }; break;
-                case ASCIICodes.A + 3: { // D
-                    // handle Cursor Back
-                    let params = readParams(rawParams, 1, 1)
-
-                    this.cursor.x = Math.max(this.cursor.x - params[0], 0)
-                }; break;
-                case ASCIICodes.A + 4: { // E
-                    // handle Cursor Next Line
-                    let params = readParams(rawParams, 1, 1)
-
-                    this.cursor.y += params[0];
-                    this.cursor.x = 0;
-                }; break;
-                case ASCIICodes.A + 5: { // F
-                    // handle Cursor Previous Line
-                    let params = readParams(rawParams, 1, 1)
-
-                    this.cursor.y = Math.max(
-                        this.cursor.y - params[0],
-                        0
-                    )
-                    this.cursor.x = 0;
-                }; break;
-                case ASCIICodes.A + 6: { // G
-                    // handle Cursor Horizontal Absolute
-                    let params = readParams(rawParams, 1, 1)
-
-                    // I think this is  1-based
-                    if (params[0]) {
-                        params[0] -= 1
-                    }
-
-                    this.cursor.x = Math.min(
-                        params[0],
-                        this.COLUMN_WIDTH
-                    )
-
-                }; break;
-                case ASCIICodes.A + 7: case ASCIICodes.a + 5: { // H f
-                    // handle set Cursor position
-                    let params = readParams(rawParams, 1, 2);
-
-                    let [row, col] = params;
-                    // ESC [ <y> ; <x> H <https://github.com/0x5c/VT100-Examples/blob/master/vt_seq.md#simple-cursor-positioning>
-                    row = Math.max(row - 1, 0);
-                    col = Math.max(col - 1, 0); // 1-based
-
-                    this.cursor.x = Math.min(col, this.COLUMN_WIDTH);
-                    this.cursor.y = row;
-                }; break;
-                case ASCIICodes.A + 9: { // J
-                    let [n] = readParams(rawParams, 2, 1);
-                    this.handleEraseDisplay(n)
-                    break;
-                }
-                case ASCIICodes.A + 10: { // K
-                    // erase in line
-                    let [n] = readParams(rawParams, 2, 1);
-                    this.handleEraseInLine(n)
-                }; break;
-
-                case ASCIICodes.S: { // S
-                    // Scroll Up
-                    let [n] = readParams(rawParams, 1, 1);
-                    if (n <= 0) break;
-
-                    this.cursor.y = Math.max(
-                        (Math.floor(this.cursor.y / this.ROW_HEIGHT) - n),
-                        0
-                    ) * this.ROW_HEIGHT;
-
-                }; break;
-                case ASCIICodes.S + 1: { // T
-                    // Scroll Down
-                    let [n] = readParams(rawParams, 1, 1);
-
-
-                    let tmp = this.ROW_HEIGHT - 1;
-                    this.cursor.y = (Math.floor(this.cursor.y / this.ROW_HEIGHT) + n) * this.ROW_HEIGHT + tmp;
-
-                    // this is hacky
-                    // add the required rows to make it padded
-                    this.handleScroll();
-                    this.cursor.y -= tmp;
-                }; break;
-
-                case ASCIICodes.m: {
-                    // Select Graphic Rendition
-                    let [n] = readParams(rawParams, 0);
-                    this.handleSelectGraphicRendition(n);
-                }; break;
-
-                default: return -1; // unhandled control sequence
-            }
-            return i;
-        }
-
-        return -1
-    }
-
-
-    private modified_cells: { [y: number]: [first: number, last: number] } = [];
-    private mark_cell_as_modified(x: number, y: number) {
-        if (this.modified_cells[y]) {
-            //  expand the range of cells etc
-            if (this.modified_cells[y][0] > x) {
-                this.modified_cells[y][0] = x;
-            } else if (this.modified_cells[y][1] < x) {
-                this.modified_cells[y][1] = x;
-            }
-        } else {
-            this.modified_cells[y] = [x, x]
-        }
+        return this.cursor.y >= this.y_offset && this.cursor.y < this.y_offset + this.ROW_HEIGHT;
     }
 
     render() {
@@ -822,96 +531,9 @@ export class TerminalRenderer {
 
         this.highlight_clear()
 
-        let i = 0;
-        char_parse_loop: while (i < this.buffer.byteLength) {
-            let byte = this.buffer[i];
+        terminal_render(this, this.buffer);
 
-            // INSPIRATION <https://en.wikipedia.org/wiki/ANSI_escape_code>
-            switch (byte) {
-                case ASCIICodes.NUL: i++; continue char_parse_loop;
-                case ASCIICodes.BackSpace: {
-                    // handle backspace
-                    this.cursor.x -= 1
-
-                    if (this.cursor.x < 0) {
-                        this.cursor.x = this.COLUMN_WIDTH - 1;
-                        this.cursor.y -= 1;
-                        if (this.cursor.y < 0) {
-                            this.cursor.y = 0;
-                            this.cursor.x = 0;
-                            break;
-                        }
-                    }
-
-                    this._eraseCell(this.cursor.x, this.cursor.y);
-                    break;
-                }
-                case ASCIICodes.Tab: {
-                    // handle Tab
-                    this.cursor.x += 8 - this.cursor.x % 8;
-                    if (this.cursor.x >= this.COLUMN_WIDTH) {
-                        this.cursor.x = 0;
-                        this.cursor.y += 1;
-                    }
-                    break;
-                } case ASCIICodes.NewLine: {
-                    // handle new line
-                    this.cursor.x = 0;
-                    this.cursor.y += 1
-                    break;
-                }
-                case ASCIICodes.CarriageReturn: {
-                    // handle carriage return
-                    this.cursor.x = 0;
-                    break;
-                }
-                case ASCIICodes.Escape: {
-                    // move on to next byte
-                    // increment index
-                    i += 1; if (i > this.buffer.byteLength) {
-                        return;
-                    }
-
-                    let tmp = i;
-                    i = this.handleEscapeSequences(i);
-                    if (i < 0) {
-                        // something failed continue
-                        i = tmp;
-                        continue char_parse_loop;
-                    }
-
-                    break
-                }
-            }
-
-            // only support ascii characters
-            if (
-                byte < 32 ||
-                byte > 126
-            ) {
-                i++; continue char_parse_loop;
-            }
-
-            this.handleScroll();
-
-            this.mark_cell_as_modified(this.cursor.x, this.cursor.y)
-            this.rows[this.cursor.y][this.cursor.x].bg = this.COLOR_BG;
-            this.rows[this.cursor.y][this.cursor.x].fg = this.COLOR_FG;
-            this.rows[this.cursor.y][this.cursor.x].byte = byte;
-
-            // advance cursor
-            this.cursor.x += 1;
-            if (this.cursor.x >= this.COLUMN_WIDTH) {
-                this.cursor.y += 1;
-                this.cursor.x = 0;
-            }
-
-            i++; continue char_parse_loop;
-        }
-
-        this.handleScroll();
-
-        if (this.handleScrollResult) {
+        if (this.view_modified) {
             this.draw();
         } else { // draw the touched cells
             for (let [sy, [xs, xe]] of Object.entries(this.modified_cells)) {
@@ -925,48 +547,15 @@ export class TerminalRenderer {
         this.buffer = new Uint8Array();
     }
 
-    /** flag that denotes wether handleScroll updated the state, and for the consumer to call draw */
-    private handleScrollResult = false;
-    /** This method automagically scrolls the view \
-     * Ensures that the cursor is in view, and create new rows if needed
-     */
-    private handleScroll() {
-        // check if the cursor is in view
-        if (this.cursorInView()) return;
-
-        let diff = this.cursor.y - (this.yOffset + (this.ROW_HEIGHT - 1));
-        this.yOffset = Math.max(0, this.yOffset + diff);
-
-        // create new rows if required
-        if ((this.yOffset + this.ROW_HEIGHT) > this.rows.length) {
-            for (let i = 0; i < ((this.yOffset + this.ROW_HEIGHT + 1) - this.rows.length); i++) {
-                let row = new Array<TerminalRendererCell>(this.COLUMN_WIDTH);
-                for (let j = 0; j < row.length; j++) {
-                    row[j] = { ...this.EMPTY_CELL }
-                }
-                this.rows.push(
-                    row
-                )
-            }
-        }
-
-        if (this.cursor.y >= this.rows.length) {
-            throw new Error("cursor still not in view")
-        }
-
-        this.handleScrollResult = true;
-    }
-
     private color(n: number) {
         return this.COLORS[n % this.COLORS.length];
     }
-
 
     private higlights: TerminalRendererHiglight[] = [];
     // clear all active highligts
     highlight_clear() {
         for (let higlight of this.higlights) {
-            if (higlight[0] < this.yOffset || higlight[0] >= (this.yOffset + this.ROW_HEIGHT)) continue;
+            if (higlight[0] < this.y_offset || higlight[0] >= (this.y_offset + this.ROW_HEIGHT)) continue;
 
             this.draw_cells(higlight[0], higlight[1], higlight[2])
 
@@ -986,18 +575,18 @@ export class TerminalRenderer {
 
         this.higlights.push([y, xStart, xEnd]);
 
-        if (y < this.yOffset || y >= (this.yOffset + this.ROW_HEIGHT)) {
+        if (y < this.y_offset || y >= (this.y_offset + this.ROW_HEIGHT)) {
             return
         };
 
-        this.draw_cells(y, xStart, xEnd, this.COLOR_BG, this.COLOR_FG);
+        this.draw_cells(y, xStart, xEnd, this.color_bg, this.color_fg);
     }
 
     private higlight_draw() {
         for (let higlight of this.higlights) {
-            if (higlight[0] < this.yOffset || higlight[0] >= (this.yOffset + this.ROW_HEIGHT)) continue;
+            if (higlight[0] < this.y_offset || higlight[0] >= (this.y_offset + this.ROW_HEIGHT)) continue;
 
-            this.draw_cells(higlight[0], higlight[1], higlight[2], this.COLOR_BG, this.COLOR_FG);
+            this.draw_cells(higlight[0], higlight[1], higlight[2], this.color_bg, this.color_fg);
 
             if (this.cursor.y == higlight[0]) {
                 this.draw_cursor()
@@ -1013,10 +602,10 @@ export class TerminalRenderer {
             max_height = ch * this.ROW_HEIGHT;
 
         if (rx > max_width || ry > max_height) {
-            return [this.COLUMN_WIDTH - 1, this.yOffset + this.ROW_HEIGHT - 1, rx, ry];
+            return [this.COLUMN_WIDTH - 1, this.y_offset + this.ROW_HEIGHT - 1, rx, ry];
         }
 
-        let x = Math.floor(rx / cw), y = this.yOffset + Math.floor(ry / ch);
+        let x = Math.floor(rx / cw), y = this.y_offset + Math.floor(ry / ch);
         return [x, y, rx, ry]
     }
 
