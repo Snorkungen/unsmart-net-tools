@@ -359,6 +359,7 @@ export class TerminalRenderer implements TerminalRendererState {
 
     view_modified = false;
     modified_cells: { [y: number]: [first: number, last: number] } = [];
+    resize_markers: [end: number, row_count: number][] = []; 
 
     DEFAULT_COLOR_BG = 0 % this.COLORS.length;
     DEFAULT_COLOR_FG = 7 % this.COLORS.length;
