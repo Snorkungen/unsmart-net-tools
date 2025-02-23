@@ -194,14 +194,14 @@ export default class Terminal {
         if (y < yPos) {
             this.mouse_cell_selections[this.mouse_cell_selection_idx][2] = 0;
             for (let i = yPos - 1; i > y; i--) {
-                this.mouse_cell_selections.push([i, 0, this.renderer.COLUMN_WIDTH - 1])
+                this.mouse_cell_selections.push([i, 0, this.renderer.view_columns - 1])
             }
 
-            this.mouse_cell_selections.push([y, x, this.renderer.COLUMN_WIDTH - 1])
+            this.mouse_cell_selections.push([y, x, this.renderer.view_columns - 1])
         } else if (y > yPos) {
-            this.mouse_cell_selections[this.mouse_cell_selection_idx][2] = this.renderer.COLUMN_WIDTH - 1;
+            this.mouse_cell_selections[this.mouse_cell_selection_idx][2] = this.renderer.view_columns - 1;
             for (let i = yPos + 1; i < y; i++) {
-                this.mouse_cell_selections.push([i, 0, this.renderer.COLUMN_WIDTH - 1])
+                this.mouse_cell_selections.push([i, 0, this.renderer.view_columns - 1])
             }
 
             this.mouse_cell_selections.push([y, 0, x])
@@ -370,9 +370,6 @@ export class TerminalRenderer implements TerminalRendererState {
     y_offset = 0;
 
     // options start
-    COLUMN_WIDTH = 80;
-    ROW_HEIGHT = 2 * 8;
-
     FONT = "18px monospace";
     TEXT_BASE_LINE: CanvasTextBaseline = "top";
 
@@ -388,20 +385,20 @@ export class TerminalRenderer implements TerminalRendererState {
         this.ctx = this.canvas.getContext("2d")!;
 
         let [width, height] = this.cell_dimensions();
-        this.canvas.width = this.COLUMN_WIDTH * width;
-        this.canvas.height = this.ROW_HEIGHT * height;
+        this.canvas.width = this.view_columns * width;
+        this.canvas.height = this.view_rows * height;
 
         this.ctx.fillStyle = this.color(this.DEFAULT_COLOR_BG);
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         // init rows
-        this.rows = new Array<TerminalRendererCell[]>(this.ROW_HEIGHT);
+        this.rows = new Array<TerminalRendererCell[]>(this.view_rows);
 
         // fill container with rows
-        for (let i = 0; i < this.ROW_HEIGHT; i++) {
+        for (let i = 0; i < this.view_rows; i++) {
             // duplicate state
-            this.rows[i] = new Array<TerminalRendererCell>(this.COLUMN_WIDTH);
-            for (let j = 0; j < this.COLUMN_WIDTH; j++) {
+            this.rows[i] = new Array<TerminalRendererCell>(this.view_columns);
+            for (let j = 0; j < this.view_columns; j++) {
                 // duplicate state
                 this.rows[i][j] = { fg: this.color_fg, bg: this.color_bg, byte: 0 }
             }
@@ -497,7 +494,7 @@ export class TerminalRenderer implements TerminalRendererState {
 
     draw() {
         // shift container rows
-        for (let j = 0; j < this.ROW_HEIGHT; j++) {
+        for (let j = 0; j < this.view_rows; j++) {
             this.draw_cells((j + this.y_offset), 0, this.rows[j + this.y_offset].length - 1);
         }
 
@@ -513,7 +510,7 @@ export class TerminalRenderer implements TerminalRendererState {
 
     scrollWindow(direction: number): number {
         let tmp = this.y_offset;
-        this.y_offset = (Math.max(0, Math.min(this.y_offset + direction, this.rows.length - this.ROW_HEIGHT)))
+        this.y_offset = (Math.max(0, Math.min(this.y_offset + direction, this.rows.length - this.view_rows)))
         this.draw();
         return this.y_offset - tmp;
     }
@@ -521,7 +518,7 @@ export class TerminalRenderer implements TerminalRendererState {
     buffer: Uint8Array = new Uint8Array();
 
     private cursorInView(): boolean {
-        return this.cursor.y >= this.y_offset && this.cursor.y < this.y_offset + this.ROW_HEIGHT;
+        return this.cursor.y >= this.y_offset && this.cursor.y < this.y_offset + this.view_rows;
     }
 
     render() {
@@ -555,7 +552,7 @@ export class TerminalRenderer implements TerminalRendererState {
     // clear all active highligts
     highlight_clear() {
         for (let higlight of this.higlights) {
-            if (higlight[0] < this.y_offset || higlight[0] >= (this.y_offset + this.ROW_HEIGHT)) continue;
+            if (higlight[0] < this.y_offset || higlight[0] >= (this.y_offset + this.view_rows)) continue;
 
             this.draw_cells(higlight[0], higlight[1], higlight[2])
 
@@ -575,7 +572,7 @@ export class TerminalRenderer implements TerminalRendererState {
 
         this.higlights.push([y, xStart, xEnd]);
 
-        if (y < this.y_offset || y >= (this.y_offset + this.ROW_HEIGHT)) {
+        if (y < this.y_offset || y >= (this.y_offset + this.view_rows)) {
             return
         };
 
@@ -584,7 +581,7 @@ export class TerminalRenderer implements TerminalRendererState {
 
     private higlight_draw() {
         for (let higlight of this.higlights) {
-            if (higlight[0] < this.y_offset || higlight[0] >= (this.y_offset + this.ROW_HEIGHT)) continue;
+            if (higlight[0] < this.y_offset || higlight[0] >= (this.y_offset + this.view_rows)) continue;
 
             this.draw_cells(higlight[0], higlight[1], higlight[2], this.color_bg, this.color_fg);
 
@@ -598,11 +595,11 @@ export class TerminalRenderer implements TerminalRendererState {
         let [cw, ch] = this.cell_dimensions();
         let rect = (this.canvas as HTMLElement).getBoundingClientRect();
         let rx = Math.max(0, event.clientX - rect.left), ry = Math.max(0, event.clientY - rect.top);
-        let max_width = cw * this.COLUMN_WIDTH,
-            max_height = ch * this.ROW_HEIGHT;
+        let max_width = cw * this.view_columns,
+            max_height = ch * this.view_rows;
 
         if (rx > max_width || ry > max_height) {
-            return [this.COLUMN_WIDTH - 1, this.y_offset + this.ROW_HEIGHT - 1, rx, ry];
+            return [this.view_columns - 1, this.y_offset + this.view_rows - 1, rx, ry];
         }
 
         let x = Math.floor(rx / cw), y = this.y_offset + Math.floor(ry / ch);
