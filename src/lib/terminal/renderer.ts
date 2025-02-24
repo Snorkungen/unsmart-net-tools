@@ -379,62 +379,58 @@ export function terminal_render(state: TerminalRendererState, buffer: Uint8Array
 export function terminal_resize(state: TerminalRendererState) {
     for (let y = 0; y < state.rows.length; y++) {
         if (state.view_columns === state.rows[y].length) break; // do no work
-
         let sy = y;
+        let orig_len = state.rows[sy].length;
 
-        if (state.rows[sy].length <= state.view_columns) {
-            // using markers try to recover some stuff
+        let orig_y_offset = state.y_offset, y_offset_decremented = 0;
+
+        // if there are markers then join everything onto a single row for now
+        if (state.resize_markers[sy]) {
+            let [end, rc] = state.resize_markers[sy];
             let start = state.rows[sy].length;
-            let orig_len = state.rows[sy].length;
-            state.rows[sy].length = state.view_columns;
+            state.rows[sy].length = end + 1;
 
-            if (state.resize_markers[y]) {
-                let [end, rc] = state.resize_markers[y];
+            outer: for (let i = 1; i <= rc; i++) {
+                while (state.rows[sy + i].length) {
+                    state.rows[sy][start++] = state.rows[sy + i].shift()!;
 
-                outer: for (let i = 1; i <= rc; i++) {
-                    while (state.rows[sy + i].length) {
-                        state.rows[sy][start++] = state.rows[sy + i].shift()!;
-
-                        if (start > end || start >= state.rows[sy].length) {
-                            break outer;
-                        }
+                    if (start > end || start >= state.rows[sy].length) {
+                        break outer;
                     }
-                }
-
-                // remove successive rows
-                let remove_count = 0;
-                for (let i = (sy + rc); i > sy; i--) {
-                    if (state.rows[i].length == 0 || state.rows[i][0].byte == 0) {
-                        remove_count++;
-                        state.rows.splice(i, 1);
-                    } else {
-                        break;
-                    }
-                }
-
-                // consume markers
-                if (remove_count == rc) {
-                    delete state.resize_markers[sy];
-                } else {
-                    state.resize_markers[sy][1] -= remove_count; // idk about this one
-                }
-
-                for (let i = 0; i < state.resize_markers.length; i++) {
-                    if (!state.resize_markers[i]) continue;
-
-                    state.resize_markers[i - remove_count] = state.resize_markers[i];
-                    delete state.resize_markers[i];
-                }
-
-                if (state.cursor.y > sy && state.cursor.y <= sy + rc) {
-                    state.cursor.x = (state.cursor.y - sy) * orig_len + state.cursor.x;
-                    state.cursor.y -= remove_count;
-                    // I do not trust this
-
-                } else if (state.cursor.y > sy) {
-                    state.cursor.y -= remove_count;
                 }
             }
+
+            // delete the rows after
+            state.rows.splice(sy + 1, rc);
+
+            delete state.resize_markers[sy];
+            for (let i = sy; i < state.resize_markers.length; i++) {
+                if (!state.resize_markers[i]) continue;
+
+                state.resize_markers[i - rc] = state.resize_markers[i];
+                delete state.resize_markers[i];
+            }
+
+            // correct cursor ...
+            if (state.cursor.y > sy && state.cursor.y <= sy + rc) {
+                state.cursor.x = (state.cursor.y - sy) * orig_len + state.cursor.x;
+                state.cursor.y -= state.cursor.y - sy;
+                // I do not trust this
+
+            } else if (state.cursor.y > sy) {
+                state.cursor.y -= rc;
+            }
+
+            // correct y_offset
+            if (state.y_offset > sy && state.y_offset <= sy + rc) {
+                y_offset_decremented = (state.y_offset - sy)
+                state.y_offset -= y_offset_decremented;
+            }
+        }
+
+        if (state.rows[sy].length <= state.view_columns) {
+            let start = state.rows[sy].length;
+            state.rows[sy].length = state.view_columns;
 
             // pad out the rest of the row
             for (let i = start; i < state.rows[sy].length; i++) {
@@ -447,51 +443,13 @@ export function terminal_resize(state: TerminalRendererState) {
         let end = state.rows[sy].length - 1;
         for (; state.rows[sy][end].byte == 0 && end > 0; end--) { };
 
+        if (state.cursor.y == sy) {
+            end = Math.max(state.cursor.x, end);
+        }
+
         if (end < state.view_columns) {
             state.rows[sy].length = state.view_columns;
             continue;
-        }
-
-        if (state.resize_markers[sy]) {
-            let [tot, rc] = state.resize_markers[sy];
-            let start = state.rows[sy].length;
-            let orig_len = state.rows[sy].length;
-
-            // collect all items onto a single row for now
-            state.rows[sy].length = tot + 1;
-            end = tot;
-
-            outer: for (let i = 1; i <= rc; i++) {
-                while (state.rows[sy + i]) {
-                    state.rows[sy][start++] = state.rows[sy + i].shift()!;
-
-                    if (start > end || start >= state.rows[sy].length) {
-                        break outer;
-                    }
-                }
-            }
-
-            // remove successive rows
-            state.rows.splice(sy + 1, rc);
-            delete state.resize_markers[sy];
-
-            let increment_by = Math.ceil((tot + 1) / state.view_columns) - rc - 1;
-            if (increment_by > 0) {
-                for (let i = 0; i < state.resize_markers.length; i++) {
-                    if (!state.resize_markers[i]) continue;
-                    state.resize_markers[i + increment_by] = state.resize_markers[i];
-                    delete state.resize_markers[i];
-                }
-            }
-
-            if (state.cursor.y > sy && state.cursor.y <= sy + rc) {
-                state.cursor.x = (state.cursor.y - sy) * orig_len + state.cursor.x;
-                state.cursor.y -= rc;
-                // I do not trust this
-
-            } else if (state.cursor.y > sy) {
-                state.cursor.y -= rc;
-            }
         }
 
         let nrow = new Array<TerminalRendererCell>(state.view_columns);
@@ -516,16 +474,26 @@ export function terminal_resize(state: TerminalRendererState) {
 
         state.rows[sy].length = state.view_columns;
 
+        // increment resize markers
+        let inc = y - sy;
+        for (let i = state.resize_markers.length; i > sy; i--) {
+            if (!state.resize_markers[i]) continue;
+            state.resize_markers[i + inc] = state.resize_markers[i];
+            delete state.resize_markers[i];
+        }
+
         // this would be easy but the resize markers mess with the state
         if (state.cursor.y == sy && state.cursor.x >= state.view_columns) {
             // count how much is this after
             let count = state.cursor.x - (state.view_columns - 1);
+            state.cursor.x = ((count - 1) % state.view_columns);
             state.cursor.y += Math.ceil(count / state.view_columns);
-            state.cursor.x = (count % state.view_columns) - 1;
         } else if (state.cursor.y > sy) {
             state.cursor.y += (y - sy);
         }
-    }
 
-    //  !TODO: correct cursor position if available
+        if (state.y_offset == sy && y_offset_decremented == inc) {
+            state.y_offset = orig_y_offset;
+        }
+    }
 }

@@ -1,4 +1,4 @@
-import { assert, describe, expect, test } from "vitest"
+import { describe, expect, test } from "vitest"
 import { terminal_resize, TerminalRendererCell, TerminalRendererState } from "../../lib/terminal/renderer"
 
 describe("TerminalRenderer", () => {
@@ -37,7 +37,7 @@ describe("TerminalRenderer", () => {
         state.rows[i] = new Array<TerminalRendererCell>(state.view_columns);
         for (let j = 0; j < state.view_columns; j++) {
             // duplicate state
-            state.rows[i][j] = { fg: state.color_fg, bg: state.color_bg, byte: j }
+            state.rows[i][j] = { fg: state.color_fg, bg: state.color_bg, byte: j + 1 }
         }
     }
 
@@ -97,12 +97,48 @@ describe("TerminalRenderer", () => {
         state.view_columns = 4;
         terminal_resize(state);
 
-        expect(state.cursor, "").toBe({ x: 1, y: 1 })
+        expect(state.cursor.x).toBe(1);
+        expect(state.cursor.y).toBe(1);
         expect(state.rows.length).toBe(3);
+
+
+        state.view_columns = 2;
+        terminal_resize(state);
+
+        expect(state.cursor.x).toBe(1);
+        expect(state.cursor.y).toBe(2);
+        expect(state.rows.length).toBe(5);
 
     });
 
     test("resize terminal y_offset tracks #1", () => {
-        throw new Error("test not implemented")
+        state.cursor = { x: 0, y: 0 };
+        state.view_columns = 10;
+        terminal_resize(state);
+
+        state.view_columns = 2;
+        terminal_resize(state);
+        expect(state.rows.length).toBe(4)
+
+        state.y_offset = 1;
+        state.view_columns = 3;
+        terminal_resize(state);
+        expect(state.rows.length).toBe(4);
+        expect(state.rows[2][2].byte).toBe(3)
+        expect(state.y_offset).toBe(1);
+    });
+
+    test("resize terminal y_offset tracks #2", () => {
+        state.cursor = { x: 0, y: 0 };
+        state.view_columns = 3;
+        terminal_resize(state);
+
+        state.y_offset = 1;
+        state.view_columns = 4;
+
+        terminal_resize(state);
+        expect(state.rows.length).toBe(2)
+        expect(state.y_offset).toBe(0);
+
     });
 })
