@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { terminal_resize, TerminalRendererCell, TerminalRendererState } from "../../lib/terminal/renderer"
+import { terminal_init_rows, terminal_mark_cell_as_modified, terminal_resize, TerminalRendererCell, TerminalRendererState } from "../../lib/terminal/renderer"
 
 describe("TerminalRenderer", () => {
     const state: TerminalRendererState = {
@@ -141,4 +141,51 @@ describe("TerminalRenderer", () => {
         expect(state.y_offset).toBe(0);
 
     });
+})
+
+describe("TerminalRenderer #2", () => {
+    const state: TerminalRendererState = {
+        view_columns: 0,
+        view_rows: 0,
+        view_modified: false,
+        modified_cells: {},
+        DEFAULT_COLOR_BG: 0,
+        DEFAULT_COLOR_FG: 0,
+        color_bg: 0,
+        color_fg: 0,
+        cursor: {
+            x: 0,
+            y: 0
+        },
+        prev_cursor: {
+            x: 0,
+            y: 0
+        },
+        y_offset: 0,
+        rows: [],
+        resize_markers: []
+    }
+
+    state.view_columns = 2;
+    state.view_rows = 10;
+    terminal_init_rows(state);
+    state.view_rows = 2;
+
+    
+    test("invalidate resize_marker #1", () => {
+        state.resize_markers[0] = [4, 2];
+        terminal_mark_cell_as_modified(state, 0, 2);
+
+
+        expect(state.resize_markers.length).toBe(1);
+        expect(state.resize_markers[0]).toStrictEqual([3, 1])
+    })
+
+    test("invalidate resize_marker #2", () => {
+        state.resize_markers[0] = [4, 2];
+        terminal_mark_cell_as_modified(state, 0, 1);
+
+        expect(state.resize_markers.length).toBe(1);
+        expect(state.resize_markers[0]).toBe(undefined);
+    })
 })
