@@ -1,6 +1,7 @@
 import { uint8_concat, uint8_fromString, uint8_mutateSet, uint8_set } from "../binary/uint8-array";
 import { TerminalRendererCursor, TerminalRendererCell, TerminalRendererState, terminal_render } from "./renderer";
 import { ASCIICodes, CSI } from "./shared";
+
 export default class Terminal {
     private renderer: TerminalRenderer;
     private container: HTMLElement;
@@ -12,25 +13,22 @@ export default class Terminal {
         this.container.appendChild(canvas)
         this.container.tabIndex = 0;
 
-        /**
-         * The following is a work-around because chromium based browswers be havin' issues
-         */
-        if (!navigator.userAgent.includes("Chrome")) {
-            this.renderer = new TerminalRenderer(canvas);
-        } else {
-            this.renderer = new TerminalRenderer(canvas);
-            /*
-                work-around for chromium based browsers that i was having issues with
-            */
-            setTimeout(() => {
-                this.renderer.draw();
-            }, 4)
+        this.renderer = new TerminalRenderer(canvas);
 
-            window.addEventListener("hashchange", () => {
-                if (!this.container.isConnected) return;
-                this.renderer.draw()
-            })
-        }
+        const mutation_observer = new MutationObserver(() => {
+            if (!this.container.isConnected) return;
+
+            // resize renderer
+
+            if (this.write_buffer_length) {
+                this.renderer.buffer = uint8_concat([this.renderer.buffer, this.write_buffer.subarray(0, this.write_buffer_length)]);
+                this.write_buffer_length = 0;
+            }
+
+            this.renderer.render()
+        });
+
+        mutation_observer.observe(document, { childList: true, subtree: true })
 
         this.container.addEventListener("mousedown", this.handle_mousedown.bind(this));
         this.container.addEventListener("mousemove", this.handle_mousemove.bind(this));
@@ -71,7 +69,7 @@ export default class Terminal {
     write_waiting = false;
     write_timeout = 50;
     write_timeout_callback = (() => {
-        if (!this.write_waiting) return;
+        if (!this.write_waiting && this.container.isConnected) return;
         this.renderer.buffer = this.write_buffer.subarray(0, this.write_buffer_length);
         this.write_buffer_length = 0;
         this.renderer.render();
@@ -87,7 +85,10 @@ export default class Terminal {
                 this.write_buffer_length = 0;
             }
 
-            this.renderer.render()
+            if (this.container.isConnected) {
+                this.renderer.render()
+            }
+
             this.write_waiting = false;
             this.mouse_clear_selections()
             return;
@@ -359,7 +360,7 @@ export class TerminalRenderer implements TerminalRendererState {
 
     view_modified = false;
     modified_cells: { [y: number]: [first: number, last: number] } = [];
-    resize_markers: [end: number, row_count: number][] = []; 
+    resize_markers: [end: number, row_count: number][] = [];
 
     DEFAULT_COLOR_BG = 0 % this.COLORS.length;
     DEFAULT_COLOR_FG = 7 % this.COLORS.length;
@@ -385,11 +386,12 @@ export class TerminalRenderer implements TerminalRendererState {
         this.canvas = canvas;
         this.ctx = this.canvas.getContext("2d")!;
 
+
         let [width, height] = this.cell_dimensions();
         this.canvas.width = this.view_columns * width;
         this.canvas.height = this.view_rows * height;
 
-        this.ctx.fillStyle = this.color(this.DEFAULT_COLOR_BG);
+        this.ctx.fillStyle = this.color(this.color_bg);
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         // init rows
