@@ -1,5 +1,5 @@
 import { uint8_concat, uint8_fromString, uint8_mutateSet, uint8_set } from "../binary/uint8-array";
-import { TerminalRendererCursor, TerminalRendererCell, TerminalRendererState, terminal_render } from "./renderer";
+import { TerminalRendererCursor, TerminalRendererCell, TerminalRendererState, terminal_render, terminal_resize } from "./renderer";
 import { ASCIICodes, CSI } from "./shared";
 
 export default class Terminal {
@@ -18,8 +18,6 @@ export default class Terminal {
         const mutation_observer = new MutationObserver(() => {
             if (!this.container.isConnected) return;
 
-            // resize renderer
-
             if (this.write_buffer_length) {
                 this.renderer.buffer = uint8_concat([this.renderer.buffer, this.write_buffer.subarray(0, this.write_buffer_length)]);
                 this.write_buffer_length = 0;
@@ -28,7 +26,26 @@ export default class Terminal {
             this.renderer.render()
         });
 
+        const resize_observer = new ResizeObserver(() => {
+            if (!this.container.isConnected) return;
+            if (!this.container.clientWidth) return;
+
+            let [width] = this.renderer.cell_dimensions();
+            this.renderer.view_columns = Math.max(
+                22,
+                Math.floor(this.container.clientWidth / width)
+            );
+
+            this.renderer.canvas.width = width * this.renderer.view_columns;
+
+
+            terminal_resize(this.renderer); // TODO: the following function does not do what it supposed to do
+
+            this.renderer.draw()
+        })
+
         mutation_observer.observe(document, { childList: true, subtree: true })
+        resize_observer.observe(this.container)
 
         this.container.addEventListener("mousedown", this.handle_mousedown.bind(this));
         this.container.addEventListener("mousemove", this.handle_mousemove.bind(this));
@@ -52,13 +69,6 @@ export default class Terminal {
                 event.preventDefault()
             }
         })
-
-        // render to screen ?
-        // const render = () => {
-        //     this.renderer.render.bind(this.renderer)();
-        //     requestAnimationFrame(render)
-        // }
-        // window.requestAnimationFrame(render);
     }
 
     read?: (bytes: Uint8Array) => void;
@@ -409,7 +419,7 @@ export class TerminalRenderer implements TerminalRendererState {
     }
 
     private cell_dimensions_cached?: [width: number, height: number, wdiff: number];
-    private cell_dimensions(): [width: number, height: number, wdiff: number] {
+    cell_dimensions(): [width: number, height: number, wdiff: number] {
         if (this.cell_dimensions_cached) {
             return this.cell_dimensions_cached;
         }
