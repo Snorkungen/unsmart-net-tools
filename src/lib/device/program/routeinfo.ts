@@ -22,6 +22,7 @@ export const DEVICE_PROGRAM_ROUTEINFO_ARP: Program = {
 
         return ProcessSignal.EXIT;
     },
+    __NODATA__: true
 }
 
 // !TODO: remove a route
@@ -55,9 +56,10 @@ const DEVICE_PROGRAM_ROUTEINFO_REMOVE: Program = {
         proc.term_write(uint8_fromString(`removed ${removed_routes.length} routes\n`))
         proc.device.routes = proc.device.routes.filter(r => !predicate(r)); // just remove all destinations matching the specified destination
 
-        
+
         return ProcessSignal.EXIT;
     },
+    __NODATA__: true
 }
 
 // !TODO: add a route
@@ -144,7 +146,8 @@ const DEVICE_PROGRAM_ROUTEINFO_ADD4: Program = {
         proc.device.process_spawn(proc, DEVICE_PROGRAM_ROUTEINFO, ["routeinfo", "ipv4"])
 
         return ProcessSignal.EXIT;
-    }
+    },
+    __NODATA__: true
 }
 
 export const DEVICE_PROGRAM_ROUTEINFO: Program = {
@@ -185,5 +188,6 @@ export const DEVICE_PROGRAM_ROUTEINFO: Program = {
 
         return ProcessSignal.EXIT;
     },
-    sub: [DEVICE_PROGRAM_ROUTEINFO_ARP, DEVICE_PROGRAM_ROUTEINFO_REMOVE, DEVICE_PROGRAM_ROUTEINFO_ADD4]
+    sub: [DEVICE_PROGRAM_ROUTEINFO_ARP, DEVICE_PROGRAM_ROUTEINFO_REMOVE, DEVICE_PROGRAM_ROUTEINFO_ADD4],
+    __NODATA__: true
 }

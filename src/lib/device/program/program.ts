@@ -12,6 +12,7 @@ export const DEVICE_PROGRAM_CLEAR: Program = {
         proc.term_write(CSI(ASCIICodes.Two, 74)); // clear display
         return ProcessSignal.EXIT;
     },
+    __NODATA__: true
 };
 
 export const DEVICE_PROGRAM_ECHO: Program = {
@@ -25,6 +26,7 @@ Example: echo "Hello, World"
         proc.term_write(uint8_fromString(input.join("\n"))); // echo
         return ProcessSignal.EXIT;
     },
+    __NODATA__: true
 }
 
 export const DEVICE_PROGRAM_HELP: Program = {
@@ -89,6 +91,7 @@ Example 2: help help`,
 
         return ProcessSignal.EXIT;
     },
+    __NODATA__: true
 }
 
 const PCAP_FILE_EXTENSION = ".cap";
@@ -142,4 +145,5 @@ export const DEVICE_PROGRAM_DOWNLOAD: Program = {
 
         return ProcessSignal.EXIT;
     },
+    __NODATA__: true
 }

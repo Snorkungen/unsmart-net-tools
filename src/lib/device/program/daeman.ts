@@ -31,5 +31,6 @@ export const DEVICE_PROGRAM_DAEMAN: Program = {
 
 
         return ProcessSignal.EXIT;
-    }
+    },
+    __NODATA__: true
 };

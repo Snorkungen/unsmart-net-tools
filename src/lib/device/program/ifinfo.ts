@@ -87,7 +87,8 @@ const DEVICE_PROGRAM_IFINFO_SET4: Program = {
         }
 
         return ProcessSignal.EXIT;
-    }
+    },
+    __NODATA__: true
 }
 
 export const DEVICE_PROGRAM_IFINFO: Program = {
@@ -144,5 +145,6 @@ export const DEVICE_PROGRAM_IFINFO: Program = {
 
         return ProcessSignal.EXIT;
     },
-    sub: [DEVICE_PROGRAM_IFINFO_SET4]
+    sub: [DEVICE_PROGRAM_IFINFO_SET4],
+    __NODATA__: true
 }
