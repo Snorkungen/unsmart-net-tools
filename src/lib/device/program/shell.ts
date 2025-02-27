@@ -2,6 +2,7 @@ import { uint8_concat, uint8_fromString } from "../../binary/uint8-array";
 import { ASCIICodes, CSI, numbertonumbers, readParams } from "../../terminal/shared";
 import { Process, ProcessSignal, Program } from "../device";
 import { parseArgs } from "./helpers";
+import { DEVICE_PROGRAM_TERMQUERY } from "./termquery";
 
 enum ShellState {
     UNITIALIZED,
@@ -82,7 +83,7 @@ function replacePromptBuffer(proc: Process<ShellData>, text: string, cursorX?: n
 
 }
 
-function lazywriter_write_options(proc: Process<string>, options: string[], i: number, MAX_OPTIONS_WIDTH: number) {
+function lazywriter_write_options(proc: Process<string>, options: string[], i: number, term_width: number) {
     let cursorX = 0;
     let option = options[i];
 
@@ -94,6 +95,7 @@ function lazywriter_write_options(proc: Process<string>, options: string[], i: n
     }
     text_length -= 1;
 
+    let MAX_OPTIONS_WIDTH = term_width - 4;
 
     let options_start = 0, options_end = options.length - 1;
 
@@ -225,10 +227,14 @@ const lazywriter: Program<string> = {
         }
 
         let term_width = 38;
-
         let selected_option_idx = 0;
         proc.term_write(new Uint8Array([ASCIICodes.NewLine]));
-        lazywriter_write_options(proc, options, selected_option_idx, term_width);
+
+        proc.spawn(proc, DEVICE_PROGRAM_TERMQUERY, undefined, {}, (sproc) => {
+            if (!sproc.data.width) return;
+            term_width = sproc.data?.width;
+            lazywriter_write_options(proc, options, selected_option_idx, term_width);
+        });
 
         proc.term_read(proc, (_, bytes) => {
             let byte = bytes[0];
