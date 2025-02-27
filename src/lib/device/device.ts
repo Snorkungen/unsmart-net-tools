@@ -354,6 +354,7 @@ export class Device {
 
         let init_sig = program.init(this.processes[i]!, args || [], data);
         this.processes[i]!.signal = init_sig;
+        this.processes[i]!.status = "RUNNING";
 
         if (init_sig !== ProcessSignal.__EXPLICIT__) {
             if (proc) {
@@ -381,12 +382,18 @@ export class Device {
             return;
         }
 
+        if (typeof proc.data === "undefined" && !proc.program.__NODATA__) {
+            // check that data is defined but there needs to be away to silence the message if program does not use data.
+            console.warn(proc.program.name, "data not defined! to silence warning set __NODATA__ ")
+        }
+
         // first remove handlers
         for (let hj = 0; hj < this.process_handlers.length; hj++) {
             let h = this.process_handlers[hj]
-            if (!h || !h.id.startsWith(h.proc.id)) {
+            if (!h || !h.id.startsWith(proc.id)) {
                 continue;
             }
+
             // if process has a owner call handle_close if it exists
             if ((h.proc.id === proc.id && signal != ProcessSignal.EXIT) || h.proc.id != h.id && h.id == proc.id) {
                 h.handler(proc, signal);
