@@ -354,8 +354,7 @@ export class Device {
 
         let init_sig = program.init(this.processes[i]!, args || [], data);
         this.processes[i]!.signal = init_sig;
-        this.processes[i]!.status = "RUNNING";
-
+        
         if (init_sig !== ProcessSignal.__EXPLICIT__) {
             if (proc) {
                 this.processes[i]!.status = "MARKED_CLOSED";
@@ -367,12 +366,18 @@ export class Device {
             // check that data is defined but there needs to be away to silence the message if program does not use data.
             console.warn(program.name, "data not defined! to silence warning set __NODATA__ ")
         }
+
+        this.processes[i]!.status = "RUNNING";
+        
         return this.processes[i];
     }
 
     process_close(proc: Process, signal: ProcessSignal) {
         if (proc.status === "CLOSED") {
             return; // to prevent loops 
+        } else if (proc.status === "UNINIT") {
+            proc.status = "MARKED_CLOSED";
+            return;
         } else {
             proc.status = "CLOSED"
         }
