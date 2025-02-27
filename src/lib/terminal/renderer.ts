@@ -69,7 +69,8 @@ function terminal_ensure_cursor_in_view(state: TerminalRendererState) {
     state.view_modified = true;
 }
 
-export function terminal_mark_cell_as_modified(state: TerminalRendererState, x: number, y: number) {
+
+function terminal_mark_cell_as_modified(state: TerminalRendererState, x: number, y: number) {
     if (state.modified_cells[y]) {
         if (state.modified_cells[y][0] > x) {
             state.modified_cells[y][0] = x;
@@ -79,27 +80,8 @@ export function terminal_mark_cell_as_modified(state: TerminalRendererState, x: 
     } else {
         state.modified_cells[y] = [x, x];
     }
-
-    // invalidate resize_marker
-    for (let i = y; i >= 0; i--) {
-        if (!state.resize_markers[i]) continue;
-
-        if (state.resize_markers[i][1] + i >= y) {
-            // invalidate marker some how
-
-            // if there multiple rows above
-            let diff = (y - i);
-            if (diff == 0 || diff == 1) {
-                delete state.resize_markers[i];
-            } else {
-                state.resize_markers[i][0] = (diff) * state.view_columns - 1; // change the end
-                state.resize_markers[i][1] = (diff - 1) // change the row count
-            }
-
-            break;
-        }
-    }
 }
+
 
 function terminal_erase_cell(state: TerminalRendererState, x: number, y: number) {
     terminal_ensure_cursor_in_view(state);
@@ -512,20 +494,6 @@ export function terminal_resize(state: TerminalRendererState) {
 
         if (state.y_offset == sy && y_offset_decremented == inc) {
             state.y_offset = orig_y_offset;
-        }
-    }
-}
-
-export function terminal_init_rows(state: TerminalRendererState) {
-    // init rows
-    state.rows = new Array<TerminalRendererCell[]>(state.view_rows);
-    // fill container with rows
-    for (let i = 0; i < state.view_rows; i++) {
-        // duplicate state
-        state.rows[i] = new Array<TerminalRendererCell>(state.view_columns);
-        for (let j = 0; j < state.view_columns; j++) {
-            // duplicate state
-            state.rows[i][j] = { fg: state.color_fg, bg: state.color_bg, byte: 0 }
         }
     }
 }
