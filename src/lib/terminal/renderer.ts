@@ -36,7 +36,19 @@ export type TerminalRendererState = {
     y_offset: number;
     rows: TerminalRendererCell[][];
 
-    resize_markers: [end: number, row_count: number][];
+    resize_markers: number[];
+}
+
+function terminal_get_resize_marker_idx(state: TerminalRendererState, y: number): number {
+    for (let i = y; i >= 0; i--) {
+        if (!state.resize_markers[i]) continue;
+
+        if (state.resize_markers[i] + i >= y) {
+            return i;
+        }
+    }
+
+    return -1;
 }
 
 function terminal_cursor_in_view(state: TerminalRendererState, cursor = state.cursor) {
@@ -95,17 +107,52 @@ function terminal_erase_cell(state: TerminalRendererState, x: number, y: number)
 }
 
 function terminal_erase_in_line(state: TerminalRendererState, n: number) {
+    let rzm = terminal_get_resize_marker_idx(state, state.cursor.y);
+
     if (n == 0) { // clear from cursor to end
         for (let x = state.cursor.x; x > state.view_columns; x++) {
             terminal_erase_cell(state, x, state.cursor.y);
+        }
+
+        if (rzm >= 0) {
+            // delete the successive rows
+            let n = state.resize_markers[rzm] - (state.cursor.y - rzm);
+            for (let y = state.cursor.y; y < (state.cursor.y + n); y++) {
+                for (let x = 0; x < state.view_columns; x++) {
+                    terminal_erase_cell(state, x, y);
+                }
+            }
+
+            state.resize_markers[rzm] -= n;
+            if (state.cursor.y === rzm) {
+                delete state.resize_markers[rzm];
+            }
         }
     } else if (n == 1) { // clear from cursor to begin
         for (let x = state.cursor.x; x >= 0; x--) {
             terminal_erase_cell(state, x, state.cursor.y);
         }
+
+        if (rzm >= 0) {
+            for (let y = state.cursor.y - 1; y >= rzm; y--) {
+                for (let x = 0; x < state.view_columns; x++) {
+                    terminal_erase_cell(state, x, y);
+                }
+            }
+        }
     } else if (n == 2) { // clear entire row
-        for (let x = 0; x < state.view_columns; x++) {
-            terminal_erase_cell(state, x, state.cursor.y);
+        if (rzm < 0) {
+            for (let x = 0; x < state.view_columns; x++) {
+                terminal_erase_cell(state, x, state.cursor.y);
+            }
+        } else {
+            for (let y = rzm; y <= rzm + state.resize_markers[rzm]; y++) {
+                for (let x = 0; x < state.view_columns; x++) {
+                    terminal_erase_cell(state, x, y);
+                }
+            }
+
+            delete state.resize_markers[rzm];
         }
     }
 }
@@ -118,6 +165,8 @@ function terminal_erase_display(state: TerminalRendererState, n: number) {
         terminal_ensure_cursor_in_view(state);
         n = 0;
     }
+
+    let rzm = terminal_get_resize_marker_idx(state, state.cursor.y);
 
     if (n == 0) { // clear from cursor to end
         let posInView = state.cursor.y - state.y_offset;
@@ -133,12 +182,24 @@ function terminal_erase_display(state: TerminalRendererState, n: number) {
                 terminal_erase_cell(state, x, y);
             }
         }
+
+        if (rzm >= 0 && rzm < state.cursor.y) {
+            // decrement the row count 
+            state.resize_markers[rzm] = state.cursor.y - rzm;
+        }
+
+        state.resize_markers.length = Math.max(state.cursor.y - 1, 0);
     } else if (n == 1) { // clear from cursor to begin
+        // delete resize markers
         let posInView = state.cursor.y - state.y_offset;
         let rowsBeforeView = state.cursor.y - posInView;
-        for (let i = 0; i < rowsBeforeView; i++) {
-            state.rows.shift();
+
+        if (rzm >= 0) {
+            state.resize_markers[state.cursor.y] = state.resize_markers[rzm] - (state.cursor.y - rzm);
         }
+
+        state.resize_markers.splice(0, rowsBeforeView);
+        state.rows.splice(0, rowsBeforeView);
 
         state.prev_cursor.y -= rowsBeforeView;
         state.cursor.y = posInView;
@@ -304,6 +365,11 @@ export function terminal_render(state: TerminalRendererState, buffer: Uint8Array
                         state.cursor.x = 0;
                         break;
                     }
+
+                    let rzm = terminal_get_resize_marker_idx(state, state.cursor.y);
+                    if (rzm >= 0) {
+                        state.resize_markers[rzm] -= 1;
+                    }
                 }
                 terminal_erase_cell(state, state.cursor.x, state.cursor.y)
                 break;
@@ -311,6 +377,13 @@ export function terminal_render(state: TerminalRendererState, buffer: Uint8Array
             case ASCIICodes.Tab: {
                 state.cursor.x += 8 - state.cursor.x % 8;
                 if (state.cursor.x >= state.view_columns) {
+                    let rzm = terminal_get_resize_marker_idx(state, state.cursor.y);
+                    if (rzm < 0) {
+                        state.resize_markers[state.cursor.y] = 1;
+                    } else {
+                        state.resize_markers[rzm] += 1;
+                    }
+
                     state.cursor.x = 0;
                     state.cursor.y += 1;
                 }
@@ -364,6 +437,13 @@ export function terminal_render(state: TerminalRendererState, buffer: Uint8Array
         // advance cursor
         state.cursor.x += 1;
         if (state.cursor.x >= state.view_columns) {
+            let rzm = terminal_get_resize_marker_idx(state, state.cursor.y);
+            if (rzm < 0) {
+                state.resize_markers[state.cursor.y] = 1;
+            } else {
+                state.resize_markers[rzm] += 1;
+            }
+
             state.cursor.y += 1;
             state.cursor.x = 0;
         }
@@ -386,18 +466,13 @@ export function terminal_resize(state: TerminalRendererState) {
 
         // if there are markers then join everything onto a single row for now
         if (state.resize_markers[sy]) {
-            let [end, rc] = state.resize_markers[sy];
+            let rc = state.resize_markers[sy];
             let start = state.rows[sy].length;
-            state.rows[sy].length = end + 1;
+            state.rows[sy].length = start * (rc + 1);
 
-            outer: for (let i = 1; i <= rc; i++) {
-                while (state.rows[sy + i].length) {
-                    state.rows[sy][start++] = state.rows[sy + i].shift()!;
-
-                    if (start > end || start >= state.rows[sy].length) {
-                        break outer;
-                    }
-                }
+            // how should this operate just continue to loop
+            for (let i = start; i < start * (rc + 1); i++) {
+                state.rows[sy][i] = state.rows[sy + Math.floor(i / start)][i % start];
             }
 
             // delete the rows after
@@ -465,10 +540,10 @@ export function terminal_resize(state: TerminalRendererState) {
 
         y += 1;
         state.rows.splice(y, 0, nrow);
-        state.resize_markers[sy] = [end, y - sy];
+        state.resize_markers[sy] = y - sy;
 
         // pad out the rest of the row
-        for (let i = end % state.view_columns + 1; i < state.view_columns; i++) {
+        for (let i = (end % state.view_columns) + 1; i < state.view_columns; i++) {
             state.rows[y][i] = { fg: state.color_fg, bg: state.color_bg, byte: 0 };
         }
 
@@ -496,4 +571,16 @@ export function terminal_resize(state: TerminalRendererState) {
             state.y_offset = orig_y_offset;
         }
     }
+
+    // retain the correct amount rows     
+    while (state.rows.length - state.y_offset < state.view_rows) {
+        let row = new Array<TerminalRendererCell>(state.view_columns);
+        for (let j = 0; j < state.view_columns; j++) {
+            // duplicate state
+            row[j] = { fg: state.color_fg, bg: state.color_bg, byte: 0 }
+        }
+        state.rows.push(row);
+    }
+
+    state.view_modified = true;
 }

@@ -3,7 +3,7 @@ import { TerminalRendererCursor, TerminalRendererCell, TerminalRendererState, te
 import { ASCIICodes, CSI } from "./shared";
 
 export default class Terminal {
-    private renderer: TerminalRenderer;
+    renderer: TerminalRenderer;
     private container: HTMLElement;
 
     constructor(container: HTMLElement) {
@@ -29,6 +29,7 @@ export default class Terminal {
         const resize_observer = new ResizeObserver(() => {
             if (!this.container.isConnected) return;
             if (!this.container.clientWidth) return;
+            console.log("hellow")
 
             let [width] = this.renderer.cell_dimensions();
             this.renderer.view_columns = Math.max(
@@ -55,13 +56,14 @@ export default class Terminal {
 
         this.container.addEventListener("keydown", this.handle_keydown.bind(this))
 
+        this.container.style.border = "transparent 2px solid"; // in future change cursor style
         this.container.addEventListener("focus", () => {
             console.log("focused")
             this.container.style.border = "blue 2px solid"; // in future change cursor style
         })
         this.container.addEventListener("blur", () => {
             console.log("focused")
-            this.container.style.border = "none"; // in future change cursor style
+            this.container.style.border = "transparent 2px solid";// in future change cursor style
         })
 
         this.container.addEventListener("wheel", (event) => {
@@ -370,7 +372,7 @@ export class TerminalRenderer implements TerminalRendererState {
 
     view_modified = false;
     modified_cells: { [y: number]: [first: number, last: number] } = [];
-    resize_markers: [end: number, row_count: number][] = [];
+    resize_markers: number[] = [];
 
     DEFAULT_COLOR_BG = 0 % this.COLORS.length;
     DEFAULT_COLOR_FG = 7 % this.COLORS.length;

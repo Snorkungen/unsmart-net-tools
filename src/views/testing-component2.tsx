@@ -17,6 +17,7 @@ import { ICMP_ECHO_HEADER, ICMPV4_TYPES, ICMP_HEADER } from "../lib/header/icmp"
 import { IPV4_HEADER, PROTOCOLS, createIPV4Header } from "../lib/header/ip";
 import { DEVICE_PROGRAM_DAEMAN } from "../lib/device/program/daeman";
 import { ASCIICodes } from "../lib/terminal/shared";
+import { terminal_resize } from "../lib/terminal/renderer";
 
 export const TestingComponent2: Component = () => {
     let shellproc: any
@@ -135,6 +136,13 @@ export const TestingComponent2: Component = () => {
         newdevice.process_termwriteto(shellproc, new Uint8Array([10]))
     }
 
+    function change_terminal_size(size = 30) {
+        terminal.renderer.view_columns = size;
+        terminal_resize(terminal.renderer);
+        terminal.renderer.ctx.fillRect(0, 0, terminal.renderer.canvas.width, terminal.renderer.canvas.width)
+        terminal.renderer.draw()
+    }
+
     return (
         <div>
             <button onclick={() => osif.start()}>start osif</button>
@@ -149,6 +157,9 @@ export const TestingComponent2: Component = () => {
                 <button onclick={() => (terminal.write(new Uint8Array([
                     ASCIICodes.Escape, ASCIICodes.OpenSquareBracket, ASCIICodes.One, ASCIICodes.B
                 ])))}>Down</button>
+                <button onclick={() => change_terminal_size(30)}>resize -</button>
+                <button onclick={() => change_terminal_size(90)}>resize +</button>
+                <button onclick={() => console.log(terminal.renderer.rows, terminal.renderer.resize_markers)}>dump</button>
             </div>
             <div ref={(el) => {
                 terminal = new Terminal(el)
