@@ -29,7 +29,6 @@ export default class Terminal {
         const resize_observer = new ResizeObserver(() => {
             if (!this.container.isConnected) return;
             if (!this.container.clientWidth) return;
-            console.log("hellow")
 
             let [width] = this.renderer.cell_dimensions();
             this.renderer.view_columns = Math.max(
@@ -58,11 +57,9 @@ export default class Terminal {
 
         this.container.style.border = "transparent 2px solid"; // in future change cursor style
         this.container.addEventListener("focus", () => {
-            console.log("focused")
             this.container.style.border = "blue 2px solid"; // in future change cursor style
         })
         this.container.addEventListener("blur", () => {
-            console.log("focused")
             this.container.style.border = "transparent 2px solid";// in future change cursor style
         })
 
