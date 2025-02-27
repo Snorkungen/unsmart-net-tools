@@ -13,7 +13,7 @@ export default class Terminal {
         this.container.appendChild(canvas)
         this.container.tabIndex = 0;
 
-        this.renderer = new TerminalRenderer(canvas);
+        this.renderer = new TerminalRenderer(canvas, (b) => { this.read && this.read(b) });
 
         const mutation_observer = new MutationObserver(() => {
             if (!this.container.isConnected) return;
@@ -391,7 +391,7 @@ export class TerminalRenderer implements TerminalRendererState {
     canvas: HTMLCanvasElement;
     ctx: CanvasRenderingContext2D;
 
-    constructor(canvas: HTMLCanvasElement) {
+    constructor(canvas: HTMLCanvasElement, public write: (bytes: Uint8Array) => void) {
         this.canvas = canvas;
         this.ctx = this.canvas.getContext("2d")!;
 

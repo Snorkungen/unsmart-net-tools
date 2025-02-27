@@ -2,7 +2,7 @@
     This file contains function that do all the hardwork that, does not concern the DOM
 */
 
-import { ASCIICodes, readParams } from "./shared";
+import { ASCIICodes, CSI, numbertonumbers, readParams } from "./shared";
 
 export type TerminalRendererCursor = {
     x: number;
@@ -17,7 +17,7 @@ export type TerminalRendererCell = {
     // space for future
 }
 
-export type TerminalRendererState = {
+export interface TerminalRendererState {
     view_columns: number;
     view_rows: number;
 
@@ -37,6 +37,8 @@ export type TerminalRendererState = {
     rows: TerminalRendererCell[][];
 
     resize_markers: number[];
+
+    write(bytes: Uint8Array): void
 }
 
 function terminal_get_resize_marker_idx(state: TerminalRendererState, y: number): number {
@@ -238,6 +240,19 @@ function terminal_select_graphic_rendition(state: TerminalRendererState, n: numb
     }
 }
 
+function terminal_query_terminal(state: TerminalRendererState, n: number) {
+    // only support getcursor position
+    if (n != 6) return;
+
+
+    state.write(CSI(
+        ...numbertonumbers(state.cursor.y + 1),
+        ASCIICodes.Semicolon,
+        ...numbertonumbers(state.cursor.x + 1),
+        ASCIICodes.R,
+    ));
+}
+
 function terminal_handle_escape_sequences(state: TerminalRendererState, buffer: Uint8Array, i: number): number {
     let byte = buffer[i];
 
@@ -272,7 +287,7 @@ function terminal_handle_escape_sequences(state: TerminalRendererState, buffer: 
             }; break;
             case ASCIICodes.C /* Cursor forward */: {
                 let params = readParams(rawParams, 1, 1);
-                state.cursor.x = Math.min(state.cursor.x + params[0], state.view_columns);
+                state.cursor.x = Math.min(state.cursor.x + params[0], state.view_columns - 1);
             }; break;
             case ASCIICodes.D /* Cursor backward */: {
                 let params = readParams(rawParams, 1, 1);
@@ -292,7 +307,7 @@ function terminal_handle_escape_sequences(state: TerminalRendererState, buffer: 
                 let params = readParams(rawParams, 1, 1);
                 // params are 1-based, correct
                 params[0] && (params[0] -= 1);
-                state.cursor.x = Math.min(params[0], state.view_columns);
+                state.cursor.x = Math.min(params[0], state.view_columns - 1);
             }; break;
             case ASCIICodes.H: case ASCIICodes.f:  /* set Cursor position */ {
                 let [row, col] = readParams(rawParams, 1, 2);
@@ -300,7 +315,7 @@ function terminal_handle_escape_sequences(state: TerminalRendererState, buffer: 
                 row = Math.max(row - 1, 0);
                 col = Math.max(col - 1, 0); // 1-based
 
-                state.cursor.x = Math.min(col, state.view_columns);
+                state.cursor.x = Math.min(col, state.view_columns - 1);
                 state.cursor.y = row;
             }; break;
             case ASCIICodes.J /* erase display */: {
@@ -331,6 +346,10 @@ function terminal_handle_escape_sequences(state: TerminalRendererState, buffer: 
             case ASCIICodes.m /* select graphics rendition */: {
                 let [n] = readParams(rawParams, 0);
                 terminal_select_graphic_rendition(state, n);
+            }; break;
+            case ASCIICodes.n /* query terminal */: {
+                let [n] = readParams(rawParams, 1);
+                terminal_query_terminal(state, n);
             }; break;
 
             default: return -1; // unhandled control sequence

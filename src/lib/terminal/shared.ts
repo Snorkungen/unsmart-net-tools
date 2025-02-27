@@ -1,3 +1,5 @@
+import { uint8_fromString } from "../binary/uint8-array";
+
 export enum ASCIICodes {
     NUL = 0,
     BackSpace = 0x08,
@@ -29,6 +31,7 @@ export enum ASCIICodes {
     H = 0x41 + 7, // 72
     J = 0x41 + 9, // 74
     K = 0x41 + 10, // 75
+    R = 0x52, // 82
     S = 0x53, // 83
     T = 0x54, // 84
     Z = 0x41 + 25, // 90
@@ -36,6 +39,7 @@ export enum ASCIICodes {
     a = 0x61, // 97
     f = 0x66, // 97
     m = 0x6D, // 109
+    n = 0x6E, // 110
     z = 0x7A, // 109
 
     Delete = 0x7F, // 127
@@ -98,4 +102,10 @@ export function readParams(params: number[], fallback: number, minLength?: numbe
     }
 
     return result;
+}
+
+
+
+export function numbertonumbers(n: number): Uint8Array {
+    return uint8_fromString(n.toString())
 }

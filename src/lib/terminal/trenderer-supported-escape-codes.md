@@ -56,6 +56,12 @@ Where **n** is the parameter that determine what configuration to take place. Be
 - *30*-*37* - Select the foreground from the 8 options. (i.e. *31* sets color option number 2 as the foreground color.)
 - *40*-*47* - Select the background from the 8 options. (i.e. *45* sets color option number 6 as the background color.)
 
+## Query Terminal
+
+`CSI` 6 *n* - Get cursor position \
+ > Response `CSI`v;h R
+
+
 ## References
 
 [Wikipedia - ANSI escape codes](https://en.wikipedia.org/wiki/ANSI_escape_code)

@@ -1,5 +1,5 @@
 import { uint8_concat, uint8_fromString } from "../../binary/uint8-array";
-import { ASCIICodes, CSI, readParams } from "../../terminal/shared";
+import { ASCIICodes, CSI, numbertonumbers, readParams } from "../../terminal/shared";
 import { Process, ProcessSignal, Program } from "../device";
 import { parseArgs } from "./helpers";
 
@@ -82,10 +82,6 @@ function replacePromptBuffer(proc: Process<ShellData>, text: string, cursorX?: n
 
 }
 
-
-function numbertonumbers(n: number): Uint8Array {
-    return uint8_fromString(n.toString())
-}
 function lazywriter_write_options(proc: Process<string>, options: string[], i: number, MAX_OPTIONS_WIDTH: number) {
     let cursorX = 0;
     let option = options[i];
