@@ -6,7 +6,7 @@ An attempt at implementing the TCP/IP stack within a browser context.
 
 - Device
   - [ ] add teardown method for `BaseInterface`
-  - [ ] spawned programs able to return values to parent
+  - [x] spawned programs able to return values to parent
   - [x] device: key value database
   - [ ] IPC, create a way for processes to send messages between each other
   - [ ] Investigate improving the device scheduler
@@ -22,10 +22,10 @@ An attempt at implementing the TCP/IP stack within a browser context.
 - [ ] Terminal & Shell
   - [x] batch rendering for more efficient rendering
   - [x] `TerminalRenderer` make rendering faster
-  - [ ] *Auto resize `TerminaleRenderer` View* haven't decided on what this means
+  - [x] *Auto resize `TerminaleRenderer` View* haven't decided on what this means
   - [ ] Enviroment Variables & Variable expansion `Shell.promptBuffer`
   - [ ] When a progam is selected the lazy writer call a method on the function to reccomend text
-- [ ] visualize `Struct`
+- [x] visualize `Struct`
 - [x] Remove `Buffer` from client build
 - [ ] Logically separate the code
   - [x] Seperate Address class from struct-type
