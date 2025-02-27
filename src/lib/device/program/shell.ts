@@ -50,9 +50,6 @@ type ShellData = {
     promptBuffer: string;
 
     runningProc: Process | undefined;
-
-
-
 };
 
 function writePrompt(proc: Process<ShellData>) {
@@ -89,11 +86,9 @@ function replacePromptBuffer(proc: Process<ShellData>, text: string, cursorX?: n
 function numbertonumbers(n: number): Uint8Array {
     return uint8_fromString(n.toString())
 }
-function lazywriter_write_options(proc: Process<string>, options: string[], i: number) {
+function lazywriter_write_options(proc: Process<string>, options: string[], i: number, MAX_OPTIONS_WIDTH: number) {
     let cursorX = 0;
     let option = options[i];
-
-    const MAX_OPTIONS_WIDTH = 38; // !TODO: make querying terminal data a possibility
 
     let offsets = new Array<number>(options.length);
     let text_length = 0;
@@ -186,7 +181,6 @@ const lazywriter: Program<string> = {
     name: "shell_lazywriter",
     init(proc: Process<string>, _, data?: string | undefined): ProcessSignal {
         proc.data = data || ""; // set data
-
         let options = proc.device.programs.map(p => p.name);
 
         if (options.includes(proc.data)) {
@@ -234,10 +228,11 @@ const lazywriter: Program<string> = {
             return ProcessSignal.EXIT;
         }
 
+        let term_width = 38;
+
         let selected_option_idx = 0;
         proc.term_write(new Uint8Array([ASCIICodes.NewLine]));
-        lazywriter_write_options(proc, options, selected_option_idx);
-
+        lazywriter_write_options(proc, options, selected_option_idx, term_width);
 
         proc.term_read(proc, (_, bytes) => {
             let byte = bytes[0];
@@ -280,12 +275,12 @@ const lazywriter: Program<string> = {
                     selected_option_idx = (selected_option_idx + 1) % options.length;
                 }
 
-                lazywriter_write_options(proc, options, selected_option_idx)
+                lazywriter_write_options(proc, options, selected_option_idx, term_width)
                 return true;
             }
 
             selected_option_idx = (selected_option_idx + 1) % options.length;
-            lazywriter_write_options(proc, options, selected_option_idx)
+            lazywriter_write_options(proc, options, selected_option_idx, term_width)
             return true;
         })
 
@@ -391,6 +386,7 @@ function read(proc: Process<ShellData>, bytes: Uint8Array) {
                 writePrompt(proc);
             } else if (byte == ASCIICodes.Escape) {
                 if (i == bytes.byteLength - 1) {// last byte 
+                    i++;
                     continue char_parse_loop;
                 }
 
