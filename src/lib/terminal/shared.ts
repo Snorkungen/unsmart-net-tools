@@ -1,5 +1,8 @@
 import { uint8_fromString } from "../binary/uint8-array";
 
+export const TERMINAL_DEFAULT_COLUMNS = 80;
+export const TERMINAL_DEFAULT_ROWS = 16;
+
 export enum ASCIICodes {
     NUL = 0,
     BackSpace = 0x08,

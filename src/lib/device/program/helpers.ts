@@ -1,7 +1,7 @@
 import { uint8_concat, uint8_fromString } from "../../binary/uint8-array";
-import { CSI, ASCIICodes } from "../../terminal/shared";
+import { CSI, ASCIICodes, TERMINAL_DEFAULT_COLUMNS } from "../../terminal/shared";
+import { Process, Program } from "../device";
 
-export const COLS = 80; // this is hacky i should come up with a system of getting the terminal size
 export const TAB_SIZE = 8;
 
 export const tabAlign = (n: number) => n + TAB_SIZE - (n % TAB_SIZE);
@@ -80,7 +80,7 @@ export function getLengthOfLongestElement(arr: { length: number }[]) {
     return Math.max(0, ...arr.map(s => s?.length || 0));
 }
 
-export function formatTable(table: (string | undefined)[][]): Uint8Array {
+export function formatTable(table: (string | undefined)[][], columns = TERMINAL_DEFAULT_COLUMNS): Uint8Array {
     let lengths: number[] = []
 
     for (let i = 0; i < getLengthOfLongestElement(table); i++) {
@@ -97,7 +97,7 @@ export function formatTable(table: (string | undefined)[][]): Uint8Array {
 
     // figure out the colSizes
     let sum = colSizes.reduce((s, v) => s + v, 0);
-    if (sum > COLS) {
+    if (sum > columns) {
         // do some logic
         let li = 0, largest = colSizes[li];
         for (let ll = li + 1; ll < colSizes.length; ll++) {
@@ -108,7 +108,7 @@ export function formatTable(table: (string | undefined)[][]): Uint8Array {
         }
 
         // this is simple
-        lengths[li] = colSizes[li] - (sum - COLS);
+        lengths[li] = colSizes[li] - (sum - columns);
         colSizes[li] = lengths[li] - 3;
     }
 
@@ -173,4 +173,8 @@ export function formatTable(table: (string | undefined)[][]): Uint8Array {
     }
 
     return uint8_concat(buf);
+}
+
+export function spawn_program_promisify<T extends any>(proc: Process, program: Program<T>, args?: string[], data?: Partial<T> | undefined,): Promise<T> {
+    return new Promise((resolve) => proc.spawn(proc, program, args, data, (sproc) => resolve(sproc.data)));
 }

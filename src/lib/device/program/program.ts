@@ -1,8 +1,9 @@
 import { uint8_fromString } from "../../binary/uint8-array";
 import { PCAP_GLOBAL_HEADER, PCAP_MAGIC_NUMBER, PCAP_RECORD_HEADER } from "../../header/pcap";
-import { ASCIICodes, CSI } from "../../terminal/shared";
-import { ProcessSignal, Program } from "../device";
-import { COLS, chunkString, formatTable } from "./helpers";
+import { ASCIICodes, CSI, TERMINAL_DEFAULT_COLUMNS } from "../../terminal/shared";
+import { Process, ProcessSignal, Program } from "../device";
+import { chunkString, formatTable, spawn_program_promisify } from "./helpers";
+import { DEVICE_PROGRAM_TERMQUERY } from "./termquery";
 
 export const DEVICE_PROGRAM_CLEAR: Program = {
     name: "clear",
@@ -29,6 +30,18 @@ Example: echo "Hello, World"
     __NODATA__: true
 }
 
+function displayPrograms(proc: Process, programs: Program[], columns: number) {
+    let table: (string | undefined)[][] = [
+        ["Program Name", "Description"]
+    ];
+
+    for (let p of programs) {
+        table.push([p.name, p.description]);
+    }
+    return proc.term_write(formatTable(table, columns));
+}
+
+
 export const DEVICE_PROGRAM_HELP: Program = {
     name: "help",
     description: "This program displays information about the programs, on the device.",
@@ -36,23 +49,15 @@ export const DEVICE_PROGRAM_HELP: Program = {
 <help [program_name]> Displays information about the specified program.
 Example 1: help
 Example 2: help help`,
-    init(proc, argv) {
-        function displayPrograms(programs: Program[]) {
-            let table: (string | undefined)[][] = [
-                ["Program Name", "Description"]
-            ];
 
-            for (let p of programs) {
-                table.push([p.name, p.description]);
-            }
-            return proc.term_write(formatTable(table));
-        }
+    async init(proc, argv) {
+        let columns = (await spawn_program_promisify(proc, DEVICE_PROGRAM_TERMQUERY)).width || TERMINAL_DEFAULT_COLUMNS;
 
         argv.shift(); // remove help name;
 
         if (argv.length < 1) {
             // list all programs
-            displayPrograms(proc.device.programs);
+            displayPrograms(proc, proc.device.programs, columns);
             return ProcessSignal.EXIT;
         }
 
@@ -73,7 +78,7 @@ Example 2: help help`,
 
         if (!prog) {
             proc.term_write(uint8_fromString("No program found with the name \"" + name + "\"\n"));
-            displayPrograms(proc.device.programs);
+            displayPrograms(proc, proc.device.programs, columns);
             return ProcessSignal.EXIT;
         }
 
@@ -81,12 +86,12 @@ Example 2: help help`,
 
         proc.term_write(uint8_fromString(
             shownName + "\n" +
-            ((prog.description && chunkString(prog.description, COLS).join("\n") + "\n") || "") + "\n" +
-            ((prog.content && chunkString(prog.content, COLS).join("\n") + "\n") || "")
+            ((prog.description && chunkString(prog.description, columns).join("\n") + "\n") || "") + "\n" +
+            ((prog.content && chunkString(prog.content, columns).join("\n") + "\n") || "")
         ));
 
         if (prog.sub) {
-            displayPrograms(prog.sub)
+            displayPrograms(proc, prog.sub, columns);
         }
 
         return ProcessSignal.EXIT;

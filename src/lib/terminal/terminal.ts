@@ -1,6 +1,6 @@
 import { uint8_concat, uint8_fromString, uint8_mutateSet, uint8_set } from "../binary/uint8-array";
 import { TerminalRendererCursor, TerminalRendererCell, TerminalRendererState, terminal_render, terminal_resize } from "./renderer";
-import { ASCIICodes, CSI } from "./shared";
+import { ASCIICodes, CSI, TERMINAL_DEFAULT_COLUMNS, TERMINAL_DEFAULT_ROWS } from "./shared";
 
 export default class Terminal {
     renderer: TerminalRenderer;
@@ -364,8 +364,8 @@ export class TerminalRenderer implements TerminalRendererState {
         "#b2b2b2"
     ]
 
-    view_columns = 80;
-    view_rows = 2 * 8;
+    view_columns = TERMINAL_DEFAULT_COLUMNS;
+    view_rows = TERMINAL_DEFAULT_ROWS;
 
     view_modified = false;
     modified_cells: { [y: number]: [first: number, last: number] } = [];
