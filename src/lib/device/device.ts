@@ -122,7 +122,7 @@ export type Program<DT = any> = {
     content?: string;
     // sub?: Program<unknown>[];
 
-    init(proc: Process<DT>, args: string[], data?: Partial<DT>): ProcessSignal;
+    init(proc: Process<DT>, args: string[], data?: Partial<DT>): ProcessSignal | Promise<ProcessSignal>;
 
     /** this is just extra complexity for no specific reason */
     sub?: Program[];
@@ -353,23 +353,40 @@ export class Device {
         };
 
         let init_sig = program.init(this.processes[i]!, args || [], data);
-        this.processes[i]!.signal = init_sig;
-        
-        if (init_sig !== ProcessSignal.__EXPLICIT__) {
-            if (proc) {
-                this.processes[i]!.status = "MARKED_CLOSED";
-                return this.processes[i]!;
+
+        if (init_sig instanceof Promise) {
+            init_sig.then(sig => {
+                if (this.process_start_handle_signal(this.processes[i]!, sig, proc)) {
+                    this.process_close(this.processes[i]!, sig);
+                }
+            });
+        } else {
+            this.processes[i]!.signal = init_sig;
+
+            if (this.process_start_handle_signal(this.processes[i]!, init_sig, proc)) {
+                return this.processes[i];
             }
-            this.process_close(this.processes[i]!, init_sig);
-            return;
-        } else if (typeof this.processes[i] === "undefined" && !program.__NODATA__) {
-            // check that data is defined but there needs to be away to silence the message if program does not use data.
-            console.warn(program.name, "data not defined! to silence warning set __NODATA__ ")
         }
 
         this.processes[i]!.status = "RUNNING";
-        
+
         return this.processes[i];
+    }
+
+    private process_start_handle_signal<T extends any>(proc: Process<T>, signal: ProcessSignal, parent_proc?: Process): boolean {
+        if (signal !== ProcessSignal.__EXPLICIT__) {
+            if (parent_proc) {
+                proc.status = "MARKED_CLOSED";
+                return true;
+            }
+
+            this.process_close(proc, signal);
+        } else if (typeof proc.data === "undefined" && !proc.program.__NODATA__) {
+            // check that data is defined but there needs to be away to silence the message if program does not use data.
+            console.warn(proc.program.name, "data not defined! to silence warning set __NODATA__ ");
+        }
+
+        return false;
     }
 
     process_close(proc: Process, signal: ProcessSignal) {
