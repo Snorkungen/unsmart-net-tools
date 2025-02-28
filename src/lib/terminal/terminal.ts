@@ -1,4 +1,4 @@
-import { uint8_concat, uint8_fromString, uint8_mutateSet, uint8_set } from "../binary/uint8-array";
+import { uint8_concat, uint8_fromString, uint8_mutateSet } from "../binary/uint8-array";
 import { TerminalRendererCursor, TerminalRendererCell, TerminalRendererState, terminal_render, terminal_resize } from "./renderer";
 import { ASCIICodes, CSI, TERMINAL_DEFAULT_COLUMNS, TERMINAL_DEFAULT_ROWS } from "./shared";
 
@@ -30,14 +30,14 @@ export default class Terminal {
             if (!this.container.isConnected) return;
             if (!this.container.clientWidth) return;
 
-            let [width] = this.renderer.cell_dimensions();
+            let [width, height] = this.renderer.cell_dimensions();
             this.renderer.view_columns = Math.max(
                 22,
                 Math.floor(this.container.clientWidth / width)
             );
 
             this.renderer.canvas.width = width * this.renderer.view_columns;
-
+            this.renderer.canvas.height = this.renderer.view_rows * height;
 
             terminal_resize(this.renderer); // TODO: the following function does not do what it supposed to do
 
@@ -425,11 +425,17 @@ export class TerminalRenderer implements TerminalRendererState {
         this.ctx.textBaseline = this.TEXT_BASE_LINE
         this.ctx.font = this.FONT;
         let mt = this.ctx.measureText("_");
+
+        if (mt.width == 0) {
+            return [11, 18, 0.1630859375];
+        }
+
         this.cell_dimensions_cached = [
-            Math.ceil(mt.width) || 11,
-            Math.ceil(mt.fontBoundingBoxDescent + mt.fontBoundingBoxAscent) || 23,
-            Math.ceil(mt.width) - mt.width || 0
+            Math.ceil(mt.width),
+            Math.ceil(mt.fontBoundingBoxDescent + mt.fontBoundingBoxAscent),
+            Math.ceil(mt.width) - mt.width
         ];
+
         return this.cell_dimensions_cached;
     }
 
