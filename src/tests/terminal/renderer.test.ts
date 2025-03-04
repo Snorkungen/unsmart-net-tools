@@ -21,7 +21,10 @@ describe("TerminalRenderer", () => {
         },
         y_offset: 0,
         rows: [],
-        resize_markers: []
+        resize_markers: [],
+        write(bytes) {
+            throw new Error("writing not implemented")            
+        },
     }
 
     // setup state
