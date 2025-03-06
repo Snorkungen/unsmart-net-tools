@@ -69,7 +69,7 @@ export function createMacAddress(): MACAddress {
     return new MACAddress(uint8_concat([startBuf, buf]))
 }
 export class EthernetInterface extends BaseInterface {
-    private target: EthernetInterface | undefined;
+    target: EthernetInterface | undefined;
     macAddress: MACAddress;
     header = ETHERNET_HEADER;
     virtual = false;

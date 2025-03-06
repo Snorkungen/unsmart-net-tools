@@ -12,10 +12,7 @@ import { DEVICE_PROGRAM_IFINFO } from "../lib/device/program/ifinfo";
 import { DAEMON_ROUTING } from "../lib/device/program/routing";
 import { EthernetInterface, VlanInterface } from "../lib/device/interface";
 import { DEVICE_PROGRAM_ROUTEINFO } from "../lib/device/program/routeinfo";
-import { NMDevice, NetworkMap } from "../components/network-map";
-
-
-const INTERFACE_ANIM_DELAY = 550;
+import { network_map_device_shape, network_map_init_state, network_map_render } from "../lib/network-map/network-map";
 
 function init_programs(device: Device) {
     device.process_start(DAEMON_ECHO_REPLIER);
@@ -135,27 +132,34 @@ init_programs(pc4)
 init_programs(pc5)
 
 const switch_dimensions = { width: 85, height: 25 }
-
-let nmDevice_sw = new NMDevice(50, 50, networkSwitch, switch_dimensions);
-let nmDevice_pc1 = new NMDevice(150, 50, pc1);
-let nmDevice_pc2 = new NMDevice(220, 50, pc2);
-let nmDevice_pc3 = new NMDevice(290, 50, pc3);
-
-let nmDevice_rtr = new NMDevice(100, 270, networkRouter, switch_dimensions);
-
-let nmDevice_pc4 = new NMDevice(220, 350, pc4);
-let nmDevice_pc5 = new NMDevice(290, 350, pc5);
-let nmDevice_sw2 = new NMDevice(100, 350, networkSwitch2, switch_dimensions);
-
 let terminalOwner = pc1;
 let terminal: Terminal;
 
-function add_device_to_nmap(nmap: NetworkMap, ndev: NMDevice) {
-    nmap.entities.push(ndev)
 
-    ndev.onclick = () => {
+function init_nmap(el: SVGSVGElement) {
+    let state = network_map_init_state(el);
+
+    network_map_device_shape(state, networkSwitch, 50, 50, switch_dimensions);
+
+    network_map_device_shape(state, pc1, 150, 50);
+    network_map_device_shape(state, pc2, 220, 50);
+    network_map_device_shape(state, pc3, 290, 50);
+
+    network_map_device_shape(state, networkRouter, 100, 270, switch_dimensions);
+
+    network_map_device_shape(state, pc4, 220, 350);
+    network_map_device_shape(state, pc5, 290, 350);
+    network_map_device_shape(state, networkSwitch2, 100, 350, switch_dimensions);
+
+    network_map_render(state);
+
+    state.onclick = (dev) => {
+        if (!(dev instanceof Device)) {
+            return;
+        }
+
         terminalOwner.terminal_detach()
-        terminalOwner = ndev.device;
+        terminalOwner = dev;
         terminalOwner.terminal_attach(terminal);
         let proc = terminalOwner.processes.find(p => p && p.id.includes(DAEMON_SHELL.name))
         if (!proc) {
@@ -164,33 +168,11 @@ function add_device_to_nmap(nmap: NetworkMap, ndev: NMDevice) {
             proc.device.process_termwriteto(proc, new Uint8Array([10])); // press enter
         }
     }
-
-    ndev.device.interfaces.forEach(f => {
-        if (f instanceof EthernetInterface) {
-            f.receive_delay = INTERFACE_ANIM_DELAY
-        }
-    })
-
-    nmap.update()
 }
 
 export default function NetworkMapViewer(): JSX.Element {
-    let nmap = new NetworkMap();
-    add_device_to_nmap(nmap, nmDevice_pc1)
-    add_device_to_nmap(nmap, nmDevice_pc2)
-    add_device_to_nmap(nmap, nmDevice_pc3)
-    add_device_to_nmap(nmap, nmDevice_sw)
-
-    // vlan test
-    add_device_to_nmap(nmap, nmDevice_pc4)
-    add_device_to_nmap(nmap, nmDevice_pc5)
-    add_device_to_nmap(nmap, nmDevice_sw2)
-    add_device_to_nmap(nmap, nmDevice_rtr)
-
     return <div style={{ width: "100%" }} >
-
-        <svg width={"100%"} height={500} ref={(el => { nmap.set_container(el) })}>
-        </svg>
+        <svg width={"100%"} height={500} ref={init_nmap}></svg>
 
         <div ref={(el) => {
             terminal = new Terminal(el);
