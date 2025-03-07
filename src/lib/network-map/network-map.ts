@@ -40,6 +40,7 @@ type NMConnection = {
     end: [NMShape, NMShapeObject, number];
 
     fillColor: string;
+    fillColor_ref_count: number;
 }
 
 type NMMouseState = {
@@ -99,7 +100,8 @@ function network_map_device_setup_connection(state: NMState, shape: NMShape, so:
     state.connections.push({
         begin: begin,
         end: end,
-        fillColor: CONNECTION_FILL_COLOR
+        fillColor: CONNECTION_FILL_COLOR,
+        fillColor_ref_count: 0,
     });
 }
 
@@ -134,16 +136,21 @@ function network_map_device_ethiface_on_send_or_recv(state: NMState, shape: NMSh
         let connection = network_map_connection_get(state, so);
         if (connection && connection.begin[1] == so) {
             connection.fillColor = CONNECTION_FILL_COLOR_2;
+            connection.fillColor_ref_count++;
         }
 
         window.setTimeout(() => {
             network_map_device_iface_update_appearance(so);
             if (connection && connection.begin[1] == so) {
-                connection.fillColor = CONNECTION_FILL_COLOR;
+                connection.fillColor_ref_count--;
+
+                if (connection.fillColor_ref_count <= 0) {
+                    connection.fillColor = CONNECTION_FILL_COLOR;
+                }
             }
 
             network_map_render(state);
-        }, so.assob!.receive_delay)
+        }, (so.assob!.receive_delay || 0) * 1.05)
         network_map_render(state);
     }
 }
