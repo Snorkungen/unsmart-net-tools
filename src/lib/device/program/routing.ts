@@ -43,9 +43,23 @@ export const DAEMON_ROUTING: Program = {
 
             let route = proc.device.route_resolve(iphdr.get("daddr"));
             if (!route) {
-                return; // discarded
+                let icmphdr = ICMP_HEADER.create({
+                    type: ICMPV4_TYPES.DESTINATION_UNREACHABLE,
+                    code: ICMPV4_CODES[ICMPV4_TYPES.DESTINATION_UNREACHABLE].UNREACHABLE_NETWORK,
+                    data: ICMP_UNUSED_HEADER.create({ data: data.buffer.slice(0, 64) }).getBuffer(),
+                    csum: 0,
+                });
+
+                icmphdr.set("csum", calculateChecksum(icmphdr.getBuffer()));
+                iphdr = IPV4_HEADER.create({
+                    daddr: iphdr.get("saddr"),
+                    proto: PROTOCOLS.ICMP,
+                    payload: icmphdr.getBuffer(),
+                })
+
+                return contact.send(contact, { buffer: iphdr.getBuffer() }, iphdr.get("daddr"))
             }
-            
+
             /* do not route within the same subnet */
             if (route.netmask.compare(iphdr.get("saddr"), iphdr.get("daddr"))) {
                 return; // discarded
@@ -72,10 +86,10 @@ export const DAEMON_ROUTING: Program = {
             if (iphdr.get("hopLimit") <= 0) {
                 let icmphdr = ICMP_HEADER.create({
                     type: ICMPV6_TYPES.TIME_EXCEEDED,
-                    data: ICMP_UNUSED_HEADER.create({ data: data.buffer.slice(0, 64) }).getBuffer()
+                    data: ICMP_UNUSED_HEADER.create({ data: data.buffer.slice(0, 64 * 4) }).getBuffer()
                 });
 
-                let route = proc.device.route_resolve(iphdr.get("daddr"));
+                let route = proc.device.route_resolve(iphdr.get("saddr"));
                 if (!route) return;
                 let source = route.iface.addresses.find(a => a.address instanceof IPV6Address)
                 if (!source) return;
@@ -95,12 +109,39 @@ export const DAEMON_ROUTING: Program = {
                     payload: icmphdr.getBuffer(),
                 });
 
-                return contact.send(contact, { buffer: iphdr.getBuffer() }, iphdr.get("saddr"));
+                return contact.send(contact, { buffer: iphdr.getBuffer() }, iphdr.get("daddr"), route);
             }
 
             let route = proc.device.route_resolve(iphdr.get("daddr"));
             if (!route) {
-                return; // discarded
+
+                let icmphdr = ICMP_HEADER.create({
+                    type: ICMPV6_TYPES.DESTINATION_UNREACHABLE,
+                    code: ICMPV6_CODES[ICMPV6_TYPES.DESTINATION_UNREACHABLE].NO_ROUTE,
+                    data: ICMP_UNUSED_HEADER.create({ data: data.buffer.slice(0, 64 * 4) }).getBuffer()
+                });
+
+                let route = proc.device.route_resolve(iphdr.get("saddr"));
+                if (!route) return;
+                let source = route.iface.addresses.find(a => a.address instanceof IPV6Address)
+                if (!source) return;
+
+                let pseudohdr = IPV4_PSEUDO_HEADER.create({
+                    saddr: source.address,
+                    daddr: iphdr.get("saddr"),
+                    proto: PROTOCOLS.IPV6_ICMP,
+                    len: icmphdr.size
+                });
+
+                icmphdr.set("csum", calculateChecksum(uint8_concat([pseudohdr.getBuffer(), icmphdr.getBuffer()])))
+
+                iphdr = IPV6_HEADER.create({
+                    daddr: iphdr.get("saddr"),
+                    nextHeader: PROTOCOLS.IPV6_ICMP,
+                    payload: icmphdr.getBuffer(),
+                });
+
+                return contact.send(contact, { buffer: iphdr.getBuffer() }, iphdr.get("daddr"), route);
             }
 
             iphdr.set("hopLimit", iphdr.get("hopLimit") - 1)

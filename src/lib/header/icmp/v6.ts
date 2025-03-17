@@ -15,7 +15,14 @@ export const ICMPV6_TYPES = {
 export type ICMPV6_Type = typeof ICMPV6_TYPES[keyof typeof ICMPV6_TYPES];
 
 export const ICMPV6_CODES = {
-    [ICMPV6_TYPES.DESTINATION_UNREACHABLE]: {},
+    [ICMPV6_TYPES.DESTINATION_UNREACHABLE]: {
+        NO_ROUTE: 0,
+        PROHIBITED: 1,
+        ADDRESS_UNREACHABLE: 2,
+        PORT_UNREACHABLE: 3,
+        POLICY: 4,
+        REJECT: 5,
+    },
     [ICMPV6_TYPES.PACKET_TOO_BIG]: {},
     [ICMPV6_TYPES.TIME_EXCEEDED]: {},
     [ICMPV6_TYPES.PARAMETER_PROBLEM]: {},
