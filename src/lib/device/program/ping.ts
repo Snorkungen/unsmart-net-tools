@@ -3,9 +3,13 @@ import { IPV4Address } from "../../address/ipv4";
 import { IPV6Address } from "../../address/ipv6";
 import { calculateChecksum } from "../../binary/checksum";
 import { uint8_concat, uint8_equals, uint8_fromString } from "../../binary/uint8-array";
-import { ICMP_ECHO_HEADER, ICMP_HEADER, ICMPV4_TYPES, ICMPV6_TYPES } from "../../header/icmp";
+import { ICMP_ECHO_HEADER, ICMP_HEADER, ICMP_UNUSED_HEADER, ICMPV4_TYPES, ICMPV6_TYPES } from "../../header/icmp";
 import { IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
 import { Contact, DeviceRoute, NetworkData, Process, ProcessSignal, Program } from "../device";
+
+const MSG_DST_UNREACH = uint8_fromString(
+    "Destination unreachable"
+)
 
 type PingData = {
     contact: Contact;
@@ -16,7 +20,7 @@ type PingData = {
     route: DeviceRoute;
     send: (proc: Process<PingData>) => void;
     timestamps: Map<number, number>;
-    stats: Map<number, number>
+    stats: Map<number, number>;
 }
 
 function handleExternalExit(proc: Process<PingData>) {
@@ -63,7 +67,7 @@ function sendv4(proc: Process<PingData>) {
     });
 
     proc.data.timestamps.set(proc.data.sequence, Date.now());
-    proc.data.contact.send(proc.data.contact, { buffer: iphdr.getBuffer() }, proc.data.destination)
+    proc.data.contact.send(proc.data.contact, { buffer: iphdr.getBuffer() }, proc.data.destination, proc.data.route)
 }
 
 function sendv6(proc: Process<PingData>) {
@@ -94,7 +98,7 @@ function sendv6(proc: Process<PingData>) {
 
     let iphdr = IPV6_HEADER.create({ nextHeader: PROTOCOLS.IPV6_ICMP, payload: icmphdr.getBuffer() })
     proc.data.timestamps.set(proc.data.sequence, Date.now());
-    proc.data.contact.send(proc.data.contact, { buffer: iphdr.getBuffer() }, proc.data.destination)
+    proc.data.contact.send(proc.data.contact, { buffer: iphdr.getBuffer() }, proc.data.destination, proc.data.route)
 }
 
 function handlereply(proc: Process<PingData>, source: BaseAddress, bytes: number, ttl: number, seq: number) {
@@ -123,13 +127,60 @@ function handlereply(proc: Process<PingData>, source: BaseAddress, bytes: number
 function receivev4(proc: Process<PingData>) { // !TODO: rewrite everything againg because this does not feel so ergonomic
     return function (_: Contact, data: NetworkData) {
         let iphdr = IPV4_HEADER.from(data.buffer);
-        if (!(uint8_equals(iphdr.get("saddr").buffer, proc.data.destination.buffer))) {
-            return; // HMM
-        } else if (iphdr.get("proto") != PROTOCOLS.ICMP) {
+        if (iphdr.get("proto") != PROTOCOLS.ICMP) {
             return;
         }
 
         let icmphdr = ICMP_HEADER.from(iphdr.get("payload"));
+
+        // validate checksum
+        if (calculateChecksum(icmphdr.getBuffer()) != 0) {
+            return; // invalid checksum
+        }
+
+        if (icmphdr.get("type") == ICMPV4_TYPES.DESTINATION_UNREACHABLE) {
+            if (icmphdr.get("data").length < (ICMP_UNUSED_HEADER.size + IPV4_HEADER.size + ICMP_HEADER.size + ICMP_ECHO_HEADER.size)) {
+                return;
+            }
+
+            // match payload with an outgoing request
+            let err_iphdr = IPV4_HEADER.from(ICMP_UNUSED_HEADER.from(icmphdr.get("data")).get("data"));
+
+            // compare daddr and saddr
+            if (!uint8_equals(proc.data.destination.buffer, err_iphdr.get("daddr").buffer)) {
+                return;
+            } else if (!(
+                proc.data.route.iface.addresses.find(v => uint8_equals(v.address.buffer, err_iphdr.get("saddr").buffer))
+            )) {
+                return; // ping not sent from saved route
+            }
+
+            if (err_iphdr.get("proto") != PROTOCOLS.ICMP) {
+                return;
+            }
+
+            let err_icmphdr = ICMP_HEADER.from(err_iphdr.get("payload"));
+            if (err_icmphdr.get("type") != ICMPV4_TYPES.ECHO_REQUEST) {
+                return;
+            }
+
+            let err_echohdr = ICMP_ECHO_HEADER.from(err_icmphdr.get("data"));
+            if (err_echohdr.get("id") != proc.data.identifier) {
+                return;
+            }
+
+            { // fail program
+                proc.data.contact.close(proc.data.contact);
+                proc.term_write(MSG_DST_UNREACH)
+                proc.close(proc, ProcessSignal.ERROR);
+            }
+        }
+
+
+        if (!(uint8_equals(iphdr.get("saddr").buffer, proc.data.destination.buffer))) {
+            return; // HMM
+        }
+
         if (icmphdr.get("type") != ICMPV4_TYPES.ECHO_REPLY) {
             return;
         }
@@ -146,13 +197,64 @@ function receivev4(proc: Process<PingData>) { // !TODO: rewrite everything again
 function receivev6(proc: Process<PingData>) {
     return function (_: Contact, data: NetworkData) {
         let iphdr = IPV6_HEADER.from(data.buffer);
-        if (!(uint8_equals(iphdr.get("saddr").buffer, proc.data.destination.buffer))) {
-            return; // HMM
-        } else if (iphdr.get("nextHeader") != PROTOCOLS.IPV6_ICMP) {
+        if (iphdr.get("nextHeader") != PROTOCOLS.IPV6_ICMP) {
             return;
         }
 
         let icmphdr = ICMP_HEADER.from(iphdr.get("payload"));
+
+        // validate checksum
+        let pseudohdr = IPV6_PSEUDO_HEADER.create({
+            saddr: iphdr.get("saddr"), daddr: iphdr.get("daddr"), len: icmphdr.size, proto: PROTOCOLS.IPV6_ICMP,
+        });
+        if (calculateChecksum(uint8_concat([pseudohdr.getBuffer(), icmphdr.getBuffer()])) !== 0) {
+            return;
+        }
+
+        if ((icmphdr.get("type") & 0x80) == 0) { // message is an error
+            if (icmphdr.get("data").length < (ICMP_UNUSED_HEADER.size + IPV6_HEADER.size + ICMP_HEADER.size + ICMP_ECHO_HEADER.size)) {
+                return;
+            }
+
+            // match payload with an outgoing request
+            let err_iphdr = IPV6_HEADER.from(ICMP_UNUSED_HEADER.from(icmphdr.get("data")).get("data"));
+
+            // compare daddr and saddr
+            if (!uint8_equals(proc.data.destination.buffer, err_iphdr.get("daddr").buffer)) {
+                return;
+            } else if (!(
+                proc.data.route.iface.addresses.find(v => uint8_equals(v.address.buffer, err_iphdr.get("saddr").buffer))
+            )) {
+                return; // ping not sent from saved route
+            }
+
+            if (err_iphdr.get("nextHeader") != PROTOCOLS.IPV6_ICMP) {
+                return;
+            }
+
+            let err_icmphdr = ICMP_HEADER.from(iphdr.get("payload"));
+            if (err_icmphdr.get("type") != ICMPV6_TYPES.ECHO_REQUEST) {
+                return;
+            }
+
+            if (err_icmphdr.get("type") == ICMPV6_TYPES.DESTINATION_UNREACHABLE) {
+                let err_echohdr = ICMP_ECHO_HEADER.from(err_icmphdr.get("data"));
+                if (err_echohdr.get("id") != proc.data.identifier) {
+                    return;
+                }
+
+                { // fail program
+                    proc.data.contact.close(proc.data.contact);
+                    proc.term_write(MSG_DST_UNREACH)
+                    proc.close(proc, ProcessSignal.ERROR);
+                }
+            }
+        }
+
+        if (!(uint8_equals(iphdr.get("saddr").buffer, proc.data.destination.buffer))) {
+            return; // HMM
+        }
+
         if (icmphdr.get("type") != ICMPV6_TYPES.ECHO_REPLY) {
             return;
         }
@@ -208,9 +310,7 @@ export const DEVICE_PROGRAM_PING: Program = {
 
         let route = proc.device.route_resolve(destination);
         if (!route) {
-            proc.term_write(uint8_fromString(
-                "Destination unreachable"
-            ));
+            proc.term_write(MSG_DST_UNREACH);
             return ProcessSignal.EXIT;
         }
 
