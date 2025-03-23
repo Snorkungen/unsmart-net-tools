@@ -15,6 +15,7 @@ import { UDP_HEADER } from "../header/udp";
 import { BaseInterface, VlanInterface, EthernetInterface } from "./interface";
 import { TCP_FLAGS, TCP_HEADER, TCP_OPTION_KINDS } from "../header/tcp";
 import { TCPConnection, TCPState, add_u32, tcp_connection_id, tcp_read_options, tcp_set_option } from "./internals/tcp";
+import { DeviceEventMap, DeviceEventType } from "./internals/event";
 
 // source <https://stackoverflow.com/a/63029283>
 type DropFirst<T extends unknown[]> = T extends [any, ...infer U] ? U : never;
@@ -80,7 +81,7 @@ export type ContactReceiver = (contact: Contact, data: NetworkData, caddr?: Cont
 export type ContactReceiveOptions = { promiscuous?: true };
 type ContactError = unknown; // !TODO: conjure up some type of problems that might occur
 
-type ContactAddress<Addr extends BaseAddress> = {
+export type ContactAddress<Addr extends BaseAddress> = {
     sport: number;
     dport: number;
     saddr: Addr;
@@ -165,7 +166,7 @@ export type Process<DT = any> = {
     // !TODO: for now it is the users responsibility to close contacts
 }
 
-type DeviceTerminal = {
+export type DeviceTerminal = {
     read?: (bytes: Uint8Array) => void;
     write(bytes: Uint8Array): void;
     flush(): void;
@@ -309,6 +310,27 @@ export class Device {
     /* store key-value information about something ... */
     /** NOTE: store should only store simple types as Objects, Arrays, Numbers, Strings */
     store: Map<string, Record<string, unknown>> = new Map();
+
+    private event_handlers: ([DeviceEventType, (...a: any[]) => void] | undefined)[] = [];
+    private event_dispatch<T extends DeviceEventType>(evt: T, params: DeviceEventMap[T]) {
+        for (let ev of this.event_handlers) {
+            if (ev && ev[0] === evt) {
+                ev[1](...params);
+            }
+        }
+    }
+    event_add_handler<T extends DeviceEventType>(evt: T, handler: (...v: DeviceEventMap[T]) => void) {
+        let i = -1; while (this.event_handlers[++i]) { continue; };
+
+        this.event_handlers[i] = [evt, handler];
+    }
+    event_remove_handler(handler: (...v: unknown[]) => void) {
+        for (let i = 0; i < this.event_handlers.length; i++) {
+            if (this.event_handlers[i] && this.event_handlers[i]![1] === handler) {
+                delete this.event_handlers[i];
+            }
+        }
+    }
 
     /*
     THIS IS RESERVED SPACE FOR PROCESS LOGIC
@@ -1372,11 +1394,13 @@ export class Device {
     interface_add<F extends BaseInterface>(iface: F): F {
         this.interfaces.push(iface);
         this.interfaces_mcast_subscriptions[iface.id()] = [];
+        this.event_dispatch("interface_add", []);
         return iface
     };
     interface_remove(iface: BaseInterface) {
         delete this.interfaces_mcast_subscriptions[iface.id()];
         this.interfaces = this.interfaces.filter(f => f != iface)
+        this.event_dispatch("interface_remove", [])
     };
 
     interface_set_address<AT extends typeof BaseAddress>(iface: BaseInterface, address: InstanceType<AT>, netmask: AddressMask<AT>): DeviceResult { // !TODO: result could include the created route or address entry on iface idk
@@ -1438,6 +1462,7 @@ export class Device {
             })
         }
 
+        this.event_dispatch("interface_set_address", []);
         return {
             success: true,
             data: undefined
@@ -1451,12 +1476,12 @@ export class Device {
         }
 
         this.interfaces_mcast_subscriptions[iface.id()].push(address);
-
+        this.event_dispatch("interface_mcast_subscribe", []);
         return { success: true, data: undefined };
     }
     interface_mcast_unsubscribe(iface: BaseInterface, address: BaseAddress): DeviceResult {
         this.interfaces_mcast_subscriptions[iface.id()] = this.interfaces_mcast_subscriptions[iface.id()].filter(addr => addr.constructor != address.constructor || !uint8_equals(addr.buffer, address.buffer));
-
+        this.event_dispatch("interface_mcast_unsubscribe", []);
         return { success: true, data: undefined };
     }
 

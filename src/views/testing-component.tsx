@@ -174,11 +174,14 @@ const DeviceComponent: Component<{ device: Device }> = ({ device }) => {
 
     const [content, setContent] = createSignal(create_content());
 
+    device.event_add_handler("interface_set_address", () => {
+        setContent(create_content())
+    })
+
     return <div>
         <div style={{ display: "flex", "justify-content": "space-between", "align-items": "end" }}>
             <h2 onclick={attach_device_to_terminal(device)}>{device.name}</h2>
             <div style={{ gap: "1em", display: "flex" }}>
-                <button onclick={() => setContent(create_content())} >refresh</button>
                 <button onclick={handle_ping(device)}>ping</button>
 
                 <a href="" onClick={ev => {
