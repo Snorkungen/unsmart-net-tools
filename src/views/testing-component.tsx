@@ -1,11 +1,6 @@
-import { Component, createEffect, createRoot, createSignal } from "solid-js";
-import { AddressMask, createMask } from "../lib/address/mask";
+import { Component, createEffect } from "solid-js";
+import { createMask } from "../lib/address/mask";
 import { IPV4Address } from "../lib/address/ipv4";
-import { IPV6Address } from "../lib/address/ipv6";
-import { uint8_concat, uint8_equals, uint8_fromNumber, uint8_readUint16BE } from "../lib/binary/uint8-array";
-import { ICMPV4_TYPES, ICMPV6_TYPES, ICMP_ECHO_HEADER, ICMP_HEADER } from "../lib/header/icmp";
-import { calculateChecksum } from "../lib/binary/checksum";
-import { IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS, createIPV4Header } from "../lib/header/ip";
 import { Device } from "../lib/device/device";
 import { BaseInterface, EthernetInterface, LoopbackInterface, VlanInterface, createMacAddress } from "../lib/device/interface";
 import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_HELP } from "../lib/device/program/program";
@@ -20,6 +15,7 @@ import { DEVICE_PROGRAM_DAEMAN } from "../lib/device/program/daeman";
 import { DEVICE_PROGRAM_IFINFO } from "../lib/device/program/ifinfo";
 import { DEVICE_PROGRAM_PING } from "../lib/device/program/ping";
 import { DEVICE_PROGRAM_ROUTEINFO } from "../lib/device/program/routeinfo";
+import { DeviceViewComponent } from "../components/device-view";
 
 let terminal_device: Device | undefined;
 let terminal: Terminal;
@@ -32,7 +28,7 @@ function attach_device_to_terminal(device: Device) {
         }
 
         device.terminal_attach(terminal);
-        let p = device.processes.find(p => p?.id.includes(DAEMON_SHELL.name)); 
+        let p = device.processes.find(p => p?.id.includes(DAEMON_SHELL.name));
         if (p) {
             device.process_termwriteto(p, new Uint8Array([10])); // press enter
         } else {
@@ -40,100 +36,6 @@ function attach_device_to_terminal(device: Device) {
         }
 
         terminal_device = device;
-    }
-}
-
-const selectContents = (ev: MouseEvent) => {
-    if (!(ev.currentTarget instanceof HTMLElement)) return;
-    let range = document.createRange();
-    range.selectNode(ev.currentTarget);
-    window.getSelection()?.addRange(range);
-}
-
-function handle_ping(device: Device) {
-    return () => {
-        let ip = prompt("Please enter a destination ip, from: " + device.name)
-        if (!ip) return;
-
-        function success() {
-            console.log("%c ECHO Reply recieved: " + device.name, ['background: green', 'color: white', 'display: block', 'text-align: center', 'font-size: 24px'].join(';'))
-        }
-        let identifier = Math.floor(Math.random() * 1_000), sequence = 1;
-
-        let echoHdr = ICMP_ECHO_HEADER.create({
-            id: identifier,
-            seq: sequence
-        })
-
-        let destination = new IPV4Address(ip)
-
-        if (IPV4Address.validate(ip)) {
-            let contact = device.contact_create("IPv4", "RAW").data!;
-            contact.receive(contact, (_, data) => {
-                let iphdr = IPV4_HEADER.from(data.buffer);
-                if (!uint8_equals(iphdr.get("saddr").buffer, destination.buffer)) return;
-                if (iphdr.get("proto") != PROTOCOLS.ICMP) return;
-                if (iphdr.get("payload")[0] != ICMPV4_TYPES.ECHO_REPLY) return;
-                contact.close(contact);
-                success()
-            })
-
-            let icmpHdr = ICMP_HEADER.create({
-                type: ICMPV4_TYPES.ECHO_REQUEST,
-                data: echoHdr.getBuffer()
-            });
-
-            icmpHdr.set("csum", calculateChecksum(icmpHdr.getBuffer()));
-
-            let ipHdr = createIPV4Header({
-                saddr: new IPV4Address("0.0.0.0"),
-                daddr: new IPV4Address(ip),
-                proto: PROTOCOLS.ICMP,
-                payload: icmpHdr.getBuffer()
-            })
-
-            contact.send(contact, { buffer: ipHdr.getBuffer() }, ipHdr.get("daddr"));
-        } else if (/* IPV6Address.validate(ip) */ true) {
-            let contact = device.contact_create("IPv6", "RAW").data!;
-            contact.receive(contact, (_, data) => {
-                let iphdr = IPV6_HEADER.from(data.buffer);
-                if (!uint8_equals(iphdr.get("saddr").buffer, destination.buffer)) return;
-                if (iphdr.get("nextHeader") != PROTOCOLS.IPV6_ICMP) return;
-                if (iphdr.get("payload")[0] != ICMPV6_TYPES.ECHO_REPLY) return;
-                contact.close(contact);
-                success()
-            })
-
-            let destination = new IPV6Address(ip)
-
-            let icmpHdr = ICMP_HEADER.create({
-                type: ICMPV6_TYPES.ECHO_REQUEST,
-                data: echoHdr.getBuffer()
-            });
-
-            let route = device.route_resolve(destination);
-            if (!route) return;
-            let source = route.iface.addresses.find(a => a.address.constructor == destination.constructor);
-            if (!source) return;
-
-            let pseudoHdr = IPV6_PSEUDO_HEADER.create({
-                saddr: source?.address as IPV6Address,
-                daddr: destination,
-                len: icmpHdr.size,
-                proto: PROTOCOLS.IPV6_ICMP,
-            })
-
-            icmpHdr.set("csum", calculateChecksum(uint8_concat([pseudoHdr.getBuffer(), icmpHdr.getBuffer()])));
-
-            let ipHdr = IPV6_HEADER.create({
-                saddr: source.address as IPV6Address,
-                daddr: destination,
-                nextHeader: PROTOCOLS.IPV6_ICMP,
-                payload: icmpHdr.getBuffer()
-            })
-
-            contact.send(contact, { buffer: ipHdr.getBuffer() }, destination, route);
-        }
     }
 }
 
@@ -147,60 +49,11 @@ const DeviceComponent: Component<{ device: Device }> = ({ device }) => {
         DEVICE_PROGRAM_DAEMAN,
     )
 
-
-    let create_content = () => <div>
-        {device.interfaces.map((iface) => (
-            <div style={{ display: "flex", "flex-direction": "row", "justify-content": "left", gap: "1em" }}>
-                <strong>{iface.id()}: </strong>
-                <span>{iface.up ? "up" : "down"} </span>
-                {iface instanceof EthernetInterface && (
-                    <>
-                        <span onClick={selectContents}>{iface.macAddress.toString()}</span>
-                        {iface.vlan && (
-                            <span>vlan {iface.vlan.type} {iface.vlan.vids.join()}</span>
-                        )}
-                    </>
-                )}
-                {(() => {
-                    let source4 = iface.addresses.find(a => a.address instanceof IPV4Address), source6 = iface.addresses.find(a => a.address instanceof IPV6Address);
-                    return (<>
-                        {source4 && <span><span onClick={selectContents}>{source4.address.toString()}</span>/<span>{source4.netmask.length}</span> </span>}
-                        {source6 && <span><span onClick={selectContents}>{source6.address.toString()}</span>/<span>{source6.netmask.length}</span> </span>}
-                    </>)
-                })()}
-            </div>
-        ))}
-    </div>
-
-    const [content, setContent] = createSignal(create_content());
-
-    device.event_add_handler("interface_set_address", () => {
-        setContent(create_content())
-    })
-
-    return <div>
-        <div style={{ display: "flex", "justify-content": "space-between", "align-items": "end" }}>
-            <h2 onclick={attach_device_to_terminal(device)}>{device.name}</h2>
-            <div style={{ gap: "1em", display: "flex" }}>
-                <button onclick={handle_ping(device)}>ping</button>
-
-                <a href="" onClick={ev => {
-                    device.process_start(DEVICE_PROGRAM_DOWNLOAD);
-                    ev.preventDefault()
-                }}>Download</a>
-            </div>
-        </div>
-        {content()}
+    return <>
+        <DeviceViewComponent device={device} on_select={attach_device_to_terminal(device)} />
         <hr />
-    </div>
+    </>
 }
-
-/* Redo testing component ...
-    [ ] - test vlan-switch
-    [ ] - test routing ...
-    
-    [ ] - test UDP & TCP ...
-*/
 
 /* switch an router are on the same device ... */
 let r1 = new NetworkSwitch(); r1.name = "R1";
