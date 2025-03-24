@@ -43,11 +43,12 @@ export class NetworkSwitch extends Device {
     constructor() {
         super();
 
-        this.data = {
-            macaddresses: [],
-            ports: [],
-        };
-        this.store.set(NETWORK_SWITCH_STORE_KEY, this.data);
+        this.store_set(NETWORK_SWITCH_STORE_KEY,
+            this.data = {
+                macaddresses: [],
+                ports: [],
+            }
+        );
 
         // start bridging daemon
         this.process_start(NETWORK_SWITCH_BRIDGING_DAEMON);
@@ -111,7 +112,7 @@ const NETWORK_SWITCH_BRIDGING_DAEMON: Program = {
     __NODATA__: true,
 
     init(proc) {
-        let data = proc.device.store.get(NETWORK_SWITCH_STORE_KEY) as NetworkSwitchData;
+        let data = proc.device.store_get(NETWORK_SWITCH_STORE_KEY) as NetworkSwitchData;
         if (!data) {
             return ProcessSignal.ERROR;
         }
@@ -199,7 +200,7 @@ export const NETWORK_SWITCH_STP_DAEMON: Program = {
 
     init(proc) {
         const device = proc.device;
-        const bdata = device.store.get(NETWORK_SWITCH_STORE_KEY) as NetworkSwitchData;
+        const bdata = device.store_get(NETWORK_SWITCH_STORE_KEY) as NetworkSwitchData;
         // start listening for messages
         if (!bdata || !(device instanceof NetworkSwitch)) return ProcessSignal.ERROR;
 

@@ -309,7 +309,18 @@ export class Device {
 
     /* store key-value information about something ... */
     /** NOTE: store should only store simple types as Objects, Arrays, Numbers, Strings */
-    store: Map<string, Record<string, unknown>> = new Map();
+    private store_data: Record<string, Record<string, unknown>> = {};
+    store_get(key: string): Record<string, unknown> | null {
+        return this.store_data[key] ?? null;
+    }
+    store_set(key: string, data: Record<string, unknown>) {
+        this.store_data[key] = data;
+        this.event_dispatch("store_set", [key]);
+    }
+    store_delete(key: string) {
+        delete this.store_data[key];
+        this.event_dispatch("store_delete", [key]);
+    }
 
     private event_handlers: ([DeviceEventType, (...a: any[]) => void] | undefined)[] = [];
     private event_dispatch<T extends DeviceEventType>(evt: T, params: DeviceEventMap[T]) {

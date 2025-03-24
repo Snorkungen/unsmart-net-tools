@@ -359,7 +359,7 @@ export function received_config_bpdu(bdata: NetworkSwitchDataSTP, port: NetworkS
 }
 
 export function initialization(device: NetworkSwitch) {
-    const bdata = device.store.get(NETWORK_SWITCH_STORE_KEY) as NetworkSwitchDataSTP;
+    const bdata = device.store_get(NETWORK_SWITCH_STORE_KEY) as NetworkSwitchDataSTP;
     if (!bdata) throw "something went wrong";
 
     let macaddress = undefined;
@@ -415,7 +415,7 @@ export function initialization(device: NetworkSwitch) {
 }
 
 export function deinitialize(device: NetworkSwitch) {
-    const bdata = device.store.get(NETWORK_SWITCH_STORE_KEY) as NetworkSwitchDataSTP;
+    const bdata = device.store_get(NETWORK_SWITCH_STORE_KEY) as NetworkSwitchDataSTP;
     if (!bdata) throw "something went wrong";
 
     stop_hello_timer(bdata);

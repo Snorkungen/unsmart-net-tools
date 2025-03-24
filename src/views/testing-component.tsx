@@ -266,7 +266,7 @@ let dhcp_server_config: DHCPServer_Store = {
         }
     ]
 };
-server_pc.store.set(DAEMON_DHCP_SERVER.name, dhcp_server_config);
+server_pc.store_set(DAEMON_DHCP_SERVER.name, dhcp_server_config);
 
 server_pc.process_start(DAEMON_DHCP_SERVER)
 

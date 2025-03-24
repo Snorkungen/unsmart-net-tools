@@ -446,7 +446,7 @@ export const DAEMON_DHCP_SERVER: Program<DHCPServerData> = {
         }
 
         // Read from store if there exist a configuration
-        let store = proc.device.store.get(this.name) as (DHCPServer_Store | null);
+        let store = proc.device.store_get(this.name) as (DHCPServer_Store | null);
         if (!store) {
             proc.journal(proc, 2, "failed to read server configuration from device store");
             return ProcessSignal.ERROR;
