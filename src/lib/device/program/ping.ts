@@ -5,55 +5,16 @@ import { calculateChecksum } from "../../binary/checksum";
 import { uint8_concat, uint8_equals, uint8_fromString } from "../../binary/uint8-array";
 import { ICMP_ECHO_HEADER, ICMP_HEADER, ICMP_UNUSED_HEADER, ICMPV4_TYPES, ICMPV6_TYPES } from "../../header/icmp";
 import { IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
-import { Contact, DeviceRoute, NetworkData, Process, ProcessSignal, Program } from "../device";
+import { Contact, DeviceResult, DeviceRoute, NetworkData, Process, ProcessSignal, Program } from "../device";
 
 const MSG_DST_UNREACH = uint8_fromString(
     "Destination unreachable"
 )
 
-type PingData = {
-    contact: Contact;
-    identifier: number;
-    sequence: number;
-    destination: BaseAddress;
-    maxSendCount: number;
-    route: DeviceRoute;
-    send: (proc: Process<PingData>) => void;
-    timestamps: Map<number, number>;
-    stats: Map<number, number>;
-}
-
-function handleExternalExit(proc: Process<PingData>) {
-    proc.data.contact.close(proc.data.contact);
-
-    let count = 0;
-    let sum = 0;
-    for (let [, time] of proc.data.stats) {
-        sum += time;
-        count += 1;
-    }
-    if (count == 0) return;
-    let avg = (sum / count);
-
-    proc.term_write(uint8_fromString(
-        `\n${count} replies received, with an average time of ${avg.toFixed(1)} ms`
-    ))
-}
-
-function canSend(proc: Process<PingData>): boolean {
-    if (proc.data.sequence < proc.data.maxSendCount) {
-        return true;
-    }
-    proc.close(proc, ProcessSignal.INTERRUPT);
-    return false;
-}
-
-function sendv4(proc: Process<PingData>) {
-    if (!canSend(proc)) { return; }
-
+function headless_ping_send4(contact: Contact, destination: BaseAddress, route: DeviceRoute, sequence = 1, identifier = 0): DeviceResult<unknown> {
     let echohdr = ICMP_ECHO_HEADER.create({
-        id: proc.data.identifier,
-        seq: proc.data.sequence,
+        id: identifier,
+        seq: sequence,
     }), icmphdr = ICMP_HEADER.create({
         type: ICMPV4_TYPES.ECHO_REQUEST,
         data: echohdr.getBuffer()
@@ -66,27 +27,25 @@ function sendv4(proc: Process<PingData>) {
         payload: icmphdr.getBuffer()
     });
 
-    proc.data.timestamps.set(proc.data.sequence, Date.now());
-    proc.data.contact.send(proc.data.contact, { buffer: iphdr.getBuffer() }, proc.data.destination, proc.data.route)
+    return contact.send(contact, { buffer: iphdr.getBuffer() }, destination, route);
 }
 
-function sendv6(proc: Process<PingData>) {
-    if (!canSend(proc)) { return; }
+function headless_ping_send6(contact: Contact, destination: BaseAddress, route: DeviceRoute, sequence = 1, identifier = 0): DeviceResult<unknown> {
     let echohdr = ICMP_ECHO_HEADER.create({
-        id: proc.data.identifier,
-        seq: proc.data.sequence,
+        id: identifier,
+        seq: sequence,
     }), icmphdr = ICMP_HEADER.create({
         type: ICMPV6_TYPES.ECHO_REQUEST,
         data: echohdr.getBuffer(),
         csum: 0,
     });
 
-    let source = proc.data.route.iface.addresses.find((v) => v.address.constructor == proc.data.destination.constructor);
-    if (!source) return;
+    let source = route.iface.addresses.find((v) => v.address.constructor == destination.constructor);
+    if (!source) return { success: false, error: undefined };
 
     let pseudoHdr = IPV6_PSEUDO_HEADER.create({
         saddr: source.address as IPV6Address,
-        daddr: proc.data.destination as IPV6Address,
+        daddr: destination as IPV6Address,
         len: icmphdr.size,
         proto: PROTOCOLS.IPV6_ICMP,
     })
@@ -97,34 +56,22 @@ function sendv6(proc: Process<PingData>) {
     ])));
 
     let iphdr = IPV6_HEADER.create({ nextHeader: PROTOCOLS.IPV6_ICMP, payload: icmphdr.getBuffer() })
-    proc.data.timestamps.set(proc.data.sequence, Date.now());
-    proc.data.contact.send(proc.data.contact, { buffer: iphdr.getBuffer() }, proc.data.destination, proc.data.route)
+    return contact.send(contact, { buffer: iphdr.getBuffer() }, destination, route)
 }
 
-function handlereply(proc: Process<PingData>, source: BaseAddress, bytes: number, ttl: number, seq: number) {
-    let sendTime = proc.data.timestamps.get(seq);
-    if (!sendTime) {
-        // the sequence number has not been sent.
-        return;
+export function headless_ping_send(contact: Contact, destination: BaseAddress, route: DeviceRoute, sequence = 1, identifier = 0): DeviceResult<unknown> {
+    if (destination instanceof IPV4Address) {
+        return headless_ping_send4(contact, destination, route, sequence, identifier);
+    } else if (destination instanceof IPV6Address) {
+        return headless_ping_send6(contact, destination, route, sequence, identifier);
     }
 
-    let time = Date.now() - sendTime;
-
-    proc.term_write(uint8_fromString(
-        `${bytes} bytes from ${source}: seq=${seq} ttl=${ttl} time=${time} ms\n`
-    ));
-
-    if (seq != proc.data.sequence) {
-        return; // wait for the correct sequence number to be replied
-    }
-
-    proc.data.stats.set(proc.data.sequence, time);
-
-    proc.data.sequence += 1;
-    proc.data.send(proc);
+    return { success: false, error: undefined }
 }
 
-function receivev4(proc: Process<PingData>) { // !TODO: rewrite everything againg because this does not feel so ergonomic
+export type HeadlessPingReceiveHandler = (source: BaseAddress, bytes: number, ttl: number, seq: number) => void;
+export type HeadlessPingReceiveErrorHandler = (error: "DESTINATION_UNREACHABLE") => void;
+function headless_ping_receive4(destination: BaseAddress, route: DeviceRoute, identifier: number, on_sucess?: HeadlessPingReceiveHandler, on_error?: HeadlessPingReceiveErrorHandler) {
     return function (_: Contact, data: NetworkData) {
         let iphdr = IPV4_HEADER.from(data.buffer);
         if (iphdr.get("proto") != PROTOCOLS.ICMP) {
@@ -147,10 +94,10 @@ function receivev4(proc: Process<PingData>) { // !TODO: rewrite everything again
             let err_iphdr = IPV4_HEADER.from(ICMP_UNUSED_HEADER.from(icmphdr.get("data")).get("data"));
 
             // compare daddr and saddr
-            if (!uint8_equals(proc.data.destination.buffer, err_iphdr.get("daddr").buffer)) {
+            if (!uint8_equals(destination.buffer, err_iphdr.get("daddr").buffer)) {
                 return;
             } else if (!(
-                proc.data.route.iface.addresses.find(v => uint8_equals(v.address.buffer, err_iphdr.get("saddr").buffer))
+                route.iface.addresses.find(v => uint8_equals(v.address.buffer, err_iphdr.get("saddr").buffer))
             )) {
                 return; // ping not sent from saved route
             }
@@ -165,19 +112,15 @@ function receivev4(proc: Process<PingData>) { // !TODO: rewrite everything again
             }
 
             let err_echohdr = ICMP_ECHO_HEADER.from(err_icmphdr.get("data"));
-            if (err_echohdr.get("id") != proc.data.identifier) {
+            if (err_echohdr.get("id") != identifier) {
                 return;
             }
 
-            { // fail program
-                proc.data.contact.close(proc.data.contact);
-                proc.term_write(MSG_DST_UNREACH)
-                proc.close(proc, ProcessSignal.ERROR);
-            }
+            on_error && on_error("DESTINATION_UNREACHABLE");
         }
 
 
-        if (!(uint8_equals(iphdr.get("saddr").buffer, proc.data.destination.buffer))) {
+        if (!(uint8_equals(iphdr.get("saddr").buffer, destination.buffer))) {
             return; // HMM
         }
 
@@ -186,15 +129,15 @@ function receivev4(proc: Process<PingData>) { // !TODO: rewrite everything again
         }
 
         let echohdr = ICMP_ECHO_HEADER.from(icmphdr.get("data"));
-        if (echohdr.get("id") != proc.data.identifier) {
+        if (echohdr.get("id") != identifier) {
             return;
         }
 
-        handlereply(proc, iphdr.get("saddr"), iphdr.get("payload").byteLength, iphdr.get("ttl"), echohdr.get("seq"));
+        on_sucess && on_sucess(iphdr.get("saddr"), iphdr.get("payload").byteLength, iphdr.get("ttl"), echohdr.get("seq"));
     }
 }
 
-function receivev6(proc: Process<PingData>) {
+function headless_ping_receive6(destination: BaseAddress, route: DeviceRoute, identifier: number, on_sucess?: HeadlessPingReceiveHandler, on_error?: HeadlessPingReceiveErrorHandler) {
     return function (_: Contact, data: NetworkData) {
         let iphdr = IPV6_HEADER.from(data.buffer);
         if (iphdr.get("nextHeader") != PROTOCOLS.IPV6_ICMP) {
@@ -220,10 +163,10 @@ function receivev6(proc: Process<PingData>) {
             let err_iphdr = IPV6_HEADER.from(ICMP_UNUSED_HEADER.from(icmphdr.get("data")).get("data"));
 
             // compare daddr and saddr
-            if (!uint8_equals(proc.data.destination.buffer, err_iphdr.get("daddr").buffer)) {
+            if (!uint8_equals(destination.buffer, err_iphdr.get("daddr").buffer)) {
                 return;
             } else if (!(
-                proc.data.route.iface.addresses.find(v => uint8_equals(v.address.buffer, err_iphdr.get("saddr").buffer))
+                route.iface.addresses.find(v => uint8_equals(v.address.buffer, err_iphdr.get("saddr").buffer))
             )) {
                 return; // ping not sent from saved route
             }
@@ -239,19 +182,15 @@ function receivev6(proc: Process<PingData>) {
 
             if (err_icmphdr.get("type") == ICMPV6_TYPES.DESTINATION_UNREACHABLE) {
                 let err_echohdr = ICMP_ECHO_HEADER.from(err_icmphdr.get("data"));
-                if (err_echohdr.get("id") != proc.data.identifier) {
+                if (err_echohdr.get("id") != identifier) {
                     return;
                 }
 
-                { // fail program
-                    proc.data.contact.close(proc.data.contact);
-                    proc.term_write(MSG_DST_UNREACH)
-                    proc.close(proc, ProcessSignal.ERROR);
-                }
+                on_error && on_error("DESTINATION_UNREACHABLE");
             }
         }
 
-        if (!(uint8_equals(iphdr.get("saddr").buffer, proc.data.destination.buffer))) {
+        if (!(uint8_equals(iphdr.get("saddr").buffer, destination.buffer))) {
             return; // HMM
         }
 
@@ -260,12 +199,83 @@ function receivev6(proc: Process<PingData>) {
         }
 
         let echohdr = ICMP_ECHO_HEADER.from(icmphdr.get("data"));
-        if (echohdr.get("id") != proc.data.identifier) {
+        if (echohdr.get("id") != identifier) {
             return;
         }
 
-        handlereply(proc, iphdr.get("saddr"), iphdr.get("payload").length, iphdr.get("hopLimit"), echohdr.get("seq"));
+        on_sucess && on_sucess(iphdr.get("saddr"), iphdr.get("payload").length, iphdr.get("hopLimit"), echohdr.get("seq"));
     }
+}
+
+export function headless_ping_receive(destination: BaseAddress, route: DeviceRoute, identifier: number, on_sucess?: HeadlessPingReceiveHandler, on_error?: HeadlessPingReceiveErrorHandler) {
+    if (destination instanceof IPV4Address) {
+        return headless_ping_receive4(destination, route, identifier, on_sucess, on_error);
+    } else if (destination instanceof IPV6Address) {
+        return headless_ping_receive6(destination, route, identifier, on_sucess, on_error);
+    }
+
+    throw new Error("bad destination")
+}
+
+type PingData = {
+    contact: Contact;
+    identifier: number;
+    sequence: number;
+    destination: BaseAddress;
+    maxSendCount: number;
+    route: DeviceRoute;
+    timestamps: Map<number, number>;
+    stats: Map<number, number>;
+}
+
+function handleExternalExit(proc: Process<PingData>) {
+    proc.data.contact.close(proc.data.contact);
+
+    let count = 0;
+    let sum = 0;
+    for (let [, time] of proc.data.stats) {
+        sum += time;
+        count += 1;
+    }
+    if (count == 0) return;
+    let avg = (sum / count);
+
+    proc.term_write(uint8_fromString(
+        `\n${count} replies received, with an average time of ${avg.toFixed(1)} ms`
+    ))
+}
+
+function send(proc: Process<PingData>) {
+    if (proc.data.sequence >= proc.data.maxSendCount) {
+        proc.close(proc, ProcessSignal.INTERRUPT);
+        return;
+    }
+
+    proc.data.timestamps.set(proc.data.sequence, Date.now());
+    headless_ping_send(proc.data.contact, proc.data.destination, proc.data.route, proc.data.sequence, proc.data.identifier);
+}
+
+function handlereply(proc: Process<PingData>, source: BaseAddress, bytes: number, ttl: number, seq: number) {
+    let sendTime = proc.data.timestamps.get(seq);
+    if (!sendTime) {
+        // the sequence number has not been sent.
+        return;
+    }
+
+    let time = Date.now() - sendTime;
+
+    proc.term_write(uint8_fromString(
+        `${bytes} bytes from ${source}: seq=${seq} ttl=${ttl} time=${time} ms\n`
+    ));
+
+    if (seq != proc.data.sequence) {
+        return; // wait for the correct sequence number to be replied
+    }
+
+    proc.data.stats.set(proc.data.sequence, time);
+
+    proc.data.sequence += 1;
+    send(proc);
 }
 
 const DEFAULT_MAX_SENDCOUNT = 10;
@@ -286,19 +296,12 @@ export const DEVICE_PROGRAM_PING: Program = {
             maxSendCount = DEFAULT_MAX_SENDCOUNT;
         }
 
-        let sender: (proc: Process<PingData>) => void;
-        let receiver: (contact: Contact, data: NetworkData) => void;
-
         if (IPV4Address.validate(target)) {
             contact = proc.device.contact_create("IPv4", "RAW").data!;
             destination = new IPV4Address(target);
-            sender = sendv4;
-            receiver = receivev4(proc)
         } else if (IPV6Address.validate(target)) {
             contact = proc.device.contact_create("IPv6", "RAW").data!;
             destination = new IPV6Address(target);
-            sender = sendv6;
-            receiver = receivev6(proc)
         } else {
             // maybe in future dns resolution
             proc.term_write(uint8_fromString(
@@ -314,6 +317,18 @@ export const DEVICE_PROGRAM_PING: Program = {
             return ProcessSignal.EXIT;
         }
 
+        const on_error: HeadlessPingReceiveErrorHandler = (e) => {
+            if (e === "DESTINATION_UNREACHABLE") {
+                proc.data.contact.close(proc.data.contact);
+                proc.term_write(MSG_DST_UNREACH)
+                proc.close(proc, ProcessSignal.ERROR);
+            }
+        }
+
+        const on_sucess: HeadlessPingReceiveHandler = (...params) => {
+            handlereply(proc, ...params);
+        }
+
         (<Process<PingData>>proc).data = {
             contact: contact,
             identifier: identifier,
@@ -323,15 +338,16 @@ export const DEVICE_PROGRAM_PING: Program = {
             maxSendCount: maxSendCount,
             timestamps: new Map(),
             stats: new Map(),
-
-            send: sender,
         }
 
         // register methods
         proc.handle(proc, handleExternalExit);
-        contact.receive(contact, receiver);
+        contact.receive(
+            contact,
+            headless_ping_receive(destination, route, identifier, on_sucess, on_error)
+        );
 
-        (<Process<PingData>>proc).data.send(proc); // send first ping
+        send(proc); // send first ping
 
         return ProcessSignal.__EXPLICIT__;
     }
