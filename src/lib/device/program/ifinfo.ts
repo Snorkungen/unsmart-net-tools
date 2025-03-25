@@ -65,6 +65,12 @@ const DEVICE_PROGRAM_IFINFO_SET4: Program = {
         }
 
         let oldAddr = iface.addresses.find((a) => a.address instanceof IPV4Address);
+        if (oldAddr) {
+            oldAddr = {
+                address: new IPV4Address(oldAddr.address.toString()),
+                netmask: createMask(IPV4Address, oldAddr.netmask.length)
+            }
+        }
         let address = new IPV4Address(addr);
         let res = proc.device.interface_set_address(iface, address, amask);
         if (!res.success) {
