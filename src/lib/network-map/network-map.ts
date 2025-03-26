@@ -150,7 +150,7 @@ function network_map_device_ethiface_on_send_or_recv(state: NMState, shape: NMSh
             }
 
             network_map_render(state);
-        }, (so.assob!.receive_delay || 0) * 1.05)
+        }, (so.assob!.receive_delay || 0))
         network_map_render(state);
     }
 }
@@ -233,6 +233,7 @@ function network_map_init_element(so: NMShapeObject, element?: SVGElement): SVGE
         element.textContent = so.value;
         element.setAttribute("dominant-baseline", "middle")
         element.setAttribute("text-anchor", "middle")
+        element.style.userSelect = "none"
 
         element.setAttribute("fill", so.color)
         element.setAttribute("stroke", so.color)
@@ -347,6 +348,11 @@ function network_map_connection_construct_path(state: NMState, connection: NMCon
     let eX = connection.end[0].position.x + connection.end[1].position.x + connection.end[1].width / 2,
         eY = connection.end[0].position.y + connection.end[1].position.y + connection.end[1].height;
 
+    bX -= state.origin.x;
+    bY += state.origin.y;
+    eX -= state.origin.x;
+    eY += state.origin.y;
+
     let d = `M${bX} ${bY}`;
     let yPad = (15) * (connection.begin[2] + 1);
 
@@ -460,30 +466,37 @@ export function network_map_init_state(container: SVGSVGElement): NMState {
     container.style.border = "blue 2px solid"
 
     container.addEventListener("mousedown", (event) => {
+        state.mstate.down = true;
+        state.mstate.position = { x: event.clientX, y: event.clientY };
+
         let res = network_map_get_shape_object_from_mouseevent(state, event);
         if (!res.length) {
             // missed
             return;
         }
+
         let [shape] = res;
         if (shape.type != "shape") return;
 
-        state.mstate.down = true;
         state.mstate.shape = shape;
-        state.mstate.position = { x: event.clientX, y: event.clientY };
     });
 
     container.addEventListener("mousemove", (event) => {
-        if (!state.mstate.down || !state.mstate.shape || !state.mstate.position) return;
+        if (!state.mstate.down || !state.mstate.position) return;
         state.mstate.moved = true;
 
         let diffX = event.clientX - state.mstate.position.x, diffY = event.clientY - state.mstate.position.y;
 
-        state.mstate.shape.position.x += diffX;
-        state.mstate.shape.position.y += diffY;
+        if (state.mstate.shape) {
+            state.mstate.shape.position.x += diffX;
+            state.mstate.shape.position.y += diffY;
+        } else { // assume this a panning motion
+            state.origin.x -= diffX;
+            state.origin.y += diffY;
+        }
 
         state.mstate.position.x = event.clientX;
-        state.mstate.position.y = event.clientY;
+            state.mstate.position.y = event.clientY;
 
         network_map_render(state);
     });
