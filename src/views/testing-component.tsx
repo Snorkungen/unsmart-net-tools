@@ -104,8 +104,6 @@ server_iface_eth.connect(r1_iface_server);
 pc1_iface.connect(r1_iface_pc1);
 pc2_iface.connect(r1_iface_pc2);
 
-pc1.process_start(DAEMON_ECHO_REPLIER);
-
 // SRV start DHCP server ...
 // TODO DHCP support gateway ...
 let dhcp_server_config: DHCPServer_Store = {

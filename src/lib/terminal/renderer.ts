@@ -112,7 +112,7 @@ function terminal_erase_in_line(state: TerminalRendererState, n: number) {
     let rzm = terminal_get_resize_marker_idx(state, state.cursor.y);
 
     if (n == 0) { // clear from cursor to end
-        for (let x = state.cursor.x; x > state.view_columns; x++) {
+        for (let x = state.cursor.x; x < state.view_columns; x++) {
             terminal_erase_cell(state, x, state.cursor.y);
         }
 
