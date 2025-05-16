@@ -135,9 +135,10 @@ const switch_dimensions = { width: 85, height: 25 }
 let terminalOwner = pc1;
 let terminal: Terminal;
 
+let state: undefined | ReturnType<typeof network_map_init_state> = undefined;
 
 function init_nmap(el: SVGSVGElement) {
-    let state = network_map_init_state(el);
+    state = network_map_init_state(el);
 
     network_map_device_shape(state, networkSwitch, 50, 50, switch_dimensions);
 
@@ -170,9 +171,62 @@ function init_nmap(el: SVGSVGElement) {
     }
 }
 
+function add_device(device: Device) {
+    // for the vibes just shove the device smack dab in the middle of the current view
+    if (!state) throw new Error("state not initialized");
+
+    let x = (state.container.clientWidth / 2) + state.origin.x;
+    let y = (state.container.clientHeight / 2) - state.origin.y;
+
+    let dimen = undefined;
+
+    if (device instanceof NetworkSwitch) {
+        dimen = switch_dimensions;
+    }
+
+    network_map_device_shape(state, device, x, y, dimen);
+    network_map_render(state);
+}
+
 export default function NetworkMapViewer(): JSX.Element {
     return <div style={{ width: "100%" }} >
-        <svg width={"100%"} height={500} ref={init_nmap}></svg>
+        <div style={{ display: "flex" }}>
+            <svg width={"100%"} height={500} ref={init_nmap}></svg>
+            <div style={{ width: "24em", height: "100%", padding: "2em" }}>
+                {/* Shove random things into here */}
+                <nav></nav>
+                <div>
+                    <form onSubmit={(e) => {
+                        e.preventDefault();
+                        const fd = new FormData(e.currentTarget);
+                        let dname = fd.get("form_add_device_dname")!.valueOf().toString();
+                        let if_count = parseInt(fd.get("form_add_device_ifcount")!.valueOf().toString());
+
+                        const device = new Device();
+
+                        device.name = dname;
+
+                        for (let i = 0; i < if_count; i++) {
+                            device.interface_add(new EthernetInterface(device));
+                        }
+
+                        init_programs(device);
+                        add_device(device);
+                    }}>
+                        <legend>Add a device</legend>
+                        <fieldset>
+                            <label for="form_add_device_dname">Device Name</label>
+                            <input type="text" name="form_add_device_dname" id="form_add_device_dname" required />
+                        </fieldset>
+                        <fieldset>
+                            <label for="form_add_device_ifcount">Ether if count</label>
+                            <input type="number" min={0} value={1} name="form_add_device_ifcount" id="form_add_device_ifcount" required />
+                        </fieldset>
+                        <button type="submit">Create</button>
+                    </form>
+                </div>
+            </div>
+        </div>
 
         <div ref={(el) => {
             terminal = new Terminal(el);
