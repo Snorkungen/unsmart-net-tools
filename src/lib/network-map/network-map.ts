@@ -119,16 +119,33 @@ function network_map_device_iface_update_appearance(so: NMRect, type?: "recv" | 
     }
 }
 
-function network_map_device_ethiface_on_connect_or_disconnect(state: NMState, shape: NMShape, so: NMRect) {
-    return function (iface: EthernetInterface) {
+function network_map_device_ethiface_on_connect_or_disconnect(state: NMState, shape: NMShape) {
+    return function (iface: BaseInterface) {
+        let so = shape.objects.find(o => o.assob == iface);
+        if (!so || so.type != "rect") return;
+
         network_map_device_iface_update_appearance(so);
+
+        if (!iface.up) {
+            // delete connection
+            let connection = state.connections.find(conn => (conn.begin[1] == so || conn.end[1] == so));
+            if (connection) {
+                network_map_remove_element(state, connection);
+                state.connections = state.connections.filter(con => con != connection)
+            }
+        } else {
+            network_map_device_setup_connection(state, shape, so, iface);
+        }
         network_map_render(state);
     }
 }
 
-function network_map_device_ethiface_on_send_or_recv(state: NMState, shape: NMShape, so: NMRect, type: "recv" | "send") {
-    return function () {
-        if (!(so.assob instanceof EthernetInterface)) throw new Error("assertion")
+function network_map_device_ethiface_on_send_or_recv(state: NMState, shape: NMShape, type: "recv" | "send") {
+    return function (iface: BaseInterface) {
+        let so = shape.objects.find(o => o.assob == iface);
+        if (!so || so.type != "rect" || !(iface instanceof EthernetInterface)) {
+            return
+        };
 
         network_map_device_iface_update_appearance(so, type);
 
@@ -150,7 +167,7 @@ function network_map_device_ethiface_on_send_or_recv(state: NMState, shape: NMSh
             }
 
             network_map_render(state);
-        }, (so.assob!.receive_delay || 0))
+        }, (iface.receive_delay || 0))
         network_map_render(state);
     }
 }
@@ -191,7 +208,6 @@ export function network_map_device_shape(state: NMState, dev: Device, x: number,
     for (let iface of dev.interfaces) {
         if (iface.virtual) continue;
 
-
         shape.objects.push({
             type: "rect",
             position: { x: (i) * (ifsize) + (i + 1) * ifpad, y: height },
@@ -211,14 +227,14 @@ export function network_map_device_shape(state: NMState, dev: Device, x: number,
         // find the associated shape and then the corresponding interface
 
         if (iface instanceof EthernetInterface) {
-            iface.onConnect = network_map_device_ethiface_on_connect_or_disconnect(state, shape, so);
-            iface.onDisconnect = network_map_device_ethiface_on_connect_or_disconnect(state, shape, so);
-            iface.onRecv = network_map_device_ethiface_on_send_or_recv(state, shape, so, "recv");
-            iface.onSend = network_map_device_ethiface_on_send_or_recv(state, shape, so, "send");
-
             iface.receive_delay = if_delay;
         }
     }
+
+    dev.event_add_handler("interface_connect", network_map_device_ethiface_on_connect_or_disconnect(state, shape));
+    dev.event_add_handler("interface_disconnect", network_map_device_ethiface_on_connect_or_disconnect(state, shape));
+    dev.event_add_handler("interface_recv", network_map_device_ethiface_on_send_or_recv(state, shape, "recv"));
+    dev.event_add_handler("interface_send", network_map_device_ethiface_on_send_or_recv(state, shape, "send"));
 
     return shape;
 }
@@ -262,6 +278,13 @@ function network_map_init_element(so: NMShapeObject, element?: SVGElement): SVGE
     return element;
 }
 
+function network_map_remove_element(state: NMState, v: object) {
+    let e = state.element_cache.find(([o]) => o == v);
+    if (!e) return;
+    e[1].remove();
+    state.element_cache = state.element_cache.filter(ce => ce != e);
+}
+
 function network_map_get_element(state: NMState, v: NMShapeObject, parent?: SVGElement): SVGElement {
     for (let [o, e] of state.element_cache) {
         if (o === v) {
@@ -285,43 +308,6 @@ function network_map_get_element(state: NMState, v: NMShapeObject, parent?: SVGE
     state.element_cache.push([v, element]);
 
     return element;
-}
-
-function network_map_shape_get_bounding_box(shape: NMShape): NMPosition & { width: number; height: number } {
-    // do stuff i guess
-
-    let x = shape.position.x, y = shape.position.y;
-    let width = 0, height = 0;
-
-    // get the widths and heights of the objects
-
-    for (let so of shape.objects) {
-        if (so.type == "rect") {
-            // how would this handle negative positions
-            if (so.position.x < 0) {
-                throw new Error("accounting for negative positions is not handled")
-            }
-
-            if (so.position.y < 0) {
-                throw new Error("accounting for negative positions is not handled")
-            }
-
-            if ((so.position.x + so.width) > width) {
-                width = so.position.x + so.width;
-            }
-
-            if ((so.position.y + so.height) > height) {
-                height = so.position.y + so.height;
-            }
-        }
-    }
-
-    return {
-        x: x,
-        y: y,
-        width: width,
-        height: height,
-    }
 }
 
 function network_map_connection_get(state: NMState, so: NMShapeObject): undefined | NMConnection {

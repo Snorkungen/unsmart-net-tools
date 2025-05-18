@@ -322,8 +322,9 @@ export class Device {
         this.event_dispatch("store_delete", [key]);
     }
 
+    // !TODO: store event_handlers as an object in order to avoid a traversal of the entire list and stuff
     private event_handlers: ([DeviceEventType, (...a: any[]) => void] | undefined)[] = [];
-    private event_dispatch<T extends DeviceEventType>(evt: T, params: DeviceEventMap[T]) {
+    event_dispatch<T extends DeviceEventType>(evt: T, params: DeviceEventMap[T]) {
         for (let ev of this.event_handlers) {
             if (ev && ev[0] === evt) {
                 ev[1](...params);

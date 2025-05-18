@@ -13,6 +13,7 @@ import { DAEMON_ROUTING } from "../lib/device/program/routing";
 import { EthernetInterface, VlanInterface } from "../lib/device/interface";
 import { DEVICE_PROGRAM_ROUTEINFO } from "../lib/device/program/routeinfo";
 import { network_map_device_shape, network_map_init_state, network_map_render } from "../lib/network-map/network-map";
+import { createSignal } from "solid-js";
 
 function init_programs(device: Device) {
     device.process_start(DAEMON_ECHO_REPLIER);
@@ -135,6 +136,9 @@ const switch_dimensions = { width: 85, height: 25 }
 let terminalOwner = pc1;
 let terminal: Terminal;
 
+const [is_in_iface_connection_mode, set_is_in_iface_connection_mode] = createSignal(false);
+let selected_iface: EthernetInterface | undefined = undefined;
+
 let state: undefined | ReturnType<typeof network_map_init_state> = undefined;
 
 function init_nmap(el: SVGSVGElement) {
@@ -154,8 +158,24 @@ function init_nmap(el: SVGSVGElement) {
 
     network_map_render(state);
 
-    state.onclick = (dev) => {
-        if (!(dev instanceof Device)) {
+    state.onclick = (dev, iface) => {
+        if (!(dev instanceof Device) || !state) {
+            return;
+        }
+
+        if (iface instanceof EthernetInterface && is_in_iface_connection_mode()) {
+            if (selected_iface) {
+                if (selected_iface == iface) {
+                    iface.disconnect();
+                } else {
+                    selected_iface.connect(iface);
+                }
+
+                selected_iface = undefined;
+                return;
+            }
+
+            selected_iface = iface;
             return;
         }
 
@@ -219,7 +239,9 @@ export default function NetworkMapViewer(): JSX.Element {
             <svg width={"100%"} height={500} ref={init_nmap}></svg>
             <div style={{ width: "24em", height: "100%", padding: "2em" }}>
                 {/* Shove random things into here */}
-                <nav></nav>
+                <nav>
+                    <button onclick={() => set_is_in_iface_connection_mode(v => !v)} class="btn btn-primary">toggle {is_in_iface_connection_mode() ? "⏸️" : "▶️"}</button>
+                </nav>
                 <div>
                     <form onSubmit={handle_add_device_submit}>
                         <fieldset>

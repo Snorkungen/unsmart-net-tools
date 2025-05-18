@@ -94,7 +94,8 @@ export function DeviceViewComponent({ device, on_select }: DeviceViewComponentPr
         device.event_add_handler("interface_set_address", handle_interface_events)
         device.event_add_handler("interface_mcast_subscribe", handle_interface_events)
         device.event_add_handler("interface_mcast_unsubscribe", handle_interface_events)
-
+        device.event_add_handler("interface_connect", handle_interface_events)
+        device.event_add_handler("interface_disconnect", handle_interface_events)
     });
 
     onCleanup(() => {

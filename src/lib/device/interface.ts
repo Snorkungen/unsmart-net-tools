@@ -95,7 +95,6 @@ export class EthernetInterface extends BaseInterface {
         this.vlan = { type: type, vids: vids };
     }
 
-    onSend?: () => void;
     output(data: NetworkData, destination: BaseAddress, rtentry?: DeviceRoute<typeof BaseAddress>): DeviceResult<"UDUMB"> {
         if (!this.up || !this.target) {
             return { success: false, error: "UDUMB", message: "interface is eiter not up or a route entry is missing" };
@@ -131,7 +130,6 @@ export class EthernetInterface extends BaseInterface {
         }
 
         etherheader.set("payload", data.buffer);
-
 
         if (uint8_equals(etherheader.get("smac").buffer, etherheader.get("dmac").buffer)) {
             // this was meant for myself
@@ -183,7 +181,7 @@ export class EthernetInterface extends BaseInterface {
             }
         }
 
-        this.onSend && this.onSend();
+        this.device.event_dispatch("interface_send", [this]);
         // somehow put on wire
         this.device.schedule(() => {
             this.device.log({
@@ -195,7 +193,6 @@ export class EthernetInterface extends BaseInterface {
         return { success: true, data: undefined }
     }
 
-    onRecv?: () => void;
     receive_delay: number | undefined = undefined;
     private receive(etherheader: typeof ETHERNET_HEADER) {
         vlan_handler: if (this.vlan) {
@@ -245,25 +242,22 @@ export class EthernetInterface extends BaseInterface {
             this.device.input_ether(etherheader, data);
         }, this.receive_delay)
 
-        this.onRecv && this.onRecv();
+        this.device.event_dispatch("interface_recv", [this]);
     }
 
-    onDisconnect?: (iface: EthernetInterface) => void;
-    disconnect(): boolean {
+    disconnect() {
         if (!this.target) {
-            return true;
+            return;
         }
 
         let disconnect = this.target.disconnect.bind(this.target);
         this.target = undefined;
-
-        this.onDisconnect && this.onDisconnect(this);
-
         this.up = false;
-        return disconnect();
+
+        this.device.event_dispatch("interface_connect", [this]);
+        disconnect();
     }
 
-    onConnect?: (iface: EthernetInterface) => void;
     connect(target: EthernetInterface) {
         if (this == target) {
             throw new Error("cannot connect to self")
@@ -278,7 +272,8 @@ export class EthernetInterface extends BaseInterface {
 
         this.up = true;
         target.connect(this)
-        this.onConnect && this.onConnect(this);
+
+        this.device.event_dispatch("interface_connect", [this]);
     }
 }
 export class LoopbackInterface extends BaseInterface {
