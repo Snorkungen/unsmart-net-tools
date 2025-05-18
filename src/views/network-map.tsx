@@ -171,7 +171,7 @@ function init_nmap(el: SVGSVGElement) {
     }
 }
 
-function add_device(device: Device) {
+function add_device_to_nmap(device: Device) {
     // for the vibes just shove the device smack dab in the middle of the current view
     if (!state) throw new Error("state not initialized");
 
@@ -188,6 +188,31 @@ function add_device(device: Device) {
     network_map_render(state);
 }
 
+function handle_add_device_submit(e: SubmitEvent & { currentTarget: HTMLFormElement; }) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    let dname = fd.get("form_add_device_dname")!.toString();
+    let if_count = parseInt(fd.get("form_add_device_ifcount")!.toString());
+    let devtype = fd.get("form_add_device_devtype")!.toString()
+
+    let device: Device;
+    // !TODO: allow for the creation of a router, eithe switch or device based
+    if (devtype == "switch") {
+        device = new NetworkSwitch();
+    } else {
+        device = new Device();
+    }
+
+    device.name = dname;
+
+    for (let i = 0; i < if_count; i++) {
+        device.interface_add(new EthernetInterface(device));
+    }
+
+    init_programs(device);
+    add_device_to_nmap(device);
+}
+
 export default function NetworkMapViewer(): JSX.Element {
     return <div style={{ width: "100%" }} >
         <div style={{ display: "flex" }}>
@@ -196,33 +221,29 @@ export default function NetworkMapViewer(): JSX.Element {
                 {/* Shove random things into here */}
                 <nav></nav>
                 <div>
-                    <form onSubmit={(e) => {
-                        e.preventDefault();
-                        const fd = new FormData(e.currentTarget);
-                        let dname = fd.get("form_add_device_dname")!.valueOf().toString();
-                        let if_count = parseInt(fd.get("form_add_device_ifcount")!.valueOf().toString());
-
-                        const device = new Device();
-
-                        device.name = dname;
-
-                        for (let i = 0; i < if_count; i++) {
-                            device.interface_add(new EthernetInterface(device));
-                        }
-
-                        init_programs(device);
-                        add_device(device);
-                    }}>
-                        <legend>Add a device</legend>
+                    <form onSubmit={handle_add_device_submit}>
                         <fieldset>
-                            <label for="form_add_device_dname">Device Name</label>
-                            <input type="text" name="form_add_device_dname" id="form_add_device_dname" required />
+                            <legend>Add a device</legend>
+                            <div class="mb-3 form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="form_add_device_devtype" id="form_add_device_devtype_regular" value="regular" checked />
+                                <label class="form-check-label" for="form_add_device_devtype_regular">Regular</label>
+                            </div>
+                            <div class="mb-3 form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="form_add_device_devtype" id="form_add_device_devtype_switch" value="switch" />
+                                <label class="form-check-label" for="form_add_device_devtype_switch">Switch</label>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="form_add_device_dname">Device Name</label>
+                                <input class="form-control" type="text" name="form_add_device_dname" id="form_add_device_dname" required />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="form_add_device_ifcount">Ether if count</label>
+                                <input class="form-control" type="number" min={0} value={1} name="form_add_device_ifcount" id="form_add_device_ifcount" required />
+                            </div>
+                            <div class="col-auto">
+                                <button class="btn btn-secondary" type="submit">Create</button>
+                            </div>
                         </fieldset>
-                        <fieldset>
-                            <label for="form_add_device_ifcount">Ether if count</label>
-                            <input type="number" min={0} value={1} name="form_add_device_ifcount" id="form_add_device_ifcount" required />
-                        </fieldset>
-                        <button type="submit">Create</button>
                     </form>
                 </div>
             </div>

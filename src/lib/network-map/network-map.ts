@@ -47,7 +47,7 @@ type NMMouseState = {
     down?: true;
     moved?: true;
     position?: NMPosition;
-    shape?: NMShape;
+    selected?: ReturnType<typeof network_map_get_shape_object_from_mouseevent>;
 }
 
 type NMState = {
@@ -469,16 +469,7 @@ export function network_map_init_state(container: SVGSVGElement): NMState {
         state.mstate.down = true;
         state.mstate.position = { x: event.clientX, y: event.clientY };
 
-        let res = network_map_get_shape_object_from_mouseevent(state, event);
-        if (!res.length) {
-            // missed
-            return;
-        }
-
-        let [shape] = res;
-        if (shape.type != "shape") return;
-
-        state.mstate.shape = shape;
+        state.mstate.selected = network_map_get_shape_object_from_mouseevent(state, event);
     });
 
     container.addEventListener("mousemove", (event) => {
@@ -487,26 +478,34 @@ export function network_map_init_state(container: SVGSVGElement): NMState {
 
         let diffX = event.clientX - state.mstate.position.x, diffY = event.clientY - state.mstate.position.y;
 
-        if (state.mstate.shape) {
-            state.mstate.shape.position.x += diffX;
-            state.mstate.shape.position.y += diffY;
+        let shape: NMShapeObject | undefined = undefined;
+        if (state.mstate.selected && state.mstate.selected.length >= 1) {
+            shape = state.mstate.selected[0];
+        }
+
+        if (shape) {
+            shape.position.x += diffX;
+            shape.position.y += diffY;
         } else { // assume this a panning motion
             state.origin.x -= diffX;
             state.origin.y += diffY;
         }
 
         state.mstate.position.x = event.clientX;
-            state.mstate.position.y = event.clientY;
+        state.mstate.position.y = event.clientY;
 
         network_map_render(state);
     });
 
     const handle_mouseup = () => {
-        if (!state.mstate.moved && state.mstate.shape) {
-            // handle click and stuff
-            if (!state.onclick || !state.mstate.shape.assob) return;
+        if (!state.mstate.moved && (state.mstate.selected && state.mstate.selected.length >= 1)) {
+            let objs = state.mstate.selected.map(so => so.assob).filter(Boolean) as object[];
 
-            state.onclick(state.mstate.shape.assob)
+            if (!state.onclick || objs.length < 1) {
+                return;
+            }
+
+            state.onclick(...objs);
         }
 
         state.mstate = {};

@@ -156,7 +156,7 @@ export const CalculatorSubnetIPV4: Component = () => {
     }
 
     // Definitely not heavily inspired by <https://www.subnet-calculator.com/>
-    return <form>
+    return <form class="subnet-calculator">
         <fieldset>
             <legend>Subnet Calculator IPV4</legend>
             <section>
