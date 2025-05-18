@@ -253,6 +253,7 @@ export class EthernetInterface extends BaseInterface {
         let disconnect = this.target.disconnect.bind(this.target);
         this.target = undefined;
         this.up = false;
+        this.device.arp_invalidate_cache(this);
 
         this.device.event_dispatch("interface_connect", [this]);
         disconnect();

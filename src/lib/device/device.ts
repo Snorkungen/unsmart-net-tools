@@ -1373,6 +1373,12 @@ export class Device {
             item[2].iface.output(...item)
         }
     }
+    arp_invalidate_cache(iface: BaseInterface) {
+        for (let [key, ne] of this.arp_cache.entries()) {
+            if (ne.iface != iface) continue;
+            this.arp_cache.delete(key);
+        }
+    }
 
     routes: DeviceRoute[] = [];
     route_resolve(destination: BaseAddress): undefined | DeviceRoute {
