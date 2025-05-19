@@ -139,6 +139,7 @@ export enum ProcessSignal {
 export type ProcessID = string; // number[] !TODO: it could be an array of numbers becouse then it would make things easier in coding
 export type ProcessHandler = (proc: Process, signal: ProcessSignal) => void;
 export type ProcessTerminalReadFunc = (proc: Process, bytes: Uint8Array) => void | true;
+type ProcessResource = Contact;
 export type Process<DT = any> = {
     status: "UNINIT" | "MARKED_CLOSED" | "CLOSED" | "RUNNING"
     signal: ProcessSignal;
@@ -162,6 +163,7 @@ export type Process<DT = any> = {
     term_write(data: Uint8Array): void;
     term_flush(): void;
 
+    contact_create(proc: Process, ...values: Parameters<Device["contact_create"]>): ReturnType<Device["contact_create"]>
 
     // !TODO: for now it is the users responsibility to close contacts
 }
@@ -350,6 +352,7 @@ export class Device {
     */
     programs: Program[] = [];
     processes: (Process | undefined)[] = [];
+    private process_resources: Record<ProcessID, (ProcessResource | undefined)[]> = {};
     private process_handlers: ({ proc: Process, handler: ProcessHandler, id: ProcessID } | undefined)[] = [];
     private PROCESS_ID_SEPARATOR = ":";
     private process_journal_entries: Map<string, [type: number, timestamp: number, message: string][]> = new Map();
@@ -384,8 +387,18 @@ export class Device {
             term_write: this.process_term_write.bind(this),
             term_flush: this.process_term_flush.bind(this),
 
+            contact_create(proc, af, proto) {
+                let res = this.device.contact_create(af, proto);
+                if (res.success == false) {
+                    return res;
+                }
+                this.device.process_init_resource(proc, res.data)
+
+                return res;
+            }
         };
 
+        this.process_resources[this.processes[i]!.id] = [];
         let init_sig = program.init(this.processes[i]!, args || [], data);
 
         if (init_sig instanceof Promise) {
@@ -464,6 +477,14 @@ export class Device {
                 this.process_close(sproc, signal);
             }
         }
+
+        // close resources and stuff
+        for (let resource of this.process_resources[proc.id]) {
+            if (!resource) continue;
+            // !TODO: the types are a bit weird since the only avaible resource is a contact
+            resource.close(resource);
+        }
+        delete this.process_resources[proc.id];
 
         // remove terminal readers
         this.terminal_readers = this.terminal_readers.filter((tr) => tr.proc != proc);
@@ -561,6 +582,19 @@ export class Device {
     private process_term_writeblackhole(_: Uint8Array) { }
     private process_term_flush() { (this.terminal) && this.terminal.flush(); }
     private process_term_flushblackhole() { }
+    private process_init_resource(proc: Process, resource: ProcessResource) {
+        let i = -1; while (this.process_resources[proc.id][++i]) { continue; };
+        this.process_resources[proc.id][i] = resource;
+
+        let resource_close = resource.close;
+        resource.close = (...values) => {   
+            let j = this.process_resources[proc.id].findLastIndex(r => r == resource);
+            if (j >= 0) {
+                delete this.process_resources[proc.id][j];
+            }
+            return resource_close(...values);
+        }
+    }
 
     input_tcp4(iphdr: typeof IPV4_HEADER, data: NetworkData) {
         if (!data.destination || data.multicast || data.broadcast)

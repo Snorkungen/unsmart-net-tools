@@ -14,7 +14,7 @@ export const DAEMON_ROUTING: Program = {
         if (proc.device.processes.find(p => p?.id.includes(this.name) && proc != p)) {
             return ProcessSignal.EXIT;
         }
-        let contact4 = proc.device.contact_create("IPv4", "RAW").data!;
+        let contact4 = proc.contact_create(proc, "IPv4", "RAW").data!;
         contact4.receive(contact4, (contact, data) => {
             let iphdr = IPV4_HEADER.from(data.buffer);
 
@@ -74,7 +74,7 @@ export const DAEMON_ROUTING: Program = {
             contact.send(contact, { buffer: iphdr.getBuffer() }, iphdr.get("daddr"), route)
         }, RECEIVE_OPTIONS);
 
-        let contact6 = proc.device.contact_create("IPv6", "RAW").data!;
+        let contact6 = proc.contact_create(proc, "IPv6", "RAW").data!;
         contact6.receive(contact6, (contact, data) => {
             let iphdr = IPV6_HEADER.from(data.buffer);
 

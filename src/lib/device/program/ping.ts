@@ -297,10 +297,10 @@ export const DEVICE_PROGRAM_PING: Program = {
         }
 
         if (IPV4Address.validate(target)) {
-            contact = proc.device.contact_create("IPv4", "RAW").data!;
+            contact = proc.contact_create(proc, "IPv4", "RAW").data!;
             destination = new IPV4Address(target);
         } else if (IPV6Address.validate(target)) {
-            contact = proc.device.contact_create("IPv6", "RAW").data!;
+            contact = proc.contact_create(proc, "IPv6", "RAW").data!;
             destination = new IPV6Address(target);
         } else {
             // maybe in future dns resolution

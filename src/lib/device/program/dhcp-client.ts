@@ -256,7 +256,7 @@ export const DEVICE_PROGRAM_DHCP_CLIENT: Program<DHCPClientData> = {
             return ProcessSignal.ERROR;
         }
 
-        let contact = proc.device.contact_create("RAW", "RAW").data!;
+        let contact = proc.contact_create(proc, "RAW", "RAW").data!;
 
         (<DHCPClientData>proc.data) = {
             xid: Math.floor(Math.random() * (2 ** 14)),

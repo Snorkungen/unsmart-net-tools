@@ -515,7 +515,7 @@ export const DAEMON_DHCP_SERVER: Program<DHCPServerData> = {
         }
 
         // initialise a contact
-        let contact = proc.device.contact_create("RAW", "RAW").data!; // should never fail
+        let contact = proc.contact_create(proc, "RAW", "RAW").data!; // should never fail
 
         (<DHCPServerData>proc.data) = {
             sid: source.address.buffer,

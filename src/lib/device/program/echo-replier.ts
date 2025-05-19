@@ -45,7 +45,7 @@ function receive6(contact: Contact, data: NetworkData) {
     if (iphdr.get("nextHeader") != PROTOCOLS.IPV6_ICMP) {
         return;
     }
-    
+
     if (!data.destination) return;
 
     let icmphdr = ICMP_HEADER.from(iphdr.get("payload"));
@@ -81,10 +81,10 @@ export const DAEMON_ECHO_REPLIER: Program = {
         if (proc.device.processes.find(p => p?.id.includes(this.name) && proc != p)) {
             return ProcessSignal.EXIT;
         }
-        let contact4 = proc.device.contact_create("IPv4", "RAW").data!;
+        let contact4 = proc.contact_create(proc, "IPv4", "RAW").data!;
         contact4.receive(contact4, receive4);
 
-        let contact6 = proc.device.contact_create("IPv6", "RAW").data!;
+        let contact6 = proc.contact_create(proc, "IPv6", "RAW").data!;
         contact6.receive(contact6, receive6);
 
         proc.handle(proc, () => {
