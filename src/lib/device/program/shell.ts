@@ -528,6 +528,9 @@ function read(proc: Process<ShellData>, bytes: Uint8Array) {
                         ).toString()), ASCIICodes.G));
                     }; break;
                 }
+            } else if (byte == 3) {
+                proc.data.promptBuffer = "";
+                writePrompt(proc);
             }
             i++;
         }
