@@ -42,9 +42,8 @@ let rtr_vlanif10 = networkRouter.interface_add(new VlanInterface(networkRouter, 
 let rtr_vlanif20 = networkRouter.interface_add(new VlanInterface(networkRouter, 20));
 
 // configure addresses
-networkRouter.interface_set_address(rtr_vlanif10, new IPV4Address("192.168.1.1"), createMask(IPV4Address, 24))
-networkRouter.interface_set_address(rtr_vlanif20, new IPV4Address("172.16.0.1"), createMask(IPV4Address, 24))
-
+networkRouter.interface_address_set(rtr_vlanif10, new IPV4Address("192.168.1.1"), createMask(IPV4Address, 24))
+networkRouter.interface_address_set(rtr_vlanif20, new IPV4Address("172.16.0.1"), createMask(IPV4Address, 24))
 
 let swIface_trunk = networkSwitch.interface_add(new EthernetInterface(networkSwitch));
 let swIface2_trunk = networkSwitch2.interface_add(new EthernetInterface(networkSwitch2));
@@ -102,15 +101,15 @@ let iface_pc3 = pc3.interface_add(new EthernetInterface(pc3));
 let iface_pc4 = pc4.interface_add(new EthernetInterface(pc4));
 let iface_pc5 = pc5.interface_add(new EthernetInterface(pc5));
 
-pc1.interface_set_address(iface_pc1, new IPV4Address("192.168.1.10"), createMask(IPV4Address, 24))
-pc2.interface_set_address(iface_pc2, new IPV4Address("192.168.1.20"), createMask(IPV4Address, 24))
+pc1.interface_address_set(iface_pc1, new IPV4Address("192.168.1.10"), createMask(IPV4Address, 24))
+pc2.interface_address_set(iface_pc2, new IPV4Address("192.168.1.20"), createMask(IPV4Address, 24))
 
 // add default routes
 pc1.routes.push({ destination: new IPV4Address("0.0.0.0"), netmask: createMask(IPV4Address, 0), gateway: new IPV4Address("192.168.1.1"), iface: iface_pc1, f_gateway: true })
 pc2.routes.push({ destination: new IPV4Address("0.0.0.0"), netmask: createMask(IPV4Address, 0), gateway: new IPV4Address("192.168.1.1"), iface: iface_pc2, f_gateway: true })
 
-pc4.interface_set_address(iface_pc4, new IPV4Address("172.16.0.40"), createMask(IPV4Address, 24))
-pc5.interface_set_address(iface_pc5, new IPV4Address("172.16.0.50"), createMask(IPV4Address, 24))
+pc4.interface_address_set(iface_pc4, new IPV4Address("172.16.0.40"), createMask(IPV4Address, 24))
+pc5.interface_address_set(iface_pc5, new IPV4Address("172.16.0.50"), createMask(IPV4Address, 24))
 
 // add default routes
 pc4.routes.push({ destination: new IPV4Address("0.0.0.0"), netmask: createMask(IPV4Address, 0), gateway: new IPV4Address("172.16.0.1"), iface: iface_pc4, f_gateway: true })

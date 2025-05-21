@@ -86,9 +86,9 @@ describe("Device interface_set_address", () => {
             { address: lb_address4, netmask: lb_netmask4 }
         ]; // the function assumes there is only one address type per interface
 
-        device.interface_set_address(lb_iface, lb_address4, lb_netmask4);
+        device.interface_address_set(lb_iface, lb_address4, lb_netmask4);
         expect(lb_iface.addresses.length).eq(1)
-        device.interface_set_address(lb_iface, lb_address6, lb_netmask6);
+        device.interface_address_set(lb_iface, lb_address6, lb_netmask6);
         expect(lb_iface.addresses.length).eq(2)
     })
 
@@ -109,7 +109,7 @@ describe("Device interface_set_address", () => {
             },
         ];
 
-        device.interface_set_address(lb_iface, lb_address4, lb_netmask4);
+        device.interface_address_set(lb_iface, lb_address4, lb_netmask4);
         expect(device.routes.length).eq(1); // 2 - 2 + 1 = 1
     })
 })

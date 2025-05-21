@@ -1,7 +1,7 @@
 import { BaseAddress } from "../../address/base";
 import { IPV4Address } from "../../address/ipv4";
 import { AddressMask, createMask } from "../../address/mask";
-import { uint8_fromString, uint8_readUint32BE } from "../../binary/uint8-array";
+import { uint8_equals, uint8_fromString, uint8_readUint32BE } from "../../binary/uint8-array";
 import { Process, ProcessSignal, Program } from "../device";
 import { EthernetInterface, VlanInterface } from "../interface";
 import { formatTable } from "./helpers";
@@ -72,10 +72,21 @@ const DEVICE_PROGRAM_IFINFO_SET4: Program = {
             }
         }
         let address = new IPV4Address(addr);
-        let res = proc.device.interface_set_address(iface, address, amask);
-        if (!res.success) {
-            res.message && twrite(proc, res.message)
-            return ProcessSignal.EXIT;
+
+        if ((uint8_readUint32BE(address.buffer) == 0 && amask.buffer[0] == 0)) {
+            // Remove current adddress
+            if (!!oldAddr) {
+                let res = proc.device.interface_address_remove(iface, oldAddr.address);
+                if (!res.success) {
+                    res.message && twrite(proc, res.message)
+                }
+            }
+        } else {
+            let res = proc.device.interface_address_set(iface, address, amask);
+            if (!res.success) {
+                res.message && twrite(proc, res.message)
+                return ProcessSignal.EXIT;
+            }
         }
 
         // !TODO: this thing may or may not be able to set dhcp mode

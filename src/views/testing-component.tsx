@@ -60,9 +60,9 @@ let r1 = new NetworkSwitch(); r1.name = "R1";
 r1.process_start(DAEMON_ROUTING);
 
 let r1_iface_vlan10 = r1.interface_add(new VlanInterface(r1, 10));
-r1.interface_set_address(r1_iface_vlan10, new IPV4Address("10.10.0.1"), createMask(IPV4Address, 16));
+r1.interface_address_set(r1_iface_vlan10, new IPV4Address("10.10.0.1"), createMask(IPV4Address, 16));
 let r1_iface_vlan20 = r1.interface_add(new VlanInterface(r1, 20));
-r1.interface_set_address(r1_iface_vlan20, new IPV4Address("10.20.0.1"), createMask(IPV4Address, 16));
+r1.interface_address_set(r1_iface_vlan20, new IPV4Address("10.20.0.1"), createMask(IPV4Address, 16));
 
 
 function push_default_gateway(device: Device, iface: BaseInterface, gateway: IPV4Address) {
@@ -79,7 +79,7 @@ function push_default_gateway(device: Device, iface: BaseInterface, gateway: IPV
 let server_pc = new Device(); server_pc.name = "SRV 10";
 let server_iface_lo = server_pc.interface_add(new LoopbackInterface(server_pc)); server_iface_lo.start();
 let server_iface_eth = server_pc.interface_add(new EthernetInterface(server_pc));
-server_pc.interface_set_address(server_iface_eth, new IPV4Address("10.10.0.100"), createMask(IPV4Address, 24));
+server_pc.interface_address_set(server_iface_eth, new IPV4Address("10.10.0.100"), createMask(IPV4Address, 24));
 
 /* push default gateway ... */
 push_default_gateway(server_pc, server_iface_eth, new IPV4Address("10.10.0.1"));
@@ -89,7 +89,7 @@ let pc1_iface = pc1.interface_add(new EthernetInterface(pc1));
 
 let pc2 = new Device(); pc2.name = "PC2";
 let pc2_iface = pc2.interface_add(new EthernetInterface(pc2));
-pc2.interface_set_address(pc2_iface, new IPV4Address("10.20.0.20"), createMask(IPV4Address, 24));
+pc2.interface_address_set(pc2_iface, new IPV4Address("10.20.0.20"), createMask(IPV4Address, 24));
 /* push default gateway ... */
 push_default_gateway(pc2, pc2_iface, new IPV4Address("10.20.0.1"));
 

@@ -295,13 +295,13 @@ export class LoopbackInterface extends BaseInterface {
     /** Initialize stuff idk but for example dhcp or for loclalhost self assign ip address */
     start(): DeviceResult<"UDUMB"> {
 
-        this.device.interface_set_address(
+        this.device.interface_address_set(
             this,
             new IPV4Address("127.0.0.1"),
             createMask(IPV4Address, 8)
         );
 
-        this.device.interface_set_address(
+        this.device.interface_address_set(
             this,
             new IPV6Address("::1"),
             createMask(IPV6Address, IPV6Address.ADDRESS_LENGTH /* 128 */)

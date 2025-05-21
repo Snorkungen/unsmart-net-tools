@@ -46,7 +46,7 @@ export const TestingComponent2: Component = () => {
     let osif = newdevice.interface_add(new OSInterface(newdevice))
     const osif_destination = new IPV4Address("10.1.1.40");
     const osif_dport = 10011;
-    newdevice.interface_set_address(osif, new IPV4Address("10.1.1.100"), createMask(IPV4Address, 16))
+    newdevice.interface_address_set(osif, new IPV4Address("10.1.1.100"), createMask(IPV4Address, 16))
 
     function send_ping() {
         function success() {

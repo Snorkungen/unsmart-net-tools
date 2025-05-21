@@ -49,8 +49,8 @@ target_iface.connect(sw2_target_iface);
 const source_address = new IPV4Address("10.10.10.1");
 const target_address = new IPV4Address("10.10.10.2");
 
-source_device.interface_set_address(source_iface, source_address, createMask(IPV4Address, 30))
-target_device.interface_set_address(target_iface, target_address, createMask(IPV4Address, 30))
+source_device.interface_address_set(source_iface, source_address, createMask(IPV4Address, 30))
+target_device.interface_address_set(target_iface, target_address, createMask(IPV4Address, 30))
 
 function toggle_redundant_link() {
     // imitate the action of a non forwarding port ... 

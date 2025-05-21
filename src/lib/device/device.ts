@@ -587,7 +587,7 @@ export class Device {
         this.process_resources[proc.id][i] = resource;
 
         let resource_close = resource.close;
-        resource.close = (...values) => {   
+        resource.close = (...values) => {
             let j = this.process_resources[proc.id].findLastIndex(r => r == resource);
             if (j >= 0) {
                 delete this.process_resources[proc.id][j];
@@ -1454,8 +1454,24 @@ export class Device {
         this.interfaces = this.interfaces.filter(f => f != iface)
         this.event_dispatch("interface_remove", [])
     };
+    interface_address_remove<AT extends typeof BaseAddress>(iface: BaseInterface, address: InstanceType<AT>): DeviceResult {
+        let addridx = iface.addresses.findIndex(value => value.address.constructor == address.constructor && uint8_equals(value.address.buffer, address.buffer));
+        if (addridx < 0) {
+            return { success: false, data: undefined, message: "address not found" };
+        }
 
-    interface_set_address<AT extends typeof BaseAddress>(iface: BaseInterface, address: InstanceType<AT>, netmask: AddressMask<AT>): DeviceResult { // !TODO: result could include the created route or address entry on iface idk
+        const { netmask } = iface.addresses[addridx];
+        /* Remove route */ this.routes = this.routes.filter((rtentry) => rtentry.iface !== iface || !(
+            rtentry.destination.constructor === address.constructor &&
+            !rtentry.f_static &&
+            !(!rtentry.f_gateway && rtentry.netmask.length < netmask.length) && // routes netmask cannot be looser than the new netmask
+            netmask.compare(address, rtentry.f_gateway ? rtentry.gateway : rtentry.destination)  // check that thing is in the same "network" as the new route
+        ))
+        /* Remove address */ iface.addresses = iface.addresses.filter((_, i) => i != addridx);
+
+        return { success: true, data: undefined };
+    }
+    interface_address_set<AT extends typeof BaseAddress>(iface: BaseInterface, address: InstanceType<AT>, netmask: AddressMask<AT>): DeviceResult { // !TODO: result could include the created route or address entry on iface idk
         // this functions maintains the information about the routes for the network that is just now configured
 
         // the thing is a interface could support having multiple addresses of the same type, but for simplicity, only one address is supported for now

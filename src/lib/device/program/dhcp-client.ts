@@ -222,7 +222,7 @@ function receive(proc: Process<DHCPClientData>) {
                 console.info("COMMITTING DHCP " + proc.data.address4);
 
                 if (proc.data.address4 && proc.data.netmask4) {
-                    proc.device.interface_set_address(proc.data.iface, proc.data.address4, proc.data.netmask4);
+                    proc.device.interface_address_set(proc.data.iface, proc.data.address4, proc.data.netmask4);
                 }
 
                 if (proc.data.gateways4) {
