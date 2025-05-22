@@ -117,8 +117,8 @@ const NETWORK_SWITCH_BRIDGING_DAEMON: Program = {
             return ProcessSignal.ERROR;
         }
 
-        function forward(port_id: number, etherheader: typeof ETHERNET_HEADER) {
-            let port = data.ports[port_id];
+        function forward(port_no: number, etherheader: typeof ETHERNET_HEADER) {
+            let port = data.ports[port_no];
 
             if (port.state != NetworkSwitchPortState.FORWARDING) {
                 return; // do not forward
@@ -138,8 +138,17 @@ const NETWORK_SWITCH_BRIDGING_DAEMON: Program = {
             }
         }
 
+        // remove entries from mac address table
+        function iface_disconnect_handler(iface: BaseInterface) {
+            if (!(iface instanceof EthernetInterface)) return;
+            let port = Object.values(data.ports).find(p => p.iface == iface);
+            if (!port) return;
+            data.macaddresses = data.macaddresses.filter(v => v.outgoing_port != port.port_no);
+        }
+        proc.device.event_add_handler("interface_disconnect", iface_disconnect_handler)
+
         // setup a contact to listen to all incoming requests
-        const contact = proc.device.contact_create("RAW", "RAW").data!;
+        const contact = proc.contact_create(proc, "RAW", "RAW").data!;
         contact.receive(contact, (_, ndata) => {
             let port = Object.values(data.ports).find(({ iface }) => iface === ndata.rcvif);
             if (!port) return; // this check also handles the type of the rcvif
@@ -188,6 +197,7 @@ const NETWORK_SWITCH_BRIDGING_DAEMON: Program = {
 
         proc.handle(proc, () => {
             contact.close(contact)
+            proc.device.event_remove_handler(iface_disconnect_handler)
         });
 
         return ProcessSignal.__EXPLICIT__;
@@ -210,7 +220,7 @@ export const NETWORK_SWITCH_STP_DAEMON: Program = {
         }
 
         let initialized = false;
-        const contact = device.contact_create("RAW", "RAW").data!;
+        const contact = proc.contact_create(proc, "RAW", "RAW").data!;
         contact.receive(contact, (_, data) => {
             if (!initialized) return;
 

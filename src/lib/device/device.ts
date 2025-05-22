@@ -338,7 +338,7 @@ export class Device {
 
         this.event_handlers[i] = [evt, handler];
     }
-    event_remove_handler(handler: (...v: unknown[]) => void) {
+    event_remove_handler(handler: (...v: any[]) => void) {
         for (let i = 0; i < this.event_handlers.length; i++) {
             if (this.event_handlers[i] && this.event_handlers[i]![1] === handler) {
                 delete this.event_handlers[i];
