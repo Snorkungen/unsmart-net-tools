@@ -18,7 +18,7 @@ import { TCPConnection, TCPState, add_u32, tcp_connection_id, tcp_read_options, 
 import { DeviceEventMap, DeviceEventType } from "./internals/event";
 
 // source <https://stackoverflow.com/a/63029283>
-type DropFirst<T extends unknown[]> = T extends [any, ...infer U] ? U : never;
+export type DropFirst<T extends unknown[]> = T extends [any, ...infer U] ? U : never;
 
 const _UNSET_ADDRESS_IPV4 = new IPV4Address("0.0.0.0"),
     _UNSET_ADDRESS_IPV6 = new IPV6Address("::'");
@@ -356,12 +356,16 @@ export class Device {
     private process_handlers: ({ proc: Process, handler: ProcessHandler, id: ProcessID } | undefined)[] = [];
     private PROCESS_ID_SEPARATOR = ":";
     private process_journal_entries: Map<string, [type: number, timestamp: number, message: string][]> = new Map();
-    process_start<DT extends any>(program: Program<DT>, args?: string[], data?: Partial<DT>, proc?: Process): Process | undefined {
+
+    /** Process start only returns a process if a parent proc is provided */
+    process_start<DT extends any>(program: Program<DT>, args?: string[], data?: Partial<DT>): void
+    process_start<DT extends any>(program: Program<DT>, args?: string[], data?: Partial<DT>, parent_proc?: Process, spawn_handler?: ProcessHandler): Process
+    process_start<DT extends any>(program: Program<DT>, args?: string[], data?: Partial<DT>, parent_proc?: Process, spawn_handler?: ProcessHandler): Process | undefined {
         let i = -1; while (this.processes[++i]) { continue; };
 
         let id: ProcessID = "";
-        if (proc) {
-            id = proc.id + this.PROCESS_ID_SEPARATOR;
+        if (parent_proc) {
+            id = parent_proc.id + this.PROCESS_ID_SEPARATOR;
         }
 
         if (id.length > 100) {
@@ -399,35 +403,54 @@ export class Device {
         };
 
         this.process_resources[this.processes[i]!.id] = [];
+
+        if (parent_proc && spawn_handler) {
+            this.process_handle(this.processes[i]!, spawn_handler, parent_proc.id);
+        }
+
         let init_sig = program.init(this.processes[i]!, args || [], data);
 
         if (init_sig instanceof Promise) {
             init_sig.then(sig => {
-                if (this.process_start_handle_signal(this.processes[i]!, sig, proc)) {
+                if (this.process_should_close(this.processes[i]!, sig)) {
+                    this.processes[i]!.status = "MARKED_CLOSED";
                     this.process_close(this.processes[i]!, sig);
+
+                    if (!parent_proc) {
+                        this.processes[i]!.status = "CLOSED";
+                        delete this.processes[i]
+                    }
+
                 }
             });
         } else {
             this.processes[i]!.signal = init_sig;
 
-            if (this.process_start_handle_signal(this.processes[i]!, init_sig, proc)) {
-                return this.processes[i];
+            if (this.process_should_close(this.processes[i]!, init_sig)) {
+                this.processes[i]!.status = "MARKED_CLOSED";
+                this.process_close(this.processes[i]!, init_sig);
+
+                if (!parent_proc) {
+                    this.processes[i]!.status = "CLOSED";
+                    delete this.processes[i]
+                }
+
+                return this.processes[i]!
             }
         }
 
         this.processes[i]!.status = "RUNNING";
 
-        return this.processes[i];
+        if (parent_proc) {
+            return this.processes[i]!;
+        }
+
+        return undefined;
     }
 
-    private process_start_handle_signal<T extends any>(proc: Process<T>, signal: ProcessSignal, parent_proc?: Process): boolean {
+    private process_should_close<T extends any>(proc: Process<T>, signal: ProcessSignal): boolean {
         if (signal !== ProcessSignal.__EXPLICIT__) {
-            if (parent_proc) {
-                proc.status = "MARKED_CLOSED";
-                return true;
-            }
-
-            this.process_close(proc, signal);
+            return true;
         } else if (typeof proc.data === "undefined" && !proc.program.__NODATA__) {
             // check that data is defined but there needs to be away to silence the message if program does not use data.
             console.warn(proc.program.name, "data not defined! to silence warning set __NODATA__ ");
@@ -439,11 +462,9 @@ export class Device {
     process_close(proc: Process, signal: ProcessSignal) {
         if (proc.status === "CLOSED") {
             return; // to prevent loops 
-        } else if (proc.status === "UNINIT") {
+        } if (proc.status === "UNINIT") {
             proc.status = "MARKED_CLOSED";
             return;
-        } else {
-            proc.status = "CLOSED"
         }
 
         let i = this.processes.indexOf(proc);
@@ -456,19 +477,19 @@ export class Device {
             console.warn(proc.program.name, "data not defined! to silence warning set __NODATA__ ")
         }
 
-        // first remove handlers
-        for (let hj = 0; hj < this.process_handlers.length; hj++) {
-            let h = this.process_handlers[hj]
-            if (!h || !h.id.startsWith(proc.id)) {
-                continue;
-            }
-
-            // if process has a owner call handle_close if it exists
-            if ((h.proc.id === proc.id && signal != ProcessSignal.EXIT) || h.proc.id != h.id && h.id == proc.id) {
-                h.handler(proc, signal);
-            }
-
-            delete this.process_handlers[hj];
+        // First remove handlers created by the process
+        for (let idx in this.process_handlers) {
+            let handler = this.process_handlers[idx];
+            if (!handler || proc != handler.proc || handler.id != handler.proc.id) continue;
+            handler.handler(proc, signal)
+            delete this.process_handlers[idx]
+        }
+        // Second remove handlers created by the parent process
+        for (let idx in this.process_handlers) {
+            let handler = this.process_handlers[idx];
+            if (!handler || proc != handler.proc) continue;
+            handler.handler(proc, signal)
+            delete this.process_handlers[idx]
         }
 
         // close spawned processes, abuse the id
@@ -494,34 +515,25 @@ export class Device {
         // delete journal entries
         this.process_journal_entries.delete(proc.id);
 
+        if (this.processes[i].status == "MARKED_CLOSED") {
+            this.processes[i].status = "CLOSED"
+            return;
+        };
+
+        this.processes[i]!.status = "CLOSED";
         delete this.processes[i];
     }
 
     process_spawn: Process["spawn"] = (proc, program, args, data, handle_close) => {
-        let spawned_proc: Process | undefined = this.process_start(program, args, data, proc);
-        if (!spawned_proc)
-            return;     // proc could not be created
-
-
-        if (spawned_proc.status == "MARKED_CLOSED") {
-            handle_close && handle_close(spawned_proc, spawned_proc.signal);
-            this.process_close(spawned_proc, spawned_proc.signal);
-            return;
-        }
-
-        if (handle_close) {
-            this.process_handle(proc, handle_close, spawned_proc.id);
-        }
-
-        return spawned_proc;
+        return this.process_start(program, args, data, proc, handle_close);
     }
 
-    process_handle(proc: Process, handler: ProcessHandler, id?: ProcessID) {
+    process_handle(proc: Process, handler: ProcessHandler, parent_id?: ProcessID) {
         let i = -1; while (this.process_handlers[++i]) { continue; };
         this.process_handlers[i] = {
             proc: proc,
             handler: handler,
-            id: id ? id : proc.id
+            id: parent_id ? parent_id : proc.id
         }
     }
 
