@@ -178,10 +178,19 @@ const NETWORK_SWITCH_BRIDGING_DAEMON: Program = {
                 return; // drop received frame
             }
 
-            data.macaddresses.push({
-                destination: etherheader.get("smac"),
-                outgoing_port: port.port_no
-            })
+            let smac_macaddress_entry_idx = data.macaddresses.findIndex(({ destination }) => uint8_equals(destination.buffer, etherheader.get("smac").buffer));
+
+            if (smac_macaddress_entry_idx >= 0) {
+                if (data.macaddresses[smac_macaddress_entry_idx].outgoing_port !== port.port_no) {
+                    console.warn("network-switch-bridging daemon out going port changed for destination: " + data.macaddresses[smac_macaddress_entry_idx].destination.toString());
+                    data.macaddresses[smac_macaddress_entry_idx].outgoing_port = port.port_no;
+                }
+            } else {
+                data.macaddresses.push({
+                    destination: etherheader.get("smac"),
+                    outgoing_port: port.port_no
+                });
+            }
 
             if (port.state != NetworkSwitchPortState.FORWARDING) {
                 return; // do not forward

@@ -4,6 +4,7 @@ import { IPV6Address } from "../../address/ipv6";
 import { AddressMask, createMask } from "../../address/mask";
 import { uint8_equals, uint8_fromString, uint8_readUint32BE } from "../../binary/uint8-array";
 import { Program, ProcessSignal, Process, DeviceRoute } from "../device";
+import { NETWORK_SWITCH_STORE_KEY, NetworkSwitchData } from "../network-switch";
 import { formatTable } from "./helpers";
 
 
@@ -20,12 +21,26 @@ export const DEVICE_PROGRAM_ROUTEINFO_ARP: Program = {
 
         proc.term_write(formatTable(table))
 
+        if (!proc.device.store_get(NETWORK_SWITCH_STORE_KEY)) {
+            return ProcessSignal.EXIT;
+        }
+
+        // Print information about mac address table;
+        let data = proc.device.store_get(NETWORK_SWITCH_STORE_KEY) as NetworkSwitchData;
+
+        table = [["Destination", "Iface"]]; // reset table
+        for (let { destination, outgoing_port } of data.macaddresses) {
+            table.push([destination.toString(), data.ports[outgoing_port].iface.id()])
+        }
+
+        proc.term_write(uint8_fromString("\nMac Adresses\n"));
+        proc.term_write(formatTable(table))
+
         return ProcessSignal.EXIT;
     },
     __NODATA__: true
 }
 
-// !TODO: remove a route
 const DEVICE_PROGRAM_ROUTEINFO_REMOVE: Program = {
     name: "remove",
     description: "remove a entry from routes",
@@ -62,7 +77,6 @@ const DEVICE_PROGRAM_ROUTEINFO_REMOVE: Program = {
     __NODATA__: true
 }
 
-// !TODO: add a route
 const DEVICE_PROGRAM_ROUTEINFO_ADD4: Program = {
     name: "add4",
     description: "add ipv4 address to route entries",
