@@ -145,7 +145,7 @@ const NETWORK_SWITCH_BRIDGING_DAEMON: Program = {
             if (!port) return;
             data.macaddresses = data.macaddresses.filter(v => v.outgoing_port != port.port_no);
         }
-        proc.device.event_add_handler("interface_disconnect", iface_disconnect_handler)
+        proc.device.event_handler_add("interface_disconnect", iface_disconnect_handler)
 
         // setup a contact to listen to all incoming requests
         const contact = proc.contact_create(proc, "RAW", "RAW").data!;
@@ -206,7 +206,7 @@ const NETWORK_SWITCH_BRIDGING_DAEMON: Program = {
 
         proc.handle(proc, () => {
             contact.close(contact)
-            proc.device.event_remove_handler(iface_disconnect_handler)
+            proc.device.event_handler_remove(iface_disconnect_handler)
         });
 
         return ProcessSignal.__EXPLICIT__;

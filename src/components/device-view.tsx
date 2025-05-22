@@ -89,17 +89,17 @@ export function DeviceViewComponent({ device, on_select }: DeviceViewComponentPr
     }
 
     onMount(() => {
-        device.event_add_handler("interface_add", handle_interface_events)
-        device.event_add_handler("interface_remove", handle_interface_events)
-        device.event_add_handler("interface_set_address", handle_interface_events)
-        device.event_add_handler("interface_mcast_subscribe", handle_interface_events)
-        device.event_add_handler("interface_mcast_unsubscribe", handle_interface_events)
-        device.event_add_handler("interface_connect", handle_interface_events)
-        device.event_add_handler("interface_disconnect", handle_interface_events)
+        device.event_handler_add("interface_add", handle_interface_events)
+        device.event_handler_add("interface_remove", handle_interface_events)
+        device.event_handler_add("interface_set_address", handle_interface_events)
+        device.event_handler_add("interface_mcast_subscribe", handle_interface_events)
+        device.event_handler_add("interface_mcast_unsubscribe", handle_interface_events)
+        device.event_handler_add("interface_connect", handle_interface_events)
+        device.event_handler_add("interface_disconnect", handle_interface_events)
     });
 
     onCleanup(() => {
-        device.event_remove_handler(handle_interface_events)
+        device.event_handler_remove(handle_interface_events)
     })
 
     return <div>

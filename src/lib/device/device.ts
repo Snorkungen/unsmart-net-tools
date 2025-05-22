@@ -333,12 +333,12 @@ export class Device {
             }
         }
     }
-    event_add_handler<T extends DeviceEventType>(evt: T, handler: (...v: DeviceEventMap[T]) => void) {
+    event_handler_add<T extends DeviceEventType>(evt: T, handler: (...v: DeviceEventMap[T]) => void) {
         let i = -1; while (this.event_handlers[++i]) { continue; };
 
         this.event_handlers[i] = [evt, handler];
     }
-    event_remove_handler(handler: (...v: any[]) => void) {
+    event_handler_remove(handler: (...v: any[]) => void) {
         for (let i = 0; i < this.event_handlers.length; i++) {
             if (this.event_handlers[i] && this.event_handlers[i]![1] === handler) {
                 delete this.event_handlers[i];
