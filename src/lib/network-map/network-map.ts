@@ -231,10 +231,10 @@ export function network_map_device_shape(state: NMState, dev: Device, x: number,
         }
     }
 
-    dev.event_add_handler("interface_connect", network_map_device_ethiface_on_connect_or_disconnect(state, shape));
-    dev.event_add_handler("interface_disconnect", network_map_device_ethiface_on_connect_or_disconnect(state, shape));
-    dev.event_add_handler("interface_recv", network_map_device_ethiface_on_send_or_recv(state, shape, "recv"));
-    dev.event_add_handler("interface_send", network_map_device_ethiface_on_send_or_recv(state, shape, "send"));
+    dev.event_handler_add("interface_connect", network_map_device_ethiface_on_connect_or_disconnect(state, shape));
+    dev.event_handler_add("interface_disconnect", network_map_device_ethiface_on_connect_or_disconnect(state, shape));
+    dev.event_handler_add("interface_recv", network_map_device_ethiface_on_send_or_recv(state, shape, "recv"));
+    dev.event_handler_add("interface_send", network_map_device_ethiface_on_send_or_recv(state, shape, "send"));
 
     return shape;
 }
