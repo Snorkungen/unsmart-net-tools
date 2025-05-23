@@ -7,6 +7,7 @@ import { Device, ProcessSignal } from "../lib/device/device";
 import { DAEMON_SHELL } from "../lib/device/program/shell";
 import { DAEMON_ECHO_REPLIER } from "../lib/device/program/echo-replier";
 import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_HELP } from "../lib/device/program/program";
+import { DEVICE_PROGRAM_VLANINFO } from "../lib/device/program/vlaninfo";
 import { DEVICE_PROGRAM_PING } from "../lib/device/program/ping";
 import { DEVICE_PROGRAM_IFINFO } from "../lib/device/program/ifinfo";
 import { DAEMON_ROUTING } from "../lib/device/program/routing";
@@ -21,6 +22,7 @@ function init_programs(device: Device) {
         DEVICE_PROGRAM_ECHO,
         DEVICE_PROGRAM_IFINFO,
         DEVICE_PROGRAM_ROUTEINFO,
+        DEVICE_PROGRAM_VLANINFO,
         DEVICE_PROGRAM_HELP,
         DEVICE_PROGRAM_CLEAR,
         DEVICE_PROGRAM_PING,
