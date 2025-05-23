@@ -87,12 +87,13 @@ vlaninfo eth0 1 2 3 -4 5 6 assign the following vlans to the interface, and remo
             return ProcessSignal.ERROR;
         }
 
+        
         for (let v of argv) {
             let vid = parseInt(v);
             if (isNaN(vid) || vid == 0) continue;
 
             if (vid < 0) { // remove vid
-                iface.vlan.vids = iface.vlan.vids.filter(v => v === Math.abs(vid));
+                iface.vlan.vids = iface.vlan.vids.filter(v => v !== Math.abs(vid));
             } else { // add vid
                 if (!iface.vlan.vids.includes(vid)) {
                     iface.vlan.vids.push(vid);
@@ -100,7 +101,13 @@ vlaninfo eth0 1 2 3 -4 5 6 assign the following vlans to the interface, and remo
             }
         }
 
-        proc.term_write(uint8_fromString(`${iface.id()}\t${iface.vlan.type} ${iface.vlan.vids.join(",")}`));
+        if (iface.vlan.vids.length == 0) {
+            delete iface.vlan
+            proc.term_write(uint8_fromString(`${iface.id()}\tvlan removed`));
+        } else {
+            proc.term_write(uint8_fromString(`${iface.id()}\t${iface.vlan.type} ${iface.vlan.vids.join(",")}`));
+        }
+
         return ProcessSignal.EXIT;
     },
     __NODATA__: true
