@@ -15,7 +15,7 @@ import { UDP_HEADER } from "../header/udp";
 import { BaseInterface, VlanInterface, EthernetInterface } from "./interface";
 import { TCP_FLAGS, TCP_HEADER, TCP_OPTION_KINDS } from "../header/tcp";
 import { TCPConnection, TCPState, add_u32, tcp_connection_id, tcp_read_options, tcp_set_option } from "./internals/tcp";
-import { DeviceEventMap, DeviceEventType } from "./internals/event";
+import { DeviceEventHandler, DeviceEventType } from "./internals/event";
 
 // source <https://stackoverflow.com/a/63029283>
 export type DropFirst<T extends unknown[]> = T extends [any, ...infer U] ? U : never;
@@ -317,28 +317,28 @@ export class Device {
     }
     store_set(key: string, data: Record<string, unknown>) {
         this.store_data[key] = data;
-        this.event_dispatch("store_set", [key]);
+        this.event_dispatch("store_set", key);
     }
     store_delete(key: string) {
         delete this.store_data[key];
-        this.event_dispatch("store_delete", [key]);
+        this.event_dispatch("store_delete", key);
     }
 
     // !TODO: store event_handlers as an object in order to avoid a traversal of the entire list and stuff
-    private event_handlers: ([DeviceEventType, (...a: any[]) => void] | undefined)[] = [];
-    event_dispatch<T extends DeviceEventType>(evt: T, params: DeviceEventMap[T]) {
+    private event_handlers: ([DeviceEventType, DeviceEventHandler<DeviceEventType>] | undefined)[] = [];
+    event_dispatch<T extends DeviceEventType>(evt: T, ...params: Parameters<DeviceEventHandler<T>>) {
         for (let ev of this.event_handlers) {
             if (ev && ev[0] === evt) {
                 ev[1](...params);
             }
         }
     }
-    event_handler_add<T extends DeviceEventType>(evt: T, handler: (...v: DeviceEventMap[T]) => void) {
+    event_handler_add<T extends DeviceEventType>(evt: T, handler: DeviceEventHandler<T>) {
         let i = -1; while (this.event_handlers[++i]) { continue; };
 
-        this.event_handlers[i] = [evt, handler];
+        this.event_handlers[i] = [evt, handler as DeviceEventHandler<DeviceEventType> /* #TRUSTMEBRO */];
     }
-    event_handler_remove(handler: (...v: any[]) => void) {
+    event_handler_remove(handler: DeviceEventHandler<DeviceEventType>) {
         for (let i = 0; i < this.event_handlers.length; i++) {
             if (this.event_handlers[i] && this.event_handlers[i]![1] === handler) {
                 delete this.event_handlers[i];
@@ -1458,13 +1458,13 @@ export class Device {
     interface_add<F extends BaseInterface>(iface: F): F {
         this.interfaces.push(iface);
         this.interfaces_mcast_subscriptions[iface.id()] = [];
-        this.event_dispatch("interface_add", []);
+        this.event_dispatch("interface_add");
         return iface
     };
     interface_remove(iface: BaseInterface) {
         delete this.interfaces_mcast_subscriptions[iface.id()];
         this.interfaces = this.interfaces.filter(f => f != iface)
-        this.event_dispatch("interface_remove", [])
+        this.event_dispatch("interface_remove")
     };
     interface_address_remove<AT extends typeof BaseAddress>(iface: BaseInterface, address: InstanceType<AT>): DeviceResult {
         let addridx = iface.addresses.findIndex(value => value.address.constructor == address.constructor && uint8_equals(value.address.buffer, address.buffer));
@@ -1542,7 +1542,7 @@ export class Device {
             })
         }
 
-        this.event_dispatch("interface_set_address", []);
+        this.event_dispatch("interface_set_address");
         return {
             success: true,
             data: undefined
@@ -1556,12 +1556,12 @@ export class Device {
         }
 
         this.interfaces_mcast_subscriptions[iface.id()].push(address);
-        this.event_dispatch("interface_mcast_subscribe", []);
+        this.event_dispatch("interface_mcast_subscribe");
         return { success: true, data: undefined };
     }
     interface_mcast_unsubscribe(iface: BaseInterface, address: BaseAddress): DeviceResult {
         this.interfaces_mcast_subscriptions[iface.id()] = this.interfaces_mcast_subscriptions[iface.id()].filter(addr => addr.constructor != address.constructor || !uint8_equals(addr.buffer, address.buffer));
-        this.event_dispatch("interface_mcast_unsubscribe", []);
+        this.event_dispatch("interface_mcast_unsubscribe");
         return { success: true, data: undefined };
     }
 

@@ -181,7 +181,7 @@ export class EthernetInterface extends BaseInterface {
             }
         }
 
-        this.device.event_dispatch("interface_send", [this]);
+        this.device.event_dispatch("interface_send", this);
         // somehow put on wire
         this.device.schedule(() => {
             this.device.log({
@@ -242,7 +242,7 @@ export class EthernetInterface extends BaseInterface {
             this.device.input_ether(etherheader, data);
         }, this.receive_delay)
 
-        this.device.event_dispatch("interface_recv", [this]);
+        this.device.event_dispatch("interface_recv", this);
     }
 
     disconnect() {
@@ -255,7 +255,7 @@ export class EthernetInterface extends BaseInterface {
         this.up = false;
         this.device.arp_invalidate_cache(this);
 
-        this.device.event_dispatch("interface_connect", [this]);
+        this.device.event_dispatch("interface_connect", this);
         disconnect();
     }
 
@@ -274,7 +274,7 @@ export class EthernetInterface extends BaseInterface {
         this.up = true;
         target.connect(this)
 
-        this.device.event_dispatch("interface_connect", [this]);
+        this.device.event_dispatch("interface_connect", this);
     }
 }
 export class LoopbackInterface extends BaseInterface {
