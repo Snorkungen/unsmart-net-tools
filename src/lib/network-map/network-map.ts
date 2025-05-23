@@ -172,6 +172,53 @@ function network_map_device_ethiface_on_send_or_recv(state: NMState, shape: NMSh
     }
 }
 
+function network_map_device_refresh_interfaces(state: NMState, shape: NMShape, dev: Device, if_delay: number, height: number, ifsize: number, ifpad: number) {
+    // first teardown all the objects
+    // remove all interfaces rect
+    shape.objects = shape.objects.filter((so) => {
+        if (so.type != "rect") return true;
+        if (!so.assob || (so.assob && so.assob instanceof BaseInterface && so.assob.virtual)) return true;
+
+        // clean up object and disconnet paths
+        let connection = state.connections.find(conn => (conn.begin[1] == so || conn.end[1] == so));
+        if (connection) {
+            network_map_remove_element(state, connection);
+            state.connections = state.connections.filter(con => con != connection)
+        }
+        network_map_remove_element(state, so);
+
+        return false;
+    });
+
+    // create non-virtual interfaces
+    let i = 0;
+    for (let iface of dev.interfaces) {
+        if (iface.virtual) continue;
+
+        shape.objects.push({
+            type: "rect",
+            position: { x: (i) * (ifsize) + (i + 1) * ifpad, y: height },
+            fillColor: "",
+            height: ifsize,
+            width: ifsize,
+            assob: iface,
+        });
+
+        i++;
+
+        let so = shape.objects.at(-1)! as NMRect;
+        network_map_device_iface_update_appearance(so);
+
+        // setup connection
+        network_map_device_setup_connection(state, shape, so, iface);
+        // find the associated shape and then the corresponding interface
+
+        if (iface instanceof EthernetInterface) {
+            iface.receive_delay = if_delay;
+        }
+    }
+}
+
 export function network_map_device_shape(state: NMState, dev: Device, x: number, y: number, dimensions = { width: 60, height: 60 }, if_delay = INTERFACE_ANIM_DELAY): NMShape {
     let shape: NMShape = {
         type: "shape",
@@ -203,38 +250,19 @@ export function network_map_device_shape(state: NMState, dev: Device, x: number,
 
     state.shapes.push(shape);
 
-    // create non-virtual interfaces
-    let i = 0;
-    for (let iface of dev.interfaces) {
-        if (iface.virtual) continue;
+    // add non virtual interfaces
+    network_map_device_refresh_interfaces(state, shape, dev, if_delay, height, ifsize, ifpad);
 
-        shape.objects.push({
-            type: "rect",
-            position: { x: (i) * (ifsize) + (i + 1) * ifpad, y: height },
-            fillColor: "",
-            height: ifsize,
-            width: ifsize,
-            assob: iface,
-        });
-
-        i++;
-
-        let so = shape.objects.at(-1)! as NMRect;
-        network_map_device_iface_update_appearance(so);
-
-        // setup connection
-        network_map_device_setup_connection(state, shape, so, iface);
-        // find the associated shape and then the corresponding interface
-
-        if (iface instanceof EthernetInterface) {
-            iface.receive_delay = if_delay;
-        }
-    }
-
+    // !TODO: these event handler need to be taken care of, like a solution would be to shove this into a daemon program
+    // daemon_network_map_device_monitor -- and then have the events handled automatically
     dev.event_handler_add("interface_connect", network_map_device_ethiface_on_connect_or_disconnect(state, shape));
     dev.event_handler_add("interface_disconnect", network_map_device_ethiface_on_connect_or_disconnect(state, shape));
     dev.event_handler_add("interface_recv", network_map_device_ethiface_on_send_or_recv(state, shape, "recv"));
     dev.event_handler_add("interface_send", network_map_device_ethiface_on_send_or_recv(state, shape, "send"));
+
+    const refresh_interfaces = () => network_map_device_refresh_interfaces(state, shape, dev, if_delay, height, ifsize, ifpad);
+    dev.event_handler_add("interface_add", refresh_interfaces);
+    dev.event_handler_add("interface_remove", refresh_interfaces);
 
     return shape;
 }

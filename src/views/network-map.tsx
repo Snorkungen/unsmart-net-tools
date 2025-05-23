@@ -14,7 +14,7 @@ import { DAEMON_ROUTING } from "../lib/device/program/routing";
 import { EthernetInterface, VlanInterface } from "../lib/device/interface";
 import { DEVICE_PROGRAM_ROUTEINFO } from "../lib/device/program/routeinfo";
 import { network_map_device_shape, network_map_init_state, network_map_render } from "../lib/network-map/network-map";
-import { createSignal } from "solid-js";
+import { createSignal, For, Show, Switch } from "solid-js";
 
 function init_programs(device: Device) {
     device.process_start(DAEMON_ECHO_REPLIER);
@@ -138,6 +138,8 @@ let terminalOwner = pc1;
 let terminal: Terminal;
 
 const [is_in_iface_connection_mode, set_is_in_iface_connection_mode] = createSignal(false);
+const [active_device, set_active_device] = createSignal<undefined | Device>(undefined, {equals : false});
+
 let selected_iface: EthernetInterface | undefined = undefined;
 
 let state: undefined | ReturnType<typeof network_map_init_state> = undefined;
@@ -189,6 +191,7 @@ function init_nmap(el: SVGSVGElement) {
         } else {
             proc.device.process_termwriteto(proc, new Uint8Array([10])); // press enter
         }
+        set_active_device(terminalOwner)
     }
 }
 
@@ -234,6 +237,20 @@ function handle_add_device_submit(e: SubmitEvent & { currentTarget: HTMLFormElem
     add_device_to_nmap(device);
 }
 
+function add_interface_to_device(device: Device) {
+    if (!state) return;
+    device.interface_add(new EthernetInterface(device));
+    network_map_render(state);
+    set_active_device(device);
+}
+
+function remove_interface_from_device(device: Device, iface: EthernetInterface) {
+    if (!state) return;
+    device.interface_remove(iface);
+    network_map_render(state);
+    set_active_device(device);
+}
+
 export default function NetworkMapViewer(): JSX.Element {
     return <div style={{ width: "100%" }} >
         <div style={{ display: "flex" }}>
@@ -242,32 +259,51 @@ export default function NetworkMapViewer(): JSX.Element {
                 {/* Shove random things into here */}
                 <nav>
                     <button onclick={() => set_is_in_iface_connection_mode(v => !v)} class="btn btn-primary">toggle {is_in_iface_connection_mode() ? "⏸️" : "▶️"}</button>
+                    <button class="btn btn-primary mx-3" on:click={() => set_active_device(undefined)}>Add</button>
                 </nav>
                 <div>
-                    <form onSubmit={handle_add_device_submit}>
-                        <fieldset>
-                            <legend>Add a device</legend>
-                            <div class="mb-3 form-check form-check-inline">
-                                <input class="form-check-input" type="radio" name="form_add_device_devtype" id="form_add_device_devtype_regular" value="regular" checked />
-                                <label class="form-check-label" for="form_add_device_devtype_regular">Regular</label>
+                    <Show when={!!active_device()} fallback={
+                        <form onSubmit={handle_add_device_submit}>
+                            <fieldset>
+                                <legend>Add a device</legend>
+                                <div class="mb-3 form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="form_add_device_devtype" id="form_add_device_devtype_regular" value="regular" checked />
+                                    <label class="form-check-label" for="form_add_device_devtype_regular">Regular</label>
+                                </div>
+                                <div class="mb-3 form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="form_add_device_devtype" id="form_add_device_devtype_switch" value="switch" />
+                                    <label class="form-check-label" for="form_add_device_devtype_switch">Switch</label>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label" for="form_add_device_dname">Device Name</label>
+                                    <input class="form-control" type="text" name="form_add_device_dname" id="form_add_device_dname" required />
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label" for="form_add_device_ifcount">Ether if count</label>
+                                    <input class="form-control" type="number" min={0} value={1} name="form_add_device_ifcount" id="form_add_device_ifcount" required />
+                                </div>
+                                <div class="col-auto">
+                                    <button class="btn btn-secondary" type="submit">Create</button>
+                                </div>
+                            </fieldset>
+                        </form>
+
+                    }>
+                        <div class="text-center">
+                            <h1>{active_device()!.name}</h1>
+                            <For each={active_device()!.interfaces.filter(iface => iface instanceof EthernetInterface)}>
+                                {(item) => (
+                                    <div class="row text-center mb-3">
+                                        <span class="col">{item.id()}</span>
+                                        <button class="col btn btn-danger" onClick={() => active_device() && remove_interface_from_device(active_device()!, item)}>-</button>
+                                    </div>
+                                )}
+                            </For>
+                            <div class="row text-center">
+                                <span class="col">Add</span>
+                                <button class="col btn btn-primary" onClick={() => active_device() && add_interface_to_device(active_device()!)}>+</button>
                             </div>
-                            <div class="mb-3 form-check form-check-inline">
-                                <input class="form-check-input" type="radio" name="form_add_device_devtype" id="form_add_device_devtype_switch" value="switch" />
-                                <label class="form-check-label" for="form_add_device_devtype_switch">Switch</label>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label" for="form_add_device_dname">Device Name</label>
-                                <input class="form-control" type="text" name="form_add_device_dname" id="form_add_device_dname" required />
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label" for="form_add_device_ifcount">Ether if count</label>
-                                <input class="form-control" type="number" min={0} value={1} name="form_add_device_ifcount" id="form_add_device_ifcount" required />
-                            </div>
-                            <div class="col-auto">
-                                <button class="btn btn-secondary" type="submit">Create</button>
-                            </div>
-                        </fieldset>
-                    </form>
+                        </div></Show>
                 </div>
             </div>
         </div>
