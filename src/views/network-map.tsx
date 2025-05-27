@@ -13,7 +13,7 @@ import { DEVICE_PROGRAM_IFINFO } from "../lib/device/program/ifinfo";
 import { DAEMON_ROUTING } from "../lib/device/program/routing";
 import { EthernetInterface, VlanInterface } from "../lib/device/interface";
 import { DEVICE_PROGRAM_ROUTEINFO } from "../lib/device/program/routeinfo";
-import { network_map_device_shape, network_map_init_state, network_map_render } from "../lib/network-map/network-map";
+import { network_map_init_device_shape as network_map_init_device, network_map_init_state, network_map_remove_device_shape as network_map_remove_device, network_map_render } from "../lib/network-map/network-map";
 import { createSignal, For, Show, Switch } from "solid-js";
 
 function init_programs(device: Device) {
@@ -134,11 +134,11 @@ init_programs(pc4)
 init_programs(pc5)
 
 const switch_dimensions = { width: 85, height: 25 }
-let terminalOwner = pc1;
+let terminalOwner: Device | undefined = pc1;
 let terminal: Terminal;
 
 const [is_in_iface_connection_mode, set_is_in_iface_connection_mode] = createSignal(false);
-const [active_device, set_active_device] = createSignal<undefined | Device>(undefined, {equals : false});
+const [active_device, set_active_device] = createSignal<undefined | Device>(undefined, { equals: false });
 
 let selected_iface: EthernetInterface | undefined = undefined;
 
@@ -147,17 +147,17 @@ let state: undefined | ReturnType<typeof network_map_init_state> = undefined;
 function init_nmap(el: SVGSVGElement) {
     state = network_map_init_state(el);
 
-    network_map_device_shape(state, networkSwitch, 50, 50, switch_dimensions);
+    network_map_init_device(state, networkSwitch, 50, 50, switch_dimensions);
 
-    network_map_device_shape(state, pc1, 150, 50);
-    network_map_device_shape(state, pc2, 220, 50);
-    network_map_device_shape(state, pc3, 290, 50);
+    network_map_init_device(state, pc1, 150, 50);
+    network_map_init_device(state, pc2, 220, 50);
+    network_map_init_device(state, pc3, 290, 50);
 
-    network_map_device_shape(state, networkRouter, 100, 270, switch_dimensions);
+    network_map_init_device(state, networkRouter, 100, 270, switch_dimensions);
 
-    network_map_device_shape(state, pc4, 220, 350);
-    network_map_device_shape(state, pc5, 290, 350);
-    network_map_device_shape(state, networkSwitch2, 100, 350, switch_dimensions);
+    network_map_init_device(state, pc4, 220, 350);
+    network_map_init_device(state, pc5, 290, 350);
+    network_map_init_device(state, networkSwitch2, 100, 350, switch_dimensions);
 
     network_map_render(state);
 
@@ -182,7 +182,7 @@ function init_nmap(el: SVGSVGElement) {
             return;
         }
 
-        terminalOwner.terminal_detach()
+        terminalOwner?.terminal_detach()
         terminalOwner = dev;
         terminalOwner.terminal_attach(terminal);
         let proc = terminalOwner.processes.find(p => p && p.id.includes(DAEMON_SHELL.name))
@@ -208,7 +208,7 @@ function add_device_to_nmap(device: Device) {
         dimen = switch_dimensions;
     }
 
-    network_map_device_shape(state, device, x, y, dimen);
+    network_map_init_device(state, device, x, y, dimen);
     network_map_render(state);
 }
 
@@ -251,6 +251,17 @@ function remove_interface_from_device(device: Device, iface: EthernetInterface) 
     set_active_device(device);
 }
 
+function remove_device_from_state(device: Device) {
+    if (!state) return;
+    network_map_remove_device(state, device);
+    
+    device.terminal_detach();
+    terminalOwner = undefined;
+    set_active_device(undefined);
+    
+    network_map_render(state);
+}
+
 export default function NetworkMapViewer(): JSX.Element {
     return <div style={{ width: "100%" }} >
         <div style={{ display: "flex" }}>
@@ -290,7 +301,11 @@ export default function NetworkMapViewer(): JSX.Element {
 
                     }>
                         <div class="text-center">
-                            <h1>{active_device()!.name}</h1>
+                            <div onclick={() => active_device() && remove_device_from_state(active_device()!)} class="mb-5">
+                                <h1>{active_device()!.name}</h1>
+                                <button class="btn btn-danger">Remove Device</button>
+
+                            </div>
                             <For each={active_device()!.interfaces.filter(iface => iface instanceof EthernetInterface)}>
                                 {(item) => (
                                     <div class="row text-center mb-3">
@@ -310,8 +325,8 @@ export default function NetworkMapViewer(): JSX.Element {
 
         <div ref={(el) => {
             terminal = new Terminal(el);
-            terminalOwner.terminal_attach(terminal);
-            terminalOwner.process_start(DAEMON_SHELL);
+            terminalOwner?.terminal_attach(terminal);
+            terminalOwner?.process_start(DAEMON_SHELL);
         }}></div>
     </div>
 };

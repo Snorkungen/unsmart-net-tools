@@ -1,10 +1,10 @@
 // network-map 2
 
-import type { Device } from "../device/device";
+import { Device, Process, ProcessSignal, Program } from "../device/device";
 import { BaseInterface, EthernetInterface } from "../device/interface";
 
 // special features zoom, pan, edit connection paths
-const INTERFACE_ANIM_DELAY = 720;
+const INTERFACE_ANIM_DELAY = 420;
 const IF_SEND_COLOR = "#ff8533"
 const IF_RECV_COLOR = "#b300b3"
 const CONNECTION_FILL_COLOR = "#b30077"
@@ -67,6 +67,43 @@ type NMState = {
     mstate: NMMouseState;
 
     onclick?: (...objects: object[]) => void
+}
+
+const DAEMON_NETWORK_MAP_DEVICE_MONITOR: Program<{
+    if_delay: number;
+    dimensions: { width: number; height: number; ifpad: number; ifsize: number }
+    state: NMState;
+    shape: NMShape;
+}> = {
+    name: "daemon_network_map_device_monitor",
+    init: function (proc: Process<any>, _, data) {
+        if (!data) { return ProcessSignal.ERROR };
+        const { state, shape, dimensions, if_delay } = data;
+        if (!state || !shape || !dimensions || !if_delay) return ProcessSignal.ERROR;
+
+        proc.data = data;
+
+        let events = [
+            proc.device.event_create([
+                "interface_connect",
+                "interface_disconnect"
+            ], network_map_device_ethiface_on_connect_or_disconnect(state, shape)),
+            proc.device.event_create("interface_recv", network_map_device_ethiface_on_send_or_recv(state, shape, "recv")),
+            proc.device.event_create("interface_send", network_map_device_ethiface_on_send_or_recv(state, shape, "send")),
+            proc.device.event_create([
+                "interface_add",
+                "interface_remove"
+            ], () => network_map_device_refresh_interfaces(state, shape, proc.device, if_delay, dimensions.height, dimensions.ifsize, dimensions.ifpad))
+        ];
+
+        proc.handle(proc, () => {
+            for (let event of events) {
+                event.close();
+            }
+        })
+
+        return ProcessSignal.__EXPLICIT__;
+    }
 }
 
 function network_map_device_setup_connection(state: NMState, shape: NMShape, so: NMShapeObject, iface: BaseInterface) {
@@ -219,7 +256,7 @@ function network_map_device_refresh_interfaces(state: NMState, shape: NMShape, d
     }
 }
 
-export function network_map_device_shape(state: NMState, dev: Device, x: number, y: number, dimensions = { width: 60, height: 60 }, if_delay = INTERFACE_ANIM_DELAY): NMShape {
+export function network_map_init_device_shape(state: NMState, dev: Device, x: number, y: number, dimensions = { width: 60, height: 60 }, if_delay = INTERFACE_ANIM_DELAY): NMShape {
     let shape: NMShape = {
         type: "shape",
         objects: [],
@@ -239,7 +276,6 @@ export function network_map_device_shape(state: NMState, dev: Device, x: number,
         width: width,
     });
 
-
     // add text label
     shape.objects.push({
         type: "text",
@@ -253,20 +289,33 @@ export function network_map_device_shape(state: NMState, dev: Device, x: number,
     // add non virtual interfaces
     network_map_device_refresh_interfaces(state, shape, dev, if_delay, height, ifsize, ifpad);
 
-    // !TODO: these events need to be taken care of, like a solution would be to shove this into a daemon program
-    // daemon_network_map_device_monitor -- and then have the events handled automatically
-    const device_connect_or_disconnect_event = dev.event_create([
-        "interface_connect",
-        "interface_disconnect"
-    ], network_map_device_ethiface_on_connect_or_disconnect(state, shape));
-    const device_recv_event = dev.event_create("interface_recv", network_map_device_ethiface_on_send_or_recv(state, shape, "recv"));
-    const device_send_event = dev.event_create("interface_send", network_map_device_ethiface_on_send_or_recv(state, shape, "send"));
-    const device_add_remove_event = dev.event_create([
-        "interface_add",
-        "interface_remove"
-    ], () => network_map_device_refresh_interfaces(state, shape, dev, if_delay, height, ifsize, ifpad))
-
+    dev.process_start(DAEMON_NETWORK_MAP_DEVICE_MONITOR, undefined, {
+        dimensions: { ...dimensions, ifpad, ifsize },
+        state,
+        shape,
+        if_delay
+    })
     return shape;
+}
+
+export function network_map_remove_device_shape(state: NMState, dev: Device) {
+    let shape = state.shapes.find((so) => so.assob == dev);
+    if (!shape) return;
+
+    // close the monitor program
+    let proc = dev.processes.find(p => p?.id.startsWith(DAEMON_NETWORK_MAP_DEVICE_MONITOR.name));
+    if (proc) {
+        proc.close(proc, ProcessSignal.EXIT);
+    }
+
+    // remove all interfaces 
+    for (let iface of dev.interfaces) {
+        dev.interface_remove(iface);
+    }
+
+    // remove from element cache
+    network_map_remove_element(state, shape);
+    state.shapes = state.shapes.filter(so => so != shape);
 }
 
 function network_map_init_element(so: NMShapeObject, element?: SVGElement): SVGElement {
