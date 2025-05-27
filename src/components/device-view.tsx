@@ -6,6 +6,7 @@ import { IPV4Address } from "../lib/address/ipv4";
 import { IPV6Address } from "../lib/address/ipv6";
 import { createSignal, onCleanup, onMount } from "solid-js";
 import { EthernetInterface } from "../lib/device/interface";
+import type { DeviceEvent } from "../lib/device/internals/event";
 
 type _E = Event & {
     currentTarget: HTMLAnchorElement;
@@ -88,18 +89,22 @@ export function DeviceViewComponent({ device, on_select }: DeviceViewComponentPr
         set_ifaces(device.interfaces);
     }
 
+    let device_interface_update_event: undefined | DeviceEvent = undefined;
+
     onMount(() => {
-        device.event_handler_add("interface_add", handle_interface_events)
-        device.event_handler_add("interface_remove", handle_interface_events)
-        device.event_handler_add("interface_set_address", handle_interface_events)
-        device.event_handler_add("interface_mcast_subscribe", handle_interface_events)
-        device.event_handler_add("interface_mcast_unsubscribe", handle_interface_events)
-        device.event_handler_add("interface_connect", handle_interface_events)
-        device.event_handler_add("interface_disconnect", handle_interface_events)
+        device_interface_update_event = device.event_create([
+            "interface_add",
+            "interface_remove",
+            "interface_set_address",
+            "interface_mcast_subscribe",
+            "interface_mcast_unsubscribe",
+            "interface_connect",
+            "interface_disconnect",
+        ], handle_interface_events)
     });
 
     onCleanup(() => {
-        device.event_handler_remove(handle_interface_events)
+        device_interface_update_event && device_interface_update_event.close();
     })
 
     return <div>

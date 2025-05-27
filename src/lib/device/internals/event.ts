@@ -3,10 +3,10 @@ import type { BaseInterface } from "../interface";
 type DeviceEventMap = {
     "interface_add": [];
     "interface_remove": [];
-    "interface_set_address": [];
-    "interface_mcast_subscribe": [];
-    "interface_mcast_unsubscribe": [];
 
+    "interface_set_address": [iface: BaseInterface];
+    "interface_mcast_subscribe": [iface: BaseInterface];
+    "interface_mcast_unsubscribe": [iface: BaseInterface];
     "interface_disconnect": [iface: BaseInterface];
     "interface_connect": [iface: BaseInterface];
     "interface_recv": [iface: BaseInterface];
@@ -18,3 +18,8 @@ type DeviceEventMap = {
 
 export type DeviceEventType = keyof DeviceEventMap;
 export type DeviceEventHandler<K extends DeviceEventType> = (...a: DeviceEventMap[K]) => void;
+export type DeviceEvent<T extends DeviceEventType = DeviceEventType> = {
+    keys: T[];
+    handler: DeviceEventHandler<T>;
+    close(): void;
+}

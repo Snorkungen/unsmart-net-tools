@@ -253,16 +253,18 @@ export function network_map_device_shape(state: NMState, dev: Device, x: number,
     // add non virtual interfaces
     network_map_device_refresh_interfaces(state, shape, dev, if_delay, height, ifsize, ifpad);
 
-    // !TODO: these event handler need to be taken care of, like a solution would be to shove this into a daemon program
+    // !TODO: these events need to be taken care of, like a solution would be to shove this into a daemon program
     // daemon_network_map_device_monitor -- and then have the events handled automatically
-    dev.event_handler_add("interface_connect", network_map_device_ethiface_on_connect_or_disconnect(state, shape));
-    dev.event_handler_add("interface_disconnect", network_map_device_ethiface_on_connect_or_disconnect(state, shape));
-    dev.event_handler_add("interface_recv", network_map_device_ethiface_on_send_or_recv(state, shape, "recv"));
-    dev.event_handler_add("interface_send", network_map_device_ethiface_on_send_or_recv(state, shape, "send"));
-
-    const refresh_interfaces = () => network_map_device_refresh_interfaces(state, shape, dev, if_delay, height, ifsize, ifpad);
-    dev.event_handler_add("interface_add", refresh_interfaces);
-    dev.event_handler_add("interface_remove", refresh_interfaces);
+    const device_connect_or_disconnect_event = dev.event_create([
+        "interface_connect",
+        "interface_disconnect"
+    ], network_map_device_ethiface_on_connect_or_disconnect(state, shape));
+    const device_recv_event = dev.event_create("interface_recv", network_map_device_ethiface_on_send_or_recv(state, shape, "recv"));
+    const device_send_event = dev.event_create("interface_send", network_map_device_ethiface_on_send_or_recv(state, shape, "send"));
+    const device_add_remove_event = dev.event_create([
+        "interface_add",
+        "interface_remove"
+    ], () => network_map_device_refresh_interfaces(state, shape, dev, if_delay, height, ifsize, ifpad))
 
     return shape;
 }
