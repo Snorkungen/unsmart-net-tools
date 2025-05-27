@@ -1474,14 +1474,17 @@ export class Device {
     };
     interface_remove(iface: BaseInterface) {
         delete this.interfaces_mcast_subscriptions[iface.id()];
-        this.event_dispatch("interface_remove")
-        this.interfaces = this.interfaces.filter(f => f != iface)
-
+        
+        iface.disconnect()
         // @ts-expect-error
         delete iface.device
         iface.up = false;
-
         // !TODO: have some checking so that scheduled events get removed
+        
+        this.interfaces = this.interfaces.filter(f => f != iface)
+
+        // !NOTE: network-map relies upon the fact that this gets dispatched after being removed from interfaces
+        this.event_dispatch("interface_remove")
     };
     interface_address_remove<AT extends typeof BaseAddress>(iface: BaseInterface, address: InstanceType<AT>): DeviceResult {
         let addridx = iface.addresses.findIndex(value => value.address.constructor == address.constructor && uint8_equals(value.address.buffer, address.buffer));

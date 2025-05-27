@@ -60,6 +60,10 @@ export class BaseInterface {
     id() {
         return this.name + this.unit
     }
+
+    connect(target: BaseInterface) { }
+    disconnect() { }
+
 }
 
 let macAddressCount = 0;
@@ -260,6 +264,9 @@ export class EthernetInterface extends BaseInterface {
     }
 
     connect(target: EthernetInterface) {
+        if (this.constructor != target.constructor) {
+            throw new Error("cannot connect with different interface type")
+        }
         if (this == target) {
             throw new Error("cannot connect to self")
         }
