@@ -240,14 +240,14 @@ function handle_add_device_submit(e: SubmitEvent & { currentTarget: HTMLFormElem
 function add_interface_to_device(device: Device) {
     if (!state) return;
     device.interface_add(new EthernetInterface(device));
-    network_map_render(state);
+    // network_map_render(state); // !NOTE: refresh interfaces hook calls render
     set_active_device(device);
 }
 
 function remove_interface_from_device(device: Device, iface: EthernetInterface) {
     if (!state) return;
     device.interface_remove(iface);
-    network_map_render(state);
+    // network_map_render(state); // !NOTE: refresh interfaces hook calls render
     set_active_device(device);
 }
 

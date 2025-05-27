@@ -254,6 +254,8 @@ function network_map_device_refresh_interfaces(state: NMState, shape: NMShape, d
             iface.receive_delay = if_delay;
         }
     }
+
+    network_map_render(state);
 }
 
 export function network_map_init_device_shape(state: NMState, dev: Device, x: number, y: number, dimensions = { width: 60, height: 60 }, if_delay = INTERFACE_ANIM_DELAY): NMShape {
