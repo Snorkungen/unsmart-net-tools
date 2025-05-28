@@ -74,6 +74,18 @@ export type DeviceRoute<AddrType extends typeof BaseAddress = typeof BaseAddress
     iface: BaseInterface;
 }
 
+export type DeviceIO = {
+    active: boolean;
+
+    on_close?: () => void;
+    on_flush?: () => void;
+    on_write?: (bytes: Uint8Array) => void;
+    /** Return value signifies something for the writer  */
+    read?: (bytes: Uint8Array) => void | boolean;
+    flush(): void;
+    write(bytes: Uint8Array): void;
+    close(): void;
+}
 
 export type ContactAF = "RAW" | "IPv4" | "IPv6";
 export type ContactProto = "RAW" | "UDP" | "TCP";
@@ -140,6 +152,12 @@ export type ProcessID = string; // number[] !TODO: it could be an array of numbe
 export type ProcessHandler = (proc: Process, signal: ProcessSignal) => void;
 export type ProcessTerminalReadFunc = (proc: Process, bytes: Uint8Array) => void | true;
 type ProcessResource = Contact;
+type ProcessStartHandlers = Partial<{
+    on_close: ProcessHandler;
+    io_on_write: DeviceIO["on_write"];
+    io_on_close: DeviceIO["on_close"];
+    io_on_flush: DeviceIO["on_flush"];
+}>
 export type Process<DT = any> = {
     status: "UNINIT" | "MARKED_CLOSED" | "CLOSED" | "RUNNING"
     signal: ProcessSignal;
@@ -151,7 +169,7 @@ export type Process<DT = any> = {
 
 
     close(proc: Process, status: ProcessSignal): void;
-    spawn<SDT extends any>(proc: Process, program: Program<SDT>, args?: string[], data?: Partial<SDT>, handle_close?: ProcessHandler): Process | undefined;
+    spawn<SDT extends any>(proc: Process, program: Program<SDT>, args?: string[], data?: Partial<SDT>, handlers?: ProcessStartHandlers): Process | undefined;
     handle(proc: Process, signal_handler: (proc: Process, signal: ProcessSignal) => void): void
 
     /** write an entry into a process diary \
@@ -159,9 +177,7 @@ export type Process<DT = any> = {
     */
     journal(proc: Process, type: number, message: string): void;
 
-    term_read(proc: Process, read_func: ProcessTerminalReadFunc): void
-    term_write(data: Uint8Array): void;
-    term_flush(): void;
+    io: DeviceIO;
 
     contact_create(proc: Process, ...values: Parameters<Device["contact_create"]>): ReturnType<Device["contact_create"]>
 
@@ -370,8 +386,8 @@ export class Device {
 
     /** Process start only returns a process if a parent proc is provided */
     process_start<DT extends any>(program: Program<DT>, args?: string[], data?: Partial<DT>): void
-    process_start<DT extends any>(program: Program<DT>, args?: string[], data?: Partial<DT>, parent_proc?: Process, spawn_handler?: ProcessHandler): Process
-    process_start<DT extends any>(program: Program<DT>, args?: string[], data?: Partial<DT>, parent_proc?: Process, spawn_handler?: ProcessHandler): Process | undefined {
+    process_start<DT extends any>(program: Program<DT>, args: string[] | undefined, data: Partial<DT> | undefined, parent_proc: Process, handlers?: ProcessStartHandlers): Process | undefined;
+    process_start<DT extends any>(program: Program<DT>, args?: string[], data?: Partial<DT>, parent_proc?: Process, handlers?: ProcessStartHandlers): Process | undefined {
         let i = -1; while (this.processes[++i]) { continue; };
 
         let id: ProcessID = "";
@@ -382,6 +398,18 @@ export class Device {
         if (id.length > 100) {
             console.warn("id length too long; this might be caused by a spawn loop");
             return;
+        }
+
+        const io = this.process_io_create();
+        if (handlers) {
+            if (handlers.io_on_close)
+                io.on_close = handlers.io_on_close;
+
+            if (handlers.io_on_flush)
+                io.on_flush = handlers.io_on_flush;
+
+            if (handlers.io_on_write)
+                io.on_write = handlers.io_on_write;
         }
 
         this.processes[i] = {
@@ -398,10 +426,6 @@ export class Device {
             handle: this.process_handle.bind(this),
             journal: this.process_journal.bind(this),
 
-            term_read: this.process_term_read.bind(this),
-            term_write: this.process_term_write.bind(this),
-            term_flush: this.process_term_flush.bind(this),
-
             contact_create(proc, af, proto) {
                 let res = this.device.contact_create(af, proto);
                 if (res.success == false) {
@@ -410,13 +434,15 @@ export class Device {
                 this.device.process_init_resource(proc, res.data)
 
                 return res;
-            }
+            },
+
+            io: io,
         };
 
         this.process_resources[this.processes[i]!.id] = [];
 
-        if (parent_proc && spawn_handler) {
-            this.process_handle(this.processes[i]!, spawn_handler, parent_proc.id);
+        if (parent_proc && handlers && handlers.on_close) {
+            this.process_handle(this.processes[i]!, handlers.on_close, parent_proc.id);
         }
 
         let init_sig = program.init(this.processes[i]!, args || [], data);
@@ -520,18 +546,18 @@ export class Device {
 
         // remove terminal readers
         this.terminal_readers = this.terminal_readers.filter((tr) => tr.proc != proc);
-        proc.term_write = this.process_term_writeblackhole;
-        proc.term_flush = this.process_term_flushblackhole;
 
         // delete journal entries
         this.process_journal_entries.delete(proc.id);
+
+        proc.io.close();
 
         this.processes[i]!.status = "CLOSED";
         delete this.processes[i];
     }
 
-    process_spawn: Process["spawn"] = (proc, program, args, data, handle_close) => {
-        return this.process_start(program, args, data, proc, handle_close);
+    process_spawn: Process["spawn"] = (proc, program, args, data, handlers) => {
+        return this.process_start(program, args, data, proc, handlers);
     }
 
     process_handle(proc: Process, handler: ProcessHandler, parent_id?: ProcessID) {
@@ -582,6 +608,56 @@ export class Device {
                 break;
             }
         }
+
+        for (let attached_io of this.io_terminal_attached) {
+            if (!attached_io.active || !attached_io.read) continue;
+            attached_io.read(bytes);
+        }
+    }
+
+    private io_terminal_attached: DeviceIO[] = [];
+    io_terminal_attach(io: DeviceIO) {
+        const device = this;
+        io.on_write = function (bytes) {
+            (this.active && device.terminal) && device.terminal.write(bytes);
+        }
+        io.on_flush = function () {
+            (this.active && device.terminal) && device.terminal.flush();
+        }
+        io.on_close = function () {
+            (this.active) && device.io_terminal_detach(this);
+        }
+
+        this.io_terminal_attached.push(io);
+    }
+    io_terminal_detach(io: DeviceIO) {
+        delete io.on_write;
+        delete io.on_close;
+        delete io.on_flush;
+        this.io_terminal_attached.filter(v => v != io);
+    }
+
+    private process_io_create(): DeviceIO {
+        return {
+            active: true,
+            write(bytes) {
+                if (this.active && this.on_write) {
+                    this.on_write(bytes);
+                }
+            },
+            flush() {
+                if (this.active && this.on_flush) {
+                    this.on_flush();
+                }
+            },
+            close() {
+                if (this.on_close) this.on_close();
+                this.active = false;
+                delete this.on_close;
+                delete this.on_flush;
+                delete this.on_write;
+            }
+        }
     }
 
     process_termwriteto(proc: Process, bytes: Uint8Array) {
@@ -591,15 +667,6 @@ export class Device {
         }
     }
 
-    private process_term_read(proc: Process, reader_func: ProcessTerminalReadFunc) {
-        this.terminal_readers = [{ proc, reader: reader_func }, ...this.terminal_readers]
-    }
-    private process_term_write(bytes: Uint8Array) {
-        (this.terminal) && this.terminal.write(bytes);
-    }
-    private process_term_writeblackhole(_: Uint8Array) { }
-    private process_term_flush() { (this.terminal) && this.terminal.flush(); }
-    private process_term_flushblackhole() { }
     private process_init_resource(proc: Process, resource: ProcessResource) {
         let i = -1; while (this.process_resources[proc.id][++i]) { continue; };
         this.process_resources[proc.id][i] = resource;
@@ -1469,13 +1536,13 @@ export class Device {
     };
     interface_remove(iface: BaseInterface) {
         delete this.interfaces_mcast_subscriptions[iface.id()];
-        
+
         iface.disconnect()
         // @ts-expect-error
         delete iface.device
         iface.up = false;
         // !TODO: have some checking so that scheduled events get removed
-        
+
         this.interfaces = this.interfaces.filter(f => f != iface)
 
         // !NOTE: network-map relies upon the fact that this gets dispatched after being removed from interfaces

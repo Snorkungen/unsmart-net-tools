@@ -19,7 +19,7 @@ export const DEVICE_PROGRAM_ROUTEINFO_ARP: Program = {
             table.push([key, entry.macAddress.toString(), entry.iface.id()])
         }
 
-        proc.term_write(formatTable(table))
+        proc.io.write(formatTable(table))
 
         if (!proc.device.store_get(NETWORK_SWITCH_STORE_KEY)) {
             return ProcessSignal.EXIT;
@@ -33,8 +33,8 @@ export const DEVICE_PROGRAM_ROUTEINFO_ARP: Program = {
             table.push([destination.toString(), data.ports[outgoing_port].iface.id()])
         }
 
-        proc.term_write(uint8_fromString("\nMac Adresses\n"));
-        proc.term_write(formatTable(table))
+        proc.io.write(uint8_fromString("\nMac Adresses\n"));
+        proc.io.write(formatTable(table))
 
         return ProcessSignal.EXIT;
     },
@@ -49,7 +49,7 @@ const DEVICE_PROGRAM_ROUTEINFO_REMOVE: Program = {
         let [, , arg_destination, ifid,] = args;
 
         if (!arg_destination) {
-            proc.term_write(uint8_fromString(`Destination: missing\n${this.content}`));
+            proc.io.write(uint8_fromString(`Destination: missing\n${this.content}`));
             return ProcessSignal.ERROR;
         }
 
@@ -68,7 +68,7 @@ const DEVICE_PROGRAM_ROUTEINFO_REMOVE: Program = {
         // take destination and find the destination and the disambiguate the route
         // !TODO: ensure that only one route gets removed at a time
         let removed_routes = proc.device.routes.filter(predicate);
-        proc.term_write(uint8_fromString(`removed ${removed_routes.length} routes\n`))
+        proc.io.write(uint8_fromString(`removed ${removed_routes.length} routes\n`))
         proc.device.routes = proc.device.routes.filter(r => !predicate(r)); // just remove all destinations matching the specified destination
 
 
@@ -86,19 +86,19 @@ const DEVICE_PROGRAM_ROUTEINFO_ADD4: Program = {
         let [, , ifid, arg_destination, arg_netmask, arg_gateway] = args
 
         if (!ifid) {
-            proc.term_write(uint8_fromString(`IF_ID: missing\n${this.content}`));
+            proc.io.write(uint8_fromString(`IF_ID: missing\n${this.content}`));
             return ProcessSignal.ERROR;
         } else if (!arg_destination) {
-            proc.term_write(uint8_fromString(`Destination: missing\n${this.content}`));
+            proc.io.write(uint8_fromString(`Destination: missing\n${this.content}`));
             return ProcessSignal.ERROR;
         } else if (!arg_destination) {
-            proc.term_write(uint8_fromString(`Mask: missing\n${this.content}`));
+            proc.io.write(uint8_fromString(`Mask: missing\n${this.content}`));
             return ProcessSignal.ERROR;
         }
 
         let iface = proc.device.interfaces.find(iface => iface.id() == ifid);
         if (!iface) {
-            proc.term_write(uint8_fromString(`IF_ID: (${ifid}) is invalid`))
+            proc.io.write(uint8_fromString(`IF_ID: (${ifid}) is invalid`))
             return ProcessSignal.ERROR
         }
 
@@ -108,7 +108,7 @@ const DEVICE_PROGRAM_ROUTEINFO_ADD4: Program = {
         } else if (IPV4Address.validate(arg_destination)) {
             destination = new IPV4Address(arg_destination)
         } else {
-            proc.term_write(uint8_fromString(`invalid address [${arg_destination}]`))
+            proc.io.write(uint8_fromString(`invalid address [${arg_destination}]`))
             return ProcessSignal.ERROR
         }
 
@@ -123,7 +123,7 @@ const DEVICE_PROGRAM_ROUTEINFO_ADD4: Program = {
         }
 
         if (!netmask || !netmask.isValid()) {
-            proc.term_write(uint8_fromString(`mask: (${arg_netmask}) is invalid`));
+            proc.io.write(uint8_fromString(`mask: (${arg_netmask}) is invalid`));
             return ProcessSignal.ERROR;
         }
 
@@ -155,7 +155,7 @@ const DEVICE_PROGRAM_ROUTEINFO_ADD4: Program = {
             f_static
         })
 
-        proc.term_write(uint8_fromString("Added route.\n"))
+        proc.io.write(uint8_fromString("Added route.\n"))
 
         proc.device.process_spawn(proc, DEVICE_PROGRAM_ROUTEINFO, ["routeinfo", "ipv4"])
 
@@ -198,7 +198,7 @@ export const DEVICE_PROGRAM_ROUTEINFO: Program = {
             return [route.destination.toString(), netmask, route.gateway.toString(), flags, route.iface.id()]
         }))
 
-        proc.term_write(formatTable(table))
+        proc.io.write(formatTable(table))
 
         return ProcessSignal.EXIT;
     },

@@ -26,7 +26,7 @@ export const DEVICE_PROGRAM_DAEMAN: Program = {
                 console.log(p.id, jentries)
             }
 
-            proc.term_write(uint8_fromString(`${i++}:\t${p.id}\n`));
+            proc.io.write(uint8_fromString(`${i++}:\t${p.id}\t${p.status}\n`));
         }
 
 

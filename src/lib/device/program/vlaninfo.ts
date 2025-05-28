@@ -26,7 +26,7 @@ vlaninfo eth0 1 2 3 -4 5 6 assign the following vlans to the interface, and remo
                 }
             }
 
-            proc.term_write(formatTable(table));
+            proc.io.write(formatTable(table));
             return ProcessSignal.EXIT;
         }
 
@@ -36,7 +36,7 @@ vlaninfo eth0 1 2 3 -4 5 6 assign the following vlans to the interface, and remo
             // this is something that is botherd with vlanifs ...
             let vid = parseInt(first_arg.substring("vlanif".length));
             if (isNaN(vid)) {
-                proc.term_write(uint8_fromString("failed to read: " + first_arg));
+                proc.io.write(uint8_fromString("failed to read: " + first_arg));
                 return ProcessSignal.ERROR;
             }
 
@@ -47,12 +47,12 @@ vlaninfo eth0 1 2 3 -4 5 6 assign the following vlans to the interface, and remo
                     proc.device.interface_remove(vlanif)
                 }
 
-                proc.term_write(uint8_fromString("vlan interface removed for vlan: " + vid));
+                proc.io.write(uint8_fromString("vlan interface removed for vlan: " + vid));
             } else if (!vlanif) { // add vlan interface
                 proc.device.interface_add(new VlanInterface(proc.device, vid));
-                proc.term_write(uint8_fromString("vlan interface created for vlan: " + vid));
+                proc.io.write(uint8_fromString("vlan interface created for vlan: " + vid));
             } else {
-                proc.term_write(uint8_fromString("vlan interface already exists for vlan: " + vid));
+                proc.io.write(uint8_fromString("vlan interface already exists for vlan: " + vid));
             }
 
             return ProcessSignal.EXIT;
@@ -61,7 +61,7 @@ vlaninfo eth0 1 2 3 -4 5 6 assign the following vlans to the interface, and remo
         let iface = proc.device.interfaces.find(iface => iface.id() == first_arg && (iface instanceof EthernetInterface));
 
         if (!iface) {
-            proc.term_write(uint8_fromString("no vlan aware interface exist with the id of: " + first_arg));
+            proc.io.write(uint8_fromString("no vlan aware interface exist with the id of: " + first_arg));
             return ProcessSignal.ERROR;
         }
 
@@ -83,7 +83,7 @@ vlaninfo eth0 1 2 3 -4 5 6 assign the following vlans to the interface, and remo
         }
 
         if (!iface.vlan) {
-            proc.term_write(uint8_fromString("interface must be configured as either \"access\" or \"trunk\""));
+            proc.io.write(uint8_fromString("interface must be configured as either \"access\" or \"trunk\""));
             return ProcessSignal.ERROR;
         }
 
@@ -103,9 +103,9 @@ vlaninfo eth0 1 2 3 -4 5 6 assign the following vlans to the interface, and remo
 
         if (iface.vlan.vids.length == 0) {
             delete iface.vlan
-            proc.term_write(uint8_fromString(`${iface.id()}\tvlan removed`));
+            proc.io.write(uint8_fromString(`${iface.id()}\tvlan removed`));
         } else {
-            proc.term_write(uint8_fromString(`${iface.id()}\t${iface.vlan.type} ${iface.vlan.vids.join(",")}`));
+            proc.io.write(uint8_fromString(`${iface.id()}\t${iface.vlan.type} ${iface.vlan.vids.join(",")}`));
         }
 
         return ProcessSignal.EXIT;

@@ -3,14 +3,14 @@ import { PCAP_GLOBAL_HEADER, PCAP_MAGIC_NUMBER, PCAP_RECORD_HEADER } from "../..
 import { ASCIICodes, CSI, TERMINAL_DEFAULT_COLUMNS } from "../../terminal/shared";
 import { Process, ProcessSignal, Program } from "../device";
 import { chunkString, formatTable, spawn_program_promisify } from "./helpers";
-import { DEVICE_PROGRAM_TERMQUERY } from "./termquery";
+import { termquery } from "./termquery";
 
 export const DEVICE_PROGRAM_CLEAR: Program = {
     name: "clear",
     description: "This program clears the terminal",
     content: "Example: clear",
     init(proc, args) {
-        proc.term_write(CSI(ASCIICodes.Two, 74)); // clear display
+        proc.io.write(CSI(ASCIICodes.Two, 74)); // clear display
         return ProcessSignal.EXIT;
     },
     __NODATA__: true
@@ -24,7 +24,7 @@ Example: echo "Hello, World"
 > Hello World`,
     init(proc, args) {
         let input = args.slice(1);
-        proc.term_write(uint8_fromString(input.join("\n"))); // echo
+        proc.io.write(uint8_fromString(input.join("\n"))); // echo
         return ProcessSignal.EXIT;
     },
     __NODATA__: true
@@ -38,7 +38,7 @@ function displayPrograms(proc: Process, programs: Program[], columns: number) {
     for (let p of programs) {
         table.push([p.name, p.description]);
     }
-    return proc.term_write(formatTable(table, columns));
+    return proc.io.write(formatTable(table, columns));
 }
 
 
@@ -51,7 +51,7 @@ Example 1: help
 Example 2: help help`,
 
     async init(proc, argv) {
-        let columns = (await spawn_program_promisify(proc, DEVICE_PROGRAM_TERMQUERY)).width || TERMINAL_DEFAULT_COLUMNS;
+        let columns = (await termquery(proc)).width || TERMINAL_DEFAULT_COLUMNS;
 
         argv.shift(); // remove help name;
 
@@ -77,14 +77,14 @@ Example 2: help help`,
         }
 
         if (!prog) {
-            proc.term_write(uint8_fromString("No program found with the name \"" + name + "\"\n"));
+            proc.io.write(uint8_fromString("No program found with the name \"" + name + "\"\n"));
             displayPrograms(proc, proc.device.programs, columns);
             return ProcessSignal.EXIT;
         }
 
         let shownName = parents.length == 0 ? prog.name : parents.join(" ") + " " + prog.name;
 
-        proc.term_write(uint8_fromString(
+        proc.io.write(uint8_fromString(
             shownName + "\n" +
             ((prog.description && chunkString(prog.description, columns).join("\n") + "\n") || "") + "\n" +
             ((prog.content && chunkString(prog.content, columns).join("\n") + "\n") || "")
@@ -138,7 +138,7 @@ export const DEVICE_PROGRAM_DOWNLOAD: Program = {
             "type": "application/cap",
         });
 
-        proc.term_write(uint8_fromString(`Downloading: ${file.name}`));
+        proc.io.write(uint8_fromString(`Downloading: ${file.name}`));
 
         let anchor = document.createElement("a");
         anchor.href = URL.createObjectURL(file);

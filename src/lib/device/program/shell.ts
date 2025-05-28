@@ -2,7 +2,7 @@ import { uint8_concat, uint8_fromString } from "../../binary/uint8-array";
 import { ASCIICodes, CSI, numbertonumbers, readParams } from "../../terminal/shared";
 import { Process, ProcessSignal, Program } from "../device";
 import { parseArgs } from "./helpers";
-import { DEVICE_PROGRAM_TERMQUERY } from "./termquery";
+import { termquery } from "./termquery";
 
 enum ShellState {
     UNITIALIZED,
@@ -68,13 +68,13 @@ function writePrompt(proc: Process<ShellData>) {
     proc.data.promptXOffset = 2 + proc.device.name.length;
     proc.data.cursorX = proc.data.promptXOffset + 1;
 
-    proc.term_write(promptBuff);
+    proc.io.write(promptBuff);
 }
 
 function replacePromptBuffer(proc: Process<ShellData>, text: string, cursorX?: number) {
     proc.data.promptBuffer = text;
     proc.data.cursorX = cursorX || proc.data.promptXOffset + proc.data.promptBuffer.length + 1;
-    proc.term_write(uint8_concat([
+    proc.io.write(uint8_concat([
         CSI(...uint8_fromString((proc.data.promptXOffset + 1).toString()), ASCIICodes.G), // move cursor to begin of prompt
         CSI(ASCIICodes.Zero, ASCIICodes.K), // Clear Line
         uint8_fromString(text), // write buffer to screen
@@ -124,11 +124,11 @@ function lazywriter_write_options(proc: Process<string>, options: string[], i: n
     }
 
     // move cursor & clear the row
-    proc.term_write(CSI(...numbertonumbers(1), ASCIICodes.G, ...CSI(ASCIICodes.Two, ASCIICodes.K)))
+    proc.io.write(CSI(...numbertonumbers(1), ASCIICodes.G, ...CSI(ASCIICodes.Two, ASCIICodes.K)))
 
     // display marker that there is more to the left
     if (options_start > 0) {
-        proc.term_write(uint8_concat([
+        proc.io.write(uint8_concat([
             CSI(ASCIICodes.Six + 1, ASCIICodes.m), // invert colours
             uint8_fromString("<"),
             CSI(ASCIICodes.Zero, ASCIICodes.m), // reset
@@ -145,20 +145,20 @@ function lazywriter_write_options(proc: Process<string>, options: string[], i: n
         }
 
         if (j === i) {
-            proc.term_write(uint8_concat([
+            proc.io.write(uint8_concat([
                 CSI(ASCIICodes.Six + 1, ASCIICodes.m), // invert colours
                 uint8_fromString(option),
                 CSI(ASCIICodes.Zero, ASCIICodes.m), // reset
                 CSI(ASCIICodes.C)
             ]));
         } else {
-            proc.term_write(uint8_fromString(option + " "))
+            proc.io.write(uint8_fromString(option + " "))
         }
     }
 
     if (options_end < options.length - 1) {
         // indicate that there is more to the right
-        proc.term_write(uint8_concat([
+        proc.io.write(uint8_concat([
             CSI(...numbertonumbers(MAX_OPTIONS_WIDTH + 1), ASCIICodes.G), // move the cursor
             CSI(ASCIICodes.Six + 1, ASCIICodes.m), // invert colours
             uint8_fromString(">"),
@@ -167,7 +167,7 @@ function lazywriter_write_options(proc: Process<string>, options: string[], i: n
 
     }
 
-    proc.term_write(CSI(...numbertonumbers(cursorX + 1), ASCIICodes.G))
+    proc.io.write(CSI(...numbertonumbers(cursorX + 1), ASCIICodes.G))
 }
 
 /**
@@ -180,7 +180,6 @@ const lazywriter: Program<string> = {
     init(proc: Process<string>, _, data?: string | undefined): ProcessSignal {
         proc.data = data || ""; // set data
         let options = proc.device.programs.map(p => p.name);
-
         if (options.includes(proc.data)) {
             return ProcessSignal.EXIT;
         }
@@ -228,15 +227,9 @@ const lazywriter: Program<string> = {
 
         let term_width = 38;
         let selected_option_idx = 0;
-        proc.term_write(new Uint8Array([ASCIICodes.NewLine]));
+        proc.io.write(new Uint8Array([ASCIICodes.NewLine]));
 
-        proc.spawn(proc, DEVICE_PROGRAM_TERMQUERY, undefined, {}, (sproc) => {
-            if (!sproc.data.width) return;
-            term_width = sproc.data?.width;
-            lazywriter_write_options(proc, options, selected_option_idx, term_width);
-        });
-
-        proc.term_read(proc, (_, bytes) => {
+        proc.io.read = (bytes) => {
             let byte = bytes[0];
 
             if (byte === ASCIICodes.Space) {
@@ -250,7 +243,7 @@ const lazywriter: Program<string> = {
             ) {
                 proc.data = root + options[selected_option_idx]
                 // move cursor to start clear line and go up on line
-                proc.term_write(CSI(...numbertonumbers(1), ASCIICodes.G, ...CSI(ASCIICodes.Two, ASCIICodes.K), ...CSI(ASCIICodes.A)));
+                proc.io.write(CSI(...numbertonumbers(1), ASCIICodes.G, ...CSI(ASCIICodes.Two, ASCIICodes.K), ...CSI(ASCIICodes.A)));
                 proc.close(proc, ProcessSignal.EXIT);
                 return true;
             }
@@ -259,7 +252,7 @@ const lazywriter: Program<string> = {
                 byte === ASCIICodes.Escape && bytes.length === 1 ||
                 byte === 3
             ) {
-                proc.term_write(CSI(...numbertonumbers(1), ASCIICodes.G, ...CSI(ASCIICodes.Two, ASCIICodes.K), ...CSI(ASCIICodes.A)));
+                proc.io.write(CSI(...numbertonumbers(1), ASCIICodes.G, ...CSI(ASCIICodes.Two, ASCIICodes.K), ...CSI(ASCIICodes.A)));
                 proc.close(proc, ProcessSignal.EXIT);
                 return true;
             }
@@ -284,7 +277,14 @@ const lazywriter: Program<string> = {
             selected_option_idx = (selected_option_idx + 1) % options.length;
             lazywriter_write_options(proc, options, selected_option_idx, term_width)
             return true;
+        };
+
+        termquery(proc).then((data) => {
+            if (!data.width) return;
+            term_width = data.width;
+            lazywriter_write_options(proc, options, selected_option_idx, term_width);
         })
+        // lazywriter_write_options(proc, options, selected_option_idx, term_width);
 
         return ProcessSignal.__EXPLICIT__;
     }
@@ -311,7 +311,7 @@ function read(proc: Process<ShellData>, bytes: Uint8Array) {
                     )
                 } else {
                     proc.data.promptBuffer += char
-                    proc.term_write(new Uint8Array([byte]));
+                    proc.io.write(new Uint8Array([byte]));
                     proc.data.cursorX += 1;
                 }
 
@@ -331,18 +331,34 @@ function read(proc: Process<ShellData>, bytes: Uint8Array) {
                     )
                 } else {
                     proc.data.promptBuffer = proc.data.promptBuffer.substring(0, proc.data.promptBuffer.length - 1);
-                    proc.term_write(new Uint8Array([ASCIICodes.BackSpace]));
+                    proc.io.write(new Uint8Array([ASCIICodes.BackSpace]));
                     proc.data.cursorX -= 1;
                 }
 
             } else if (byte == ASCIICodes.Tab) {
                 console.log("[TAB] Pressed")
-                proc.spawn(proc, lazywriter, undefined, proc.data.promptBuffer, (sproc) => {
-                    if (sproc.data === undefined)
-                        return;
-                    replacePromptBuffer(proc, sproc.data)
+                proc.data.state = ShellState.LAZY_WRITING;
+                proc.data.runningProc = proc.spawn(proc, lazywriter, undefined, proc.data.promptBuffer, {
+                    on_close(sproc) {
+                        proc.data.state = ShellState.PROMPT;
+                        delete proc.data.runningProc
+                        if (sproc.data === undefined)
+                            return;
+                        replacePromptBuffer(proc, sproc.data)
+                    },
+                    io_on_write(bytes) {
+                        proc.io.write(bytes)
+                    },
+                    io_on_flush() {
+                        proc.io.flush()
+                    }
                 });
 
+                if (proc.data.runningProc?.io.read && i < (bytes.length - 1)) {
+                    proc.data.runningProc.io.read(bytes.subarray(i + 1))
+                }
+
+                return; // early return
             } else if (byte == ASCIICodes.CarriageReturn || byte == ASCIICodes.NewLine) {
                 console.log("[ENTER] Pressed")
                 // do stuff
@@ -365,20 +381,28 @@ function read(proc: Process<ShellData>, bytes: Uint8Array) {
                 proc.data.history.add(proc.data.promptBuffer);
 
                 if (program) {
-                    proc.term_write(new Uint8Array([ASCIICodes.NewLine]));
+                    proc.io.write(new Uint8Array([ASCIICodes.NewLine]));
                     proc.data.state = ShellState.RUNNING_PROGRAM;
 
-                    proc.data.runningProc = proc.spawn(proc, program, parseArgs(proc.data.promptBuffer), undefined, (_, status) => {
-                        (<ShellData>proc.data).state = ShellState.RUNNING_PROGRAM;
-                        (<ShellData>proc.data).promptBuffer = "";
+                    proc.data.runningProc = proc.spawn(proc, program, parseArgs(proc.data.promptBuffer), undefined, {
+                        on_close(_, status) {
+                            (<ShellData>proc.data).state = ShellState.RUNNING_PROGRAM;
+                            (<ShellData>proc.data).promptBuffer = "";
 
-                        // continue reading bytes from buf
-                        if (bytes.byteLength > i + 1) {
-                            read(proc, bytes.subarray(i));
+                            // continue reading bytes from buf
+                            if (bytes.byteLength > i + 1) {
+                                read(proc, bytes.subarray(i));
+                            }
+
+                            delete (<ShellData>proc.data).runningProc;
+                            writePrompt(proc);
+                        },
+                        io_on_write(bytes) {
+                            proc.io.write(bytes)
+                        },
+                        io_on_flush() {
+                            proc.io.flush()
                         }
-
-                        delete (<ShellData>proc.data).runningProc;
-                        writePrompt(proc);
                     });
 
                     break char_parse_loop;
@@ -475,7 +499,7 @@ function read(proc: Process<ShellData>, bytes: Uint8Array) {
 
                         if (step > 0) {
                             proc.data.cursorX += step;
-                            proc.term_write(CSI(...uint8_fromString(step.toString()), ASCIICodes.C));
+                            proc.io.write(CSI(...uint8_fromString(step.toString()), ASCIICodes.C));
                         }
 
                     }; break;
@@ -507,7 +531,7 @@ function read(proc: Process<ShellData>, bytes: Uint8Array) {
 
                         if (step > 0) {
                             proc.data.cursorX -= step;
-                            proc.term_write(CSI(...uint8_fromString(step.toString()), ASCIICodes.D));
+                            proc.io.write(CSI(...uint8_fromString(step.toString()), ASCIICodes.D));
                         }
                     }; break;
                     case ASCIICodes.F: { // End
@@ -516,14 +540,14 @@ function read(proc: Process<ShellData>, bytes: Uint8Array) {
                         // Note There is a problem due to the terminal renederer auto wrapping text and then the states diverge
 
                         proc.data.cursorX = proc.data.promptXOffset + proc.data.promptBuffer.length + 1;
-                        proc.term_write(CSI(...uint8_fromString((
+                        proc.io.write(CSI(...uint8_fromString((
                             proc.data.cursorX
                         ).toString()), ASCIICodes.G));
                     }; break;
                     case ASCIICodes.H: { // Home
                         // move cursor to Begin
                         proc.data.cursorX = proc.data.promptXOffset + 1;
-                        proc.term_write(CSI(...uint8_fromString((
+                        proc.io.write(CSI(...uint8_fromString((
                             proc.data.cursorX
                         ).toString()), ASCIICodes.G));
                     }; break;
@@ -546,11 +570,22 @@ function read(proc: Process<ShellData>, bytes: Uint8Array) {
             throw new Error(DAEMON_SHELL.name + ": this.runningProc is undefined, ", proc.data.runningProc);
         }
 
+        if (proc.data.runningProc.io.read) {
+            if (proc.data.runningProc.io.read(bytes)) {
+                return; // by returning a truthy value it assumes that spawned process takes care of all input
+            }
+        }
+
         if (bytes.includes(3)) {
             proc.data.runningProc.close(proc.data.runningProc, ProcessSignal.INTERRUPT);
         }
     }
 
+    if (proc.data.state === ShellState.LAZY_WRITING && proc.data.runningProc) {
+        if (proc.data.runningProc.io.read) {
+            proc.data.runningProc.io.read(bytes)
+        }
+    }
 }
 
 export const DAEMON_SHELL: Program = {
@@ -566,7 +601,11 @@ export const DAEMON_SHELL: Program = {
             runningProc: undefined
         };
 
-        proc.term_read(proc, read)
+        proc.device.io_terminal_attach(proc.io);
+        proc.io.read = (bytes) => {
+            read(proc, bytes)
+        }
+
         writePrompt(proc);
 
         return ProcessSignal.__EXPLICIT__;

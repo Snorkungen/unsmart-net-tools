@@ -240,7 +240,7 @@ function handleExternalExit(proc: Process<PingData>) {
     if (count == 0) return;
     let avg = (sum / count);
 
-    proc.term_write(uint8_fromString(
+    proc.io.write(uint8_fromString(
         `\n${count} replies received, with an average time of ${avg.toFixed(1)} ms`
     ))
 }
@@ -264,7 +264,7 @@ function handlereply(proc: Process<PingData>, source: BaseAddress, bytes: number
 
     let time = Date.now() - sendTime;
 
-    proc.term_write(uint8_fromString(
+    proc.io.write(uint8_fromString(
         `${bytes} bytes from ${source}: seq=${seq} ttl=${ttl} time=${time} ms\n`
     ));
 
@@ -304,7 +304,7 @@ export const DEVICE_PROGRAM_PING: Program = {
             destination = new IPV6Address(target);
         } else {
             // maybe in future dns resolution
-            proc.term_write(uint8_fromString(
+            proc.io.write(uint8_fromString(
                 "Failed to parse given address: " + target
             ));
 
@@ -313,14 +313,14 @@ export const DEVICE_PROGRAM_PING: Program = {
 
         let route = proc.device.route_resolve(destination);
         if (!route) {
-            proc.term_write(MSG_DST_UNREACH);
+            proc.io.write(MSG_DST_UNREACH);
             return ProcessSignal.EXIT;
         }
 
         const on_error: HeadlessPingReceiveErrorHandler = (e) => {
             if (e === "DESTINATION_UNREACHABLE") {
                 proc.data.contact.close(proc.data.contact);
-                proc.term_write(MSG_DST_UNREACH)
+                proc.io.write(MSG_DST_UNREACH)
                 proc.close(proc, ProcessSignal.ERROR);
             }
         }

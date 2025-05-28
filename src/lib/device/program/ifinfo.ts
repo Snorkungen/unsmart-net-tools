@@ -15,7 +15,7 @@ function cidrNotate(addr?: BaseAddress, len?: number): string {
     return str;
 }
 
-function twrite(proc: Process, str: string) { proc.term_write(uint8_fromString(str)); }
+function twrite(proc: Process, str: string) { proc.io.write(uint8_fromString(str)); }
 
 const DEVICE_PROGRAM_IFINFO_SET4: Program = {
     name: "set4",
@@ -158,7 +158,7 @@ export const DEVICE_PROGRAM_IFINFO: Program = {
             }
 
         }
-        proc.term_write(formatTable(table));
+        proc.io.write(formatTable(table));
 
         return ProcessSignal.EXIT;
     },
