@@ -441,7 +441,7 @@ export class Device {
                 this.processes[i]!.status = "MARKED_CLOSED";
                 this.process_close(this.processes[i]!, init_sig);
 
-                if (!parent_proc) {
+                if (!parent_proc && this.processes[i]) {
                     this.processes[i]!.status = "CLOSED";
                     delete this.processes[i]
                 }
@@ -525,11 +525,6 @@ export class Device {
 
         // delete journal entries
         this.process_journal_entries.delete(proc.id);
-
-        if (this.processes[i].status == "MARKED_CLOSED") {
-            this.processes[i].status = "CLOSED"
-            return;
-        };
 
         this.processes[i]!.status = "CLOSED";
         delete this.processes[i];
