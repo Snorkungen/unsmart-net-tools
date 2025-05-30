@@ -108,6 +108,7 @@ export interface Contact<AF extends ContactAF = ContactAF, Proto extends Contact
 
     /** address naming is just a placeholder */
     address?: ContactAddress<Addr>;
+    root_contact?: Contact;
 
     /* Methods */
     close(contact: Contact<AF, Proto, AT, Addr>): DeviceResult<ContactError>;
@@ -1765,6 +1766,13 @@ export class Device {
     contact_close(contact: Contact): DeviceResult<ContactError> {
         __contact_throw_if_closed(contact);
 
+        // remove contacts created by contact
+        for (let i = 0; i < this.contacts.length; i++) {
+            if (this.contacts[i]?.root_contact === contact) {
+                this.contacts[i]!.close(this.contacts[i]!);
+            }
+        }
+
         // remove listeners for contact
         for (let i = 0; i < this.contact_receivers.length; i++) {
             if (this.contact_receivers[i]?.contact != contact) { continue; }
@@ -2017,7 +2025,9 @@ export class Device {
             // a more specific contact can't be created
             console.warn("THIS LOGIC, is not fully fleshed out, because this should be an error, because the same foreign contact is trying to contact a second time")
         } else {
+            let root_contact = contact;
             contact = this.contact_create(contact.addressFamily, "TCP").data!; // create new contact
+            contact.root_contact = root_contact;
             let bind_result = this.contact_bind(contact, input_caddr);
             if (!bind_result.success)
                 return;
