@@ -545,8 +545,6 @@ export class Device {
         }
         delete this.process_resources[proc.id];
 
-        // remove terminal readers
-        this.terminal_readers = this.terminal_readers.filter((tr) => tr.proc != proc);
 
         // delete journal entries
         this.process_journal_entries.delete(proc.id);
@@ -585,8 +583,6 @@ export class Device {
     }
 
     private terminal?: DeviceTerminal;
-    /** NOTE this has to stay ordered for certain logic to work */
-    private terminal_readers: { proc: Process, reader: ProcessTerminalReadFunc }[] = [];
     terminal_attach(term: DeviceTerminal) {
         if (this.terminal) {
             this.terminal_detach();
@@ -604,12 +600,6 @@ export class Device {
     }
 
     private terminal_read(bytes: Uint8Array) {
-        for (let tr of this.terminal_readers) {
-            if (tr.reader(tr.proc, bytes)) {
-                break;
-            }
-        }
-
         for (let attached_io of this.io_terminal_attached) {
             if (!attached_io.active || !attached_io.read) continue;
             attached_io.read(bytes);
@@ -658,13 +648,6 @@ export class Device {
                 delete this.on_flush;
                 delete this.on_write;
             }
-        }
-    }
-
-    process_termwriteto(proc: Process, bytes: Uint8Array) {
-        for (let tr of this.terminal_readers) {
-            if (proc !== tr.proc) continue;
-            if (tr.reader(proc, bytes)) break;
         }
     }
 
