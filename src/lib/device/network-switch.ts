@@ -7,6 +7,7 @@ import { MACAddress } from "../address/mac";
 import { uint8_equals } from "../binary/uint8-array";
 import { deinitialize, initialization, received_config_bpdu, received_tcn_bpdu, STP_DESTINATION } from "./internals/stp";
 import { BPDU_C_HEADER, BPDU_TCN_HEADER } from "../header/bpdu";
+import { DeviceResources } from "./internals/resources";
 
 export enum NetworkSwitchPortState {
     DISABLED = 0,
@@ -34,6 +35,8 @@ export type NetworkSwitchData = {
 
     /** access port by port_id */
     ports: { [x: number]: NetworkSwitchPort };
+
+    resources: DeviceResources
 };
 
 export class NetworkSwitch extends Device {
@@ -47,6 +50,7 @@ export class NetworkSwitch extends Device {
             this.data = {
                 macaddresses: [],
                 ports: [],
+                resources: this.resources
             }
         );
 

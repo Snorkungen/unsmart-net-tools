@@ -14,12 +14,12 @@ export function termquery(proc: Process): Promise<TermQuery> {
     const data: TermQuery = {};
 
     return new Promise((resolve) => {
-        // !TODO: use a future better proc-device scheduling
-        const sched_id = proc.device.schedule(() => {
-
-            proc.io.read = io_reader;
-            resolve(data)
-        }, MAX_QUERY_WAIT);
+        let max_timer = proc.resources.create(
+            proc.device.schedule(() => {
+                proc.io.read = io_reader;
+                resolve(data)
+            }, MAX_QUERY_WAIT)
+        );
 
         let original_cursor_position: undefined | number = undefined;
         let io_reader = proc.io.read;
@@ -66,7 +66,7 @@ export function termquery(proc: Process): Promise<TermQuery> {
                     proc.io.write(CSI(...numbertonumbers(original_cursor_position), ASCIICodes.G))
 
                     proc.io.read = io_reader;
-                    proc.device.unschedule(sched_id);
+                    max_timer.close();
                     resolve(data);
                 }
 
@@ -79,10 +79,12 @@ export function termquery(proc: Process): Promise<TermQuery> {
         }
 
         // fix issue with some stuff
-        proc.device.schedule(() => {
-            // issue query for cursor position ^[6n
-            proc.io.write(CSI(0x36, ASCIICodes.n));
-            proc.io.flush();
-        })
+        proc.resources.create(
+            proc.device.schedule(() => {
+                // issue query for cursor position ^[6n
+                proc.io.write(CSI(0x36, ASCIICodes.n));
+                proc.io.flush();
+            })
+        )
     })
 }

@@ -16,6 +16,7 @@ import { BaseInterface, VlanInterface, EthernetInterface } from "./interface";
 import { TCP_FLAGS, TCP_HEADER, TCP_OPTION_KINDS } from "../header/tcp";
 import { TCPConnection, TCPState, add_u32, tcp_connection_id, tcp_read_options, tcp_set_option } from "./internals/tcp";
 import { DeviceEvent, DeviceEventHandler, DeviceEventType } from "./internals/event";
+import { DeviceResource, DeviceResources } from "./internals/resources";
 
 // source <https://stackoverflow.com/a/63029283>
 export type DropFirst<T extends unknown[]> = T extends [any, ...infer U] ? U : never;
@@ -179,10 +180,12 @@ export type Process<DT = any> = {
     journal(proc: Process, type: number, message: string): void;
 
     io: DeviceIO;
+    resources: DeviceResources;
 
     contact_create(proc: Process, ...values: Parameters<Device["contact_create"]>): ReturnType<Device["contact_create"]>
 
     // !TODO: for now it is the users responsibility to close contacts
+
 }
 
 export type DeviceTerminal = {
@@ -282,6 +285,8 @@ export class Device {
     name = Math.floor(Math.random() * 10_000).toString() + "B2";
 
     constructor() { }
+
+    resources = new DeviceResources();
 
     /** this approach is different in such a way that it allows to select for a specific interfac if that something i would like to do */
     private log_records: { time: number, buffer: Uint8Array, iface: BaseInterface }[] = []
@@ -438,6 +443,8 @@ export class Device {
             },
 
             io: io,
+
+            resources: new DeviceResources()
         };
 
         this.process_resources[this.processes[i]!.id] = [];
@@ -1324,13 +1331,13 @@ export class Device {
         // loopback
         data = { ...data, rcvif: route.iface, loopback: true };
 
-        if (destination instanceof IPV4Address) this.schedule(() => {
+        if (destination instanceof IPV4Address) this.resources.create(this.schedule(() => {
             this.log({ ...data, buffer: ETHERNET_HEADER.create({ ethertype: ETHER_TYPES.IPv4, payload: data.buffer }).getBuffer() }, "LOOPBACK")
             this.input_ipv4(IPV4_HEADER.from(data.buffer), data);
-        }); else if (destination instanceof IPV6Address) this.schedule(() => {
+        })); else if (destination instanceof IPV6Address) this.resources.create(this.schedule(() => {
             this.log({ ...data, buffer: ETHERNET_HEADER.create({ ethertype: ETHER_TYPES.IPv6, payload: data.buffer }).getBuffer() }, "LOOPBACK")
             this.input_ipv6(IPV6_HEADER.from(data.buffer), data);
-        }); else {
+        })); else {
             // !TODO: check for iface header and proceed accordingly
             return { success: !data.broadcast, error: "HOSTUNREACH", data: undefined }
         }
@@ -1522,6 +1529,7 @@ export class Device {
         delete this.interfaces_mcast_subscriptions[iface.id()];
 
         iface.disconnect()
+        iface.resources.close();
         // @ts-expect-error
         delete iface.device
         iface.up = false;
@@ -2486,14 +2494,33 @@ export class Device {
     }
 
     schedule_default_delay = 0;
-    schedule<F extends () => void>(f: F, delay: number = this.schedule_default_delay) {
+    schedule(cb: () => void, delay: number = this.schedule_default_delay): DeviceResource {
         if (delay < 0) { delay = this.schedule_default_delay; }
+        
+        const scheduled_callback = {
+            id: -1,
+            abort_controller: new AbortController(),
+            cb: cb,
 
-        // in future, create my own runtime because why not complexity is fun.
-        return window.setTimeout(f, delay)
-    }
+            close() {
+                if (this.abort_controller.signal.aborted) return;
+                this.abort_controller.abort()
+                window.clearTimeout(this.id);
+                return;
+            },
+            start() {
+                if (this.id >= 0) return this;
+                this.id = window.setTimeout(run_scheduled_cb, delay, this.abort_controller, this.cb);
+                return this;
+            }
+        }
 
-    unschedule(id: number) {
-        window.clearTimeout(id);
+        return scheduled_callback.start();
     }
+}
+
+function run_scheduled_cb(ab: AbortController, cb: () => void) {
+    if (ab.signal.aborted) return;
+    cb();
+    ab.abort();
 }

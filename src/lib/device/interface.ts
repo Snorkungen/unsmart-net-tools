@@ -7,6 +7,7 @@ import { IPV6Address } from "../address/ipv6";
 import { MACAddress } from "../address/mac";
 import { uint8_fromNumber, uint8_concat, uint8_equals } from "../binary/uint8-array";
 import { ETHERNET_HEADER, ETHER_TYPES, ETHERNET_DOT1Q_HEADER } from "../header/ethernet";
+import { DeviceResource, DeviceResources } from "./internals/resources";
 
 type DeviceAddress<AT extends typeof BaseAddress = typeof BaseAddress> = {
     address: InstanceType<AT>;
@@ -64,6 +65,7 @@ export class BaseInterface {
     connect(target: BaseInterface) { }
     disconnect() { }
 
+    resources = new DeviceResources();
 }
 
 let macAddressCount = 0;
@@ -137,19 +139,19 @@ export class EthernetInterface extends BaseInterface {
 
         if (uint8_equals(etherheader.get("smac").buffer, etherheader.get("dmac").buffer)) {
             // this was meant for myself
-            this.device.schedule(() => {
+            this.resources.create(this.device.schedule(() => {
                 let lodata = { buffer: etherheader.getBuffer(), rcvif: this, broadcast: undefined };
                 this.device.log(lodata, "RECEIVE"); this.device.input_ether(etherheader, lodata)
-            });
+            }))
             return { success: true, data: undefined }
         }
 
         if (false && etherheader.get("dmac").isBroadcast()) {
             // here i should send to the interface to itself but i don't want that
-            this.device.schedule(() => {
+            this.resources.create(this.device.schedule(() => {
                 let lodata = { buffer: etherheader.getBuffer(), rcvif: this, broadcast: true };
                 this.device.log(lodata, "RECEIVE"); this.device.input_ether(etherheader, lodata)
-            });
+            }));
         }
 
         // !TODO: mode to enable user to skip over vlan handling
@@ -187,13 +189,13 @@ export class EthernetInterface extends BaseInterface {
 
         this.device.event_dispatch("interface_send", this);
         // somehow put on wire
-        this.device.schedule(() => {
+        this.resources.create(this.device.schedule(() => {
             this.device.log({
                 buffer: etherheader.getBuffer(),
                 rcvif: this
             }, "SEND")
             this.target && this.target.receive.call(this.target, etherheader)
-        }, undefined);
+        }, undefined));
         return { success: true, data: undefined }
     }
 
@@ -240,11 +242,10 @@ export class EthernetInterface extends BaseInterface {
             return; // Drop Frame
         }
 
-        this.device.schedule(() => {
-
+        this.resources.create(this.device.schedule(() => {
             this.device.log(data, "RECEIVE");
             this.device.input_ether(etherheader, data);
-        }, this.receive_delay)
+        }, this.receive_delay))
 
         this.device.event_dispatch("interface_recv", this);
     }
@@ -261,6 +262,8 @@ export class EthernetInterface extends BaseInterface {
 
         this.device.event_dispatch("interface_connect", this);
         disconnect();
+
+        this.resources.close();
     }
 
     connect(target: EthernetInterface) {
@@ -359,13 +362,13 @@ export class VlanInterface extends BaseInterface {
             return; // Drop Frame
         }
 
-        this.device.schedule(() => {
+        this.resources.create(this.device.schedule(() => {
             if (this.log_input) {
                 // this.device.log(data, "RECEIVE")
             }
 
             this.device.input_ether(etherframe, data)
-        })
+        }))
     }
 
     output(data: NetworkData, destination: BaseAddress, rtentry?: DeviceRoute<typeof BaseAddress> | undefined): DeviceResult<"UDUMB"> {
@@ -417,10 +420,10 @@ export class VlanInterface extends BaseInterface {
 
         let iface = this.macaddresses.get(etherheader.get("dmac").toString());
         if (iface) {
-            this.device.schedule(() => {
+            this.resources.create(this.device.schedule(() => {
                 if (!iface) return;
                 iface.output(data, new BaseAddress(etherheader.getBuffer()), rtentry)
-            })
+            }))
             return { success: true, data: undefined };
         }
 
@@ -429,11 +432,11 @@ export class VlanInterface extends BaseInterface {
             return { success: false, error: "UDUMB", message: "vlanif no outgoing interface found for frame" }
         }
 
-        this.device.schedule(() => {
+        this.resources.create(this.device.schedule(() => {
             for (iface of out_interfaces) {
                 iface && iface.output(data, new BaseAddress(etherheader.getBuffer()), rtentry);
             }
-        })
+        }))
 
         return { success: true, data: undefined }
     }

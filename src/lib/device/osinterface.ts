@@ -209,13 +209,13 @@ export class OSInterface extends BaseInterface {
     input(ethertype: EtherType, data: NetworkData) {
         data.rcvif = this
         data.broadcast = false
-        this.device.schedule(() => {
+        this.resources.create(this.device.schedule(() => {
             this.device.log({ ...data, buffer: ETHERNET_HEADER.create({ ethertype: ethertype, payload: data.buffer }).getBuffer() }, "RECEIVE")
 
             if (ethertype == ETHER_TYPES.IPv4) {
                 this.device.input_ipv4(IPV4_HEADER.from(data.buffer), data)
             }
-        })
+        }))
     }
 
     start(): DeviceResult {
