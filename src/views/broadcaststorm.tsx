@@ -98,19 +98,18 @@ function initiateStorm() {
 export function BroadcastStorm() {
     toggle_redundant_link()
 
-    let procs: Process[] = [];
-
     return <div>
         <button onclick={toggle_redundant_link}>Turn {redundant_connection() ? "Off 🟥" : "On 🟢"} redundant connection</button>
         <button onclick={initiateStorm}>Act!</button>
         <button onclick={() => {
-            procs.push(sw1.process_start(NETWORK_SWITCH_STP_DAEMON)!,
-                sw2.process_start(NETWORK_SWITCH_STP_DAEMON)!,
-                sw3.process_start(NETWORK_SWITCH_STP_DAEMON)!)
+            sw1.process_start(NETWORK_SWITCH_STP_DAEMON)
+            sw2.process_start(NETWORK_SWITCH_STP_DAEMON)
+            sw3.process_start(NETWORK_SWITCH_STP_DAEMON)
         }}>Start</button>
         <button onclick={() => {
-            procs.forEach(p => p.close(p, ProcessSignal.INTERRUPT));
-            procs.length = 0;
+            let p = sw1.processes.find(p => p?.program.name === NETWORK_SWITCH_STP_DAEMON.name); (p) && p.close(p, ProcessSignal.INTERRUPT);
+            p = sw2.processes.find(p => p?.program.name === NETWORK_SWITCH_STP_DAEMON.name); (p) && p.close(p, ProcessSignal.INTERRUPT);
+            p = sw3.processes.find(p => p?.program.name === NETWORK_SWITCH_STP_DAEMON.name); (p) && p.close(p, ProcessSignal.INTERRUPT);
 
             if (!redundant_connection()) { // fix state
                 network_switch_set_port_state(sw2, sw2_sw3_iface, NetworkSwitchPortState.BLOCKING);
