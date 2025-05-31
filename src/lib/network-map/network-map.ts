@@ -83,24 +83,22 @@ const DAEMON_NETWORK_MAP_DEVICE_MONITOR: Program<{
 
         proc.data = data;
 
-        let events = [
-            proc.device.event_create([
-                "interface_connect",
-                "interface_disconnect"
-            ], network_map_device_ethiface_on_connect_or_disconnect(state, shape)),
-            proc.device.event_create("interface_recv", network_map_device_ethiface_on_send_or_recv(state, shape, "recv")),
-            proc.device.event_create("interface_send", network_map_device_ethiface_on_send_or_recv(state, shape, "send")),
+        proc.resources.create(proc.device.event_create([
+            "interface_connect",
+            "interface_disconnect"
+        ], network_map_device_ethiface_on_connect_or_disconnect(state, shape)))
+        proc.resources.create(
+            proc.device.event_create("interface_recv", network_map_device_ethiface_on_send_or_recv(state, shape, "recv"))
+        )
+        proc.resources.create(
+            proc.device.event_create("interface_send", network_map_device_ethiface_on_send_or_recv(state, shape, "send"))
+        );
+        proc.resources.create(
             proc.device.event_create([
                 "interface_add",
                 "interface_remove"
             ], () => network_map_device_refresh_interfaces(state, shape, proc.device, if_delay, dimensions.height, dimensions.ifsize, dimensions.ifpad))
-        ];
-
-        proc.handle(proc, () => {
-            for (let event of events) {
-                event.close();
-            }
-        })
+        )
 
         return ProcessSignal.__EXPLICIT__;
     }

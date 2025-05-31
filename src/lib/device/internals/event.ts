@@ -1,4 +1,5 @@
 import type { BaseInterface } from "../interface";
+import { DeviceResource } from "./resources";
 
 type DeviceEventMap = {
     "interface_add": [];
@@ -21,5 +22,4 @@ export type DeviceEventHandler<K extends DeviceEventType> = (...a: DeviceEventMa
 export type DeviceEvent<T extends DeviceEventType = DeviceEventType> = {
     keys: T[];
     handler: DeviceEventHandler<T>;
-    close(): void;
-}
+} & DeviceResource;

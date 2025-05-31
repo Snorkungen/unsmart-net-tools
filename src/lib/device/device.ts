@@ -346,34 +346,21 @@ export class Device {
         this.event_dispatch("store_delete", key);
     }
 
-    private events: (DeviceEvent<DeviceEventType> | undefined)[] = [];
+    private events = new DeviceResources<DeviceEvent>();
     event_create<T extends DeviceEventType>(keys: T[] | T, handler: DeviceEventHandler<T>): DeviceEvent {
-        let i = -1; while (this.events[++i]) { continue; }
-
-        let device = this;
-        this.events[i] = {
+        return this.events.create({
+            abort_controller: new AbortController(),
             handler: handler as any,
             keys: Array.isArray(keys) ? keys : [keys],
             close() {
-                device.event_close(this)
+                if (this.abort_controller.signal.aborted) return;
+                this.abort_controller.abort();
             },
-        };
-
-        return this.events[i] as DeviceEvent;
-    }
-
-    private event_close(event: DeviceEvent<DeviceEventType>) {
-        let i = 0; for (; i < this.events.length; i++) {
-            if (this.events[i] === event) break;
-        }
-        if (i >= this.events.length) {
-            return; // the event does not exist, this should probably throw for the sake of something
-        }
-        delete this.events[i];
+        })
     }
 
     event_dispatch<T extends DeviceEventType>(evt: T, ...params: Parameters<DeviceEventHandler<T>>) {
-        for (let event of this.events) {
+        for (let event of this.events.resources) {
             if (event && event.keys.includes(evt)) {
                 event.handler(...params);
             }
@@ -557,6 +544,7 @@ export class Device {
         this.process_journal_entries.delete(proc.id);
 
         proc.io.close();
+        proc.resources.close();
 
         this.processes[i]!.status = "CLOSED";
         delete this.processes[i];
@@ -2496,7 +2484,7 @@ export class Device {
     schedule_default_delay = 0;
     schedule(cb: () => void, delay: number = this.schedule_default_delay): DeviceResource {
         if (delay < 0) { delay = this.schedule_default_delay; }
-        
+
         const scheduled_callback = {
             id: -1,
             abort_controller: new AbortController(),
