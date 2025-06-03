@@ -85,14 +85,14 @@ function initiateStorm() {
     let source_contact = source_device.contact_create("IPv4", "UDP").data!;
 
     let target_contact = target_device.contact_create("IPv4", "UDP").data!;
-    target_contact.receiveFrom(target_contact, () => {
+    target_contact.receiveFrom(() => {
         console.log("TARGET RECEIVED MESSAGE")
         alert("received message")
-        target_contact.close(target_contact)
+        target_contact.close()
     }, { sport: 100 });
 
-    source_contact.sendTo(source_contact, { buffer: new Uint8Array([1, 0]) }, { dport: 100, daddr: target_address });
-    source_contact.close(source_contact);
+    source_contact.sendTo({ buffer: new Uint8Array([1, 0]) }, { dport: 100, daddr: target_address });
+    source_contact.close();
 }
 
 export function BroadcastStorm() {

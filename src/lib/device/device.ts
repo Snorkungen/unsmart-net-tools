@@ -155,9 +155,9 @@ export type ContactAddress<Addr extends BaseAddress> = {
     saddr: Addr;
     daddr: Addr;
 }
-
+type DeviceContactMethod<T extends (...params: any[]) => any> = (contact: Contact, ...params: Parameters<T>) => ReturnType<T>
 export interface Contact<AF extends ContactAF = ContactAF, Proto extends ContactProto = ContactProto, AT extends typeof BaseAddress = typeof BaseAddress, Addr extends BaseAddress = InstanceType<AT>> {
-    status: "OPEN" | "CLOSED";
+    abort_controller: AbortController;
 
     addressFamily: AF;
     proto: Proto;
@@ -167,23 +167,23 @@ export interface Contact<AF extends ContactAF = ContactAF, Proto extends Contact
     root_contact?: Contact;
 
     /* Methods */
-    close(contact: Contact<AF, Proto, AT, Addr>): DeviceResult<ContactError>;
-    bind(contact: Contact<AF, Proto, AT, Addr>, caddr: ContactAddress<Addr>): DeviceResult<ContactError, typeof caddr>;
+    close(): DeviceResult<ContactError>;
+    bind(caddr: ContactAddress<Addr>): DeviceResult<ContactError, typeof caddr>;
 
-    receive(contact: Contact, receiver: ContactReceiver, options?: ContactReceiveOptions): DeviceResult<ContactError>;
-    receiveFrom(contact: Contact, receiver: ContactReceiver, caddr: Partial<ContactAddress<Addr>>, options?: ContactReceiveOptions): DeviceResult<ContactError>;
+    receive(receiver: ContactReceiver, options?: ContactReceiveOptions): DeviceResult<ContactError>;
+    receiveFrom(receiver: ContactReceiver, caddr: Partial<ContactAddress<Addr>>, options?: ContactReceiveOptions): DeviceResult<ContactError>;
 
-    send(contact: Contact<AF, Proto, AT, Addr>, data: NetworkData, destination?: Addr, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
-    sendTo(contact: Contact<AF, Proto, AT, Addr>, data: NetworkData, caddr?: Partial<ContactAddress<Addr>>, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
+    send(data: NetworkData, destination?: Addr, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
+    sendTo(data: NetworkData, caddr?: Partial<ContactAddress<Addr>>, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
 
-    connect(contact: Contact<AF, Proto, AT, Addr>, caddr?: Partial<ContactAddress<Addr>>, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>
-    listen(contact: Contact<AF, "TCP", AT, Addr>): DeviceResult<ContactError>
-    accept(contact: Contact<AF, "TCP", AT, Addr>, accept_handler: (new_contact: Contact) => boolean): DeviceResult<ContactError>
+    connect(caddr?: Partial<ContactAddress<Addr>>, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>
+    listen(): DeviceResult<ContactError>
+    accept(accept_handler: (new_contact: Contact) => boolean): DeviceResult<ContactError>
 
     /** this method is to allows for, handling of asynchronous errors \
      * There might be a problem with the contact being closed
      */
-    on_error(contact: Contact, on_error_handler: (contact: Contact, error: DeviceResult<ContactError>) => void): void
+    on_error(on_error_handler: (contact: Contact, error: DeviceResult<ContactError>) => void): void
 }
 
 export type Program<DT = any> = {
@@ -208,7 +208,6 @@ export enum ProcessSignal {
 export type ProcessID = string; // number[] !TODO: it could be an array of numbers becouse then it would make things easier in coding
 export type ProcessHandler = (proc: Process, signal: ProcessSignal) => void;
 export type ProcessTerminalReadFunc = (proc: Process, bytes: Uint8Array) => void | true;
-type ProcessResource = Contact;
 type ProcessStartHandlers = Partial<{
     on_close: ProcessHandler;
     io_on_write: DeviceIO["on_write"];
@@ -237,10 +236,7 @@ export type Process<DT = any> = {
     io: DeviceIO;
     resources: DeviceResources;
 
-    contact_create(proc: Process, ...values: Parameters<Device["contact_create"]>): ReturnType<Device["contact_create"]>
-
     // !TODO: for now it is the users responsibility to close contacts
-
 }
 
 export type DeviceTerminal = {
@@ -249,11 +245,6 @@ export type DeviceTerminal = {
     flush(): void;
 }
 
-function __contact_throw_if_closed(contact: Contact) {
-    if (contact.status === "CLOSED") {
-        throw new Error("contact has been closed");
-    }
-}
 function __address_is_unset(address: BaseAddress): boolean {
     let sum = 0, i = 0; while (i < address.buffer.byteLength) {
         sum += address.buffer[i++];
@@ -427,7 +418,6 @@ export class Device {
     */
     programs: Program[] = [];
     processes: (Process | undefined)[] = [];
-    private process_resources: Record<ProcessID, (ProcessResource | undefined)[]> = {};
     private process_handlers: ({ proc: Process, handler: ProcessHandler, id: ProcessID } | undefined)[] = [];
     private PROCESS_ID_SEPARATOR = ":";
     private process_journal_entries: Map<string, [type: number, timestamp: number, message: string][]> = new Map();
@@ -476,21 +466,10 @@ export class Device {
             handle: this.process_handle.bind(this),
             journal: this.process_journal.bind(this),
 
-            contact_create(proc, af, proto) {
-                let res = this.device.contact_create(af, proto);
-                if (res.success == false) {
-                    return res;
-                }
-                this.device.process_init_resource(proc, res.data)
-
-                return res;
-            },
-
             resources: proc_resources,
             io: proc_resources.create(io),
         };
 
-        this.process_resources[this.processes[i]!.id] = [];
 
         if (parent_proc && handlers && handlers.on_close) {
             this.process_handle(this.processes[i]!, handlers.on_close, parent_proc.id);
@@ -587,15 +566,6 @@ export class Device {
             }
         }
 
-        // close resources and stuff
-        for (let resource of this.process_resources[proc.id]) {
-            if (!resource) continue;
-            // !TODO: the types are a bit weird since the only avaible resource is a contact
-            resource.close(resource);
-        }
-        delete this.process_resources[proc.id];
-
-
         // delete journal entries
         this.process_journal_entries.delete(proc.id);
 
@@ -676,20 +646,6 @@ export class Device {
         delete io.on_close;
         delete io.on_flush;
         this.io_terminal_attached.filter(v => v != io);
-    }
-
-    private process_init_resource(proc: Process, resource: ProcessResource) {
-        let i = -1; while (this.process_resources[proc.id][++i]) { continue; };
-        this.process_resources[proc.id][i] = resource;
-
-        let resource_close = resource.close;
-        resource.close = (...values) => {
-            let j = this.process_resources[proc.id].findLastIndex(r => r == resource);
-            if (j >= 0) {
-                delete this.process_resources[proc.id][j];
-            }
-            return resource_close(...values);
-        }
     }
 
     input_tcp4(iphdr: typeof IPV4_HEADER, data: NetworkData) {
@@ -1708,9 +1664,9 @@ export class Device {
 
     /** this is to ensure that contacts get given unique ephemeral ports */
     private contact_ephemport = 4001
-    private contacts: (Contact<ContactAF, ContactProto> | undefined)[] = [];
+    private contacts = new DeviceResources<Contact>();
     private contact_receivers: ({ receiver: ContactReceiver, contact: Contact, options: ContactReceiveOptions } | undefined)[] = [];
-    private contact_error_handlers = new Array<[Contact, handler: Parameters<Contact["on_error"]>[1]]>()
+    private contact_error_handlers = new Array<[Contact, handler: Parameters<Contact["on_error"]>[0]]>()
     contact_create<CAF extends ContactAF, CProto extends ContactProto>(addressFamily: CAF, proto: CProto): DeviceResult<ContactError, Contact<CAF, CProto>> {
         // do some rules checking
         if (addressFamily === "RAW" && proto !== "RAW") {
@@ -1718,13 +1674,13 @@ export class Device {
         }
 
         // methods for sending and doing stuff
-        let m_close: Contact["close"],
-            m_send: Contact["send"],
-            m_sendTo: Contact["sendTo"],
-            m_receiveFrom: Contact["receiveFrom"],
-            m_connect: Contact["connect"],
-            m_listen: Contact["listen"],
-            m_accept: Contact["accept"];
+        let m_close: DeviceContactMethod<Contact["close"]>,
+            m_send: DeviceContactMethod<Contact["send"]>,
+            m_sendTo: DeviceContactMethod<Contact["sendTo"]>,
+            m_receiveFrom: DeviceContactMethod<Contact["receiveFrom"]>,
+            m_connect: DeviceContactMethod<Contact["connect"]>,
+            m_listen: DeviceContactMethod<Contact["listen"]>,
+            m_accept: DeviceContactMethod<Contact["accept"]>;
 
         m_close = this.contact_close;
         m_connect = this.contact_method_not_supported;
@@ -1750,37 +1706,53 @@ export class Device {
             return { success: false, error: undefined, message: "could not determine methods based on ContactProto: " + proto };
         }
 
-        let i = -1; while (this.contacts[++i]) { continue; }
-        this.contacts[i] = {
-            status: "OPEN",
+        const device = this;
+        const contact = this.contacts.create({
+            abort_controller: new AbortController(),
             addressFamily: addressFamily,
             proto: proto,
 
-            close: m_close.bind(this),
-            bind: this.contact_bind.bind(this),
+            close() {
+                return m_close.call(device, this);
+            },
+            bind(caddr) {
+                return device.contact_bind(this, caddr);
+            },
+            receive(...p) {
+                return device.contact_receive(this, ...p);
+            },
+            receiveFrom(...p) {
+                return m_receiveFrom.call(device, this, ...p);
+            },
+            send(...p) {
+                return m_send.call(device, this, ...p);
+            },
+            sendTo(...p) {
+                return m_sendTo.call(device, this, ...p);
+            },
+            connect(...p) {
+                return m_connect.call(device, this, ...p);
+            },
+            listen(...p) {
+                return m_listen.call(device, this, ...p);
+            },
+            accept(...p) {
+                return m_accept.call(device, this, ...p);
+            },
+            on_error(...p) {
+                return device.contact_on_error(this, ...p);
+            }
+        });
 
-            receive: this.contact_receive.bind(this),
-            receiveFrom: m_receiveFrom.bind(this),
-
-            send: m_send.bind(this),
-            sendTo: m_sendTo.bind(this),
-
-            connect: m_connect.bind(this),
-            listen: m_listen.bind(this),
-            accept: m_accept.bind(this),
-
-            on_error: this.contact_on_error.bind(this)
-        };
-
-        return { success: true, data: this.contacts[i] as Contact<CAF, CProto> };
+        return { success: true, data: contact as Contact<CAF, CProto> };
     }
     contact_close(contact: Contact): DeviceResult<ContactError> {
-        __contact_throw_if_closed(contact);
+        contact.abort_controller.signal.throwIfAborted();
 
         // remove contacts created by contact
-        for (let i = 0; i < this.contacts.length; i++) {
-            if (this.contacts[i]?.root_contact === contact) {
-                this.contacts[i]!.close(this.contacts[i]!);
+        for (let i = 0; i < this.contacts.resources.length; i++) {
+            if (this.contacts.resources[i]?.root_contact === contact) {
+                this.contacts.resources[i]!.close();
             }
         }
 
@@ -1793,17 +1765,11 @@ export class Device {
         // remove error handlers
         this.contact_error_handlers = this.contact_error_handlers.filter(([c]) => c !== contact);
 
-        let i = this.contacts.indexOf(contact);
-        if (i >= 0 && this.contacts[i]) {
-            this.contacts[i]!.status = "CLOSED"
-            delete this.contacts[i];
-            return { success: true, data: undefined }
-        }
-
-        return { success: false, error: undefined, message: "could not locate contact" }
+        contact.abort_controller.abort();
+        return { success: true, error: undefined, data: undefined };
     }
     contact_bind<Addr extends BaseAddress = BaseAddress>(contact: Contact, caddr: ContactAddress<Addr>): DeviceResult<ContactError, ContactAddress<Addr>> {
-        __contact_throw_if_closed(contact);
+        contact.abort_controller.signal.throwIfAborted();
         if (contact.addressFamily == "RAW" || contact.proto == "RAW") {
             return { success: false, error: undefined, message: "cannot bind a RAW contact" };
         }
@@ -1821,7 +1787,7 @@ export class Device {
             return { success: false, error: undefined, message: "address mismatch" }
         };
 
-        for (let h_contact of this.contacts) {
+        for (let h_contact of this.contacts.resources) {
             if (!h_contact ||
                 h_contact == contact ||
                 !h_contact.address ||
@@ -1846,7 +1812,7 @@ export class Device {
         return { success: true, data: caddr }
     }
     private contact_default_receive_options: ContactReceiveOptions = {}
-    contact_receive: Contact["receive"] = (contact, receiver, options?: ContactReceiveOptions) => {
+    contact_receive: DeviceContactMethod<Contact["receive"]> = (contact, receiver, options?: ContactReceiveOptions) => {
         let i = -1; while (this.contact_receivers[++i] && this.contact_receivers[i]?.contact !== contact) { continue; }; // only one receiver per contact
 
         this.contact_receivers[i] = {
@@ -1859,7 +1825,7 @@ export class Device {
     }
 
 
-    contact_on_error: Contact["on_error"] = (contact, error_handler) => {
+    contact_on_error: DeviceContactMethod<Contact["on_error"]> = (contact, error_handler) => {
         this.contact_error_handlers.push([contact, error_handler])
     }
     private contact_dispatch_error<E extends DeviceResult<ContactError>>(contact: Contact, error: E): E {
@@ -1890,7 +1856,7 @@ export class Device {
     }
 
     private contact_method_not_supported = (contact: Contact): DeviceResult<ContactError> => {
-        __contact_throw_if_closed(contact);
+        contact.abort_controller.signal.throwIfAborted();
         return { success: false, error: undefined, message: "method not supported for protocol" }
     }
 
@@ -2081,7 +2047,7 @@ export class Device {
 
         // if there is an accept function set to do stuff
         if (receive_entry?.receiver && receive_entry.receiver !== this.tcpplaceholderreceiver) {
-            let handler = receive_entry.receiver as Parameters<Contact["accept"]>[1];
+            let handler = receive_entry.receiver as Parameters<Contact["accept"]>[0];
 
             if (!handler(contact)) {
                 this.contact_m_close_tcp(contact);
@@ -2193,11 +2159,11 @@ export class Device {
         return this.contact_output_tcp(contact, connection, tcphdr);
     }
 
-    private contact_m_close_tcp: Contact["close"] = (contact) => {
+    private contact_m_close_tcp: DeviceContactMethod<Contact["close"]> = (contact) => {
         let connection_id = tcp_connection_id(contact);
         let connection = this.tcpconnections.get(connection_id);
         if (!connection_id || !connection || !contact.address) {
-            if (contact.status === "OPEN") return this.contact_close(contact);
+            if (!contact.abort_controller.signal.aborted) return this.contact_close(contact);
             return { success: true, data: undefined }
         }
         let flags = 0;
@@ -2249,7 +2215,7 @@ export class Device {
 
         return res;
     }
-    private contact_m_send_tcp: Contact["send"] = (contact, data) => {
+    private contact_m_send_tcp: DeviceContactMethod<Contact["send"]> = (contact, data) => {
         if (!contact.address)
             return { success: false, error: undefined, message: "contact must be bound" };
 
@@ -2293,7 +2259,7 @@ export class Device {
 
         return res;
     }
-    private contact_m_connect_tcp: Contact["connect"] = (contact, caddr) => {
+    private contact_m_connect_tcp: DeviceContactMethod<Contact["connect"]> = (contact, caddr) => {
         if (!contact.address && !caddr)
             return { success: false, error: undefined, message: "contact not bound" }
 
@@ -2378,7 +2344,7 @@ export class Device {
 
         return res;
     }
-    private contact_m_listen_tcp: Contact["listen"] = (contact) => {
+    private contact_m_listen_tcp: DeviceContactMethod<Contact["listen"]> = (contact) => {
         if (!contact.address)
             return { success: false, error: undefined, message: "contact must be bound, contact not bound" };
 
@@ -2399,7 +2365,7 @@ export class Device {
         this.contact_receive(contact, this.tcpplaceholderreceiver);
         return { success: true, data: undefined, message: "contact listening" };
     }
-    private contact_m_accept_tcp: Contact["accept"] = (contact, handler) => {
+    private contact_m_accept_tcp: DeviceContactMethod<Contact["accept"]> = (contact, handler) => {
         for (let i = 0; i < this.contact_receivers.length; i++) {
             if (this.contact_receivers[i] && this.contact_receivers[i]?.contact === contact) {
                 this.contact_receivers[i]!.receiver = handler as any; // this is just a hack
@@ -2408,8 +2374,8 @@ export class Device {
         }
         return { success: true, data: undefined };
     }
-    private contact_m_send_raw: Contact["send"] = (contact, data, destination, rtentry) => {
-        __contact_throw_if_closed(contact);
+    private contact_m_send_raw: DeviceContactMethod<Contact["send"]> = (contact, data, destination, rtentry) => {
+        contact.abort_controller.signal.throwIfAborted();
 
         if (!destination) {
             return { success: false, error: undefined, message: "destination missing" }
@@ -2437,8 +2403,8 @@ export class Device {
         return { success: false, error: undefined, message: "failed to send" }
     }
 
-    private contact_m_send_udp: Contact["send"] = (contact, data, _, rtentry) => {
-        __contact_throw_if_closed(contact);
+    private contact_m_send_udp: DeviceContactMethod<Contact["send"]> = (contact, data, _, rtentry) => {
+        contact.abort_controller.signal.throwIfAborted();
         if (contact.addressFamily == "RAW") {
             return { success: false, error: undefined, message: "cannot send incorrect \"address family\": " + contact.addressFamily }
         }
@@ -2463,8 +2429,8 @@ export class Device {
         return { success: res.success, error: undefined, data: undefined, message: res.message }
     }
 
-    private contact_m_sendTo_udp: Contact["sendTo"] = (contact, data, caddr, rtentry) => {
-        __contact_throw_if_closed(contact);
+    private contact_m_sendTo_udp: DeviceContactMethod<Contact["sendTo"]> = (contact, data, caddr, rtentry) => {
+        contact.abort_controller.signal.throwIfAborted();
         if (contact.addressFamily == "RAW") {
             return { success: false, error: undefined, message: "cannot send incorrect \"address family\": " + contact.addressFamily };
         }
@@ -2501,7 +2467,7 @@ export class Device {
         return this.contact_m_send_udp(contact, data, undefined, rtentry);
     }
 
-    private contact_m_receiveFrom_udp: Contact["receiveFrom"] = (contact, receiver, caddr, options) => {
+    private contact_m_receiveFrom_udp: DeviceContactMethod<Contact["receiveFrom"]> = (contact, receiver, caddr, options) => {
         let bres = this.contact_bind(contact, {
             saddr: contact.addressFamily == "IPv4" ? _UNSET_ADDRESS_IPV4 : _UNSET_ADDRESS_IPV6,
             daddr: contact.addressFamily == "IPv4" ? _UNSET_ADDRESS_IPV4 : _UNSET_ADDRESS_IPV6,

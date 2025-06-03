@@ -34,7 +34,7 @@ function receive4(contact: Contact, data: NetworkData) {
     iphdr.set("daddr", daddr)
 
     iphdr.set("csum", calculateChecksum(iphdr.getBuffer().slice(0, iphdr.get("ihl") << 2)));
-    let res = contact.send(contact, { buffer: iphdr.getBuffer() }, daddr);
+    let res = contact.send({ buffer: iphdr.getBuffer() }, daddr);
     if (!res.success) {
         console.log(res.error, res.message)
     }
@@ -71,7 +71,7 @@ function receive6(contact: Contact, data: NetworkData) {
     iphdr.set("saddr", iphdr.get("daddr"))
     iphdr.set("daddr", daddr)
 
-    contact.send(contact, { buffer: iphdr.getBuffer() }, iphdr.get("daddr"));
+    contact.send({ buffer: iphdr.getBuffer() }, iphdr.get("daddr"));
 }
 
 export const DAEMON_ECHO_REPLIER: Program = {
@@ -81,15 +81,15 @@ export const DAEMON_ECHO_REPLIER: Program = {
         if (proc.device.processes.find(p => p?.id.includes(this.name) && proc != p)) {
             return ProcessSignal.EXIT;
         }
-        let contact4 = proc.contact_create(proc, "IPv4", "RAW").data!;
-        contact4.receive(contact4, receive4);
+        let contact4 = proc.resources.create(proc.device.contact_create("IPv4", "RAW").data!);
+        contact4.receive(receive4);
 
-        let contact6 = proc.contact_create(proc, "IPv6", "RAW").data!;
-        contact6.receive(contact6, receive6);
+        let contact6 = proc.resources.create(proc.device.contact_create("IPv6", "RAW").data!);
+        contact6.receive(receive6);
 
         proc.handle(proc, () => {
-            contact4.close(contact4);
-            contact6.close(contact6);
+            contact4.close();
+            contact6.close();
         });
 
         return ProcessSignal.__EXPLICIT__;

@@ -27,7 +27,7 @@ function headless_ping_send4(contact: Contact, destination: BaseAddress, route: 
         payload: icmphdr.getBuffer()
     });
 
-    return contact.send(contact, { buffer: iphdr.getBuffer() }, destination, route);
+    return contact.send({ buffer: iphdr.getBuffer() }, destination, route);
 }
 
 function headless_ping_send6(contact: Contact, destination: BaseAddress, route: DeviceRoute, sequence = 1, identifier = 0): DeviceResult<unknown> {
@@ -56,7 +56,7 @@ function headless_ping_send6(contact: Contact, destination: BaseAddress, route: 
     ])));
 
     let iphdr = IPV6_HEADER.create({ nextHeader: PROTOCOLS.IPV6_ICMP, payload: icmphdr.getBuffer() })
-    return contact.send(contact, { buffer: iphdr.getBuffer() }, destination, route)
+    return contact.send({ buffer: iphdr.getBuffer() }, destination, route)
 }
 
 export function headless_ping_send(contact: Contact, destination: BaseAddress, route: DeviceRoute, sequence = 1, identifier = 0): DeviceResult<unknown> {
@@ -229,7 +229,7 @@ type PingData = {
 }
 
 function handleExternalExit(proc: Process<PingData>) {
-    proc.data.contact.close(proc.data.contact);
+    proc.data.contact.close();
 
     let count = 0;
     let sum = 0;
@@ -297,10 +297,10 @@ export const DEVICE_PROGRAM_PING: Program = {
         }
 
         if (IPV4Address.validate(target)) {
-            contact = proc.contact_create(proc, "IPv4", "RAW").data!;
+            contact = proc.resources.create(proc.device.contact_create("IPv4", "RAW").data!);
             destination = new IPV4Address(target);
         } else if (IPV6Address.validate(target)) {
-            contact = proc.contact_create(proc, "IPv6", "RAW").data!;
+            contact = proc.resources.create(proc.device.contact_create("IPv6", "RAW").data!);
             destination = new IPV6Address(target);
         } else {
             // maybe in future dns resolution
@@ -342,10 +342,7 @@ export const DEVICE_PROGRAM_PING: Program = {
 
         // register methods
         proc.handle(proc, handleExternalExit);
-        contact.receive(
-            contact,
-            headless_ping_receive(destination, route, identifier, on_sucess, on_error)
-        );
+        contact.receive(headless_ping_receive(destination, route, identifier, on_sucess, on_error));
 
         send(proc); // send first ping
 

@@ -62,12 +62,12 @@ export const TestingComponent2: Component = () => {
         let destination = new IPV4Address(ip)
 
         let contact = newdevice.contact_create("IPv4", "RAW").data!;
-        contact.receive(contact, (_, data) => {
+        contact.receive((_, data) => {
             let iphdr = IPV4_HEADER.from(data.buffer);
             if (!uint8_equals(iphdr.get("saddr").buffer, destination.buffer)) return;
             if (iphdr.get("proto") != PROTOCOLS.ICMP) return;
             if (iphdr.get("payload")[0] != ICMPV4_TYPES.ECHO_REPLY) return;
-            contact.close(contact);
+            contact.close();
             success()
         })
 
@@ -85,13 +85,13 @@ export const TestingComponent2: Component = () => {
             payload: icmpHdr.getBuffer()
         })
 
-        contact.send(contact, { buffer: ipHdr.getBuffer() }, ipHdr.get("daddr"));
+        contact.send({ buffer: ipHdr.getBuffer() }, ipHdr.get("daddr"));
     }
 
     function send_udp() {
         let contact = newdevice.contact_create("IPv4", "UDP").data!;
 
-        contact.sendTo(contact, {
+        contact.sendTo({
             buffer: new Uint8Array([
                 0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x55, 0x44, 0x50, 0x20, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72
             ])
@@ -101,7 +101,7 @@ export const TestingComponent2: Component = () => {
             daddr: osif_destination
         });
 
-        contact.receive(contact, (_, d) => {
+        contact.receive((_, d) => {
             let string = new TextDecoder("utf-8").decode(d.buffer);
             console.log(string);
         }, {})
@@ -110,21 +110,21 @@ export const TestingComponent2: Component = () => {
     function connect_tcp() {
         let contact = newdevice.contact_create("IPv4", "TCP").data!;
 
-        contact.connect(contact, {
+        contact.connect({
             daddr: osif_destination,
             dport: osif_dport
         });
 
-        contact.on_error(contact, () => {
+        contact.on_error(() => {
             console.log("failed to connect to destination")
         })
 
-        contact.receive(contact, (_, d) => {
+        contact.receive((_, d) => {
             let string = new TextDecoder("utf-8").decode(d.buffer);
             console.log(string);
 
-            contact.send(contact, { buffer: uint8_fromString(string + " --reply") });
-            contact.close(contact)
+            contact.send({ buffer: uint8_fromString(string + " --reply") });
+            contact.close()
         }, {})
     }
 

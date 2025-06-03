@@ -47,24 +47,24 @@ function handle_ping(device: Device) {
         let closed = false;
         let t = window.setTimeout(() => {
             if (closed) return;
-            contact && contact.close(contact);
+            contact && contact.close();
         }, 5 * 1000); // close contact after 5-minutes
 
         function success() {
             console.log("%c ECHO Reply recieved: " + device.name, ['background: green', 'color: white', 'display: block', 'text-align: center', 'font-size: 24px'].join(';'))
-            contact && contact.close(contact)
+            contact && contact.close()
             closed = true;
             window.clearTimeout(t);
         }
 
         function error() {
             console.log("%c ECHO error recieved: " + device.name, ['background: red', 'color: white', 'display: block', 'text-align: center', 'font-size: 24px'].join(';'))
-            contact && contact.close(contact)
+            contact && contact.close()
             closed = true;
             window.clearTimeout(t);
         }
 
-        contact.receive(contact, headless_ping_receive(destination, route, identifier, success, error));
+        contact.receive(headless_ping_receive(destination, route, identifier, success, error));
         headless_ping_send(contact, destination, route, 1, identifier);
     }
 }

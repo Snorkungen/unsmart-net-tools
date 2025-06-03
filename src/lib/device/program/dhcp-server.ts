@@ -515,7 +515,7 @@ export const DAEMON_DHCP_SERVER: Program<DHCPServerData> = {
         }
 
         // initialise a contact
-        let contact = proc.contact_create(proc, "RAW", "RAW").data!; // should never fail
+        let contact = proc.resources.create(proc.device.contact_create("RAW", "RAW").data!); // should never fail
 
         (<DHCPServerData>proc.data) = {
             sid: source.address.buffer,
@@ -533,9 +533,9 @@ export const DAEMON_DHCP_SERVER: Program<DHCPServerData> = {
         }
 
         proc.handle(proc, () => {
-            contact.close(contact);
+            contact.close();
         })
-        contact.receive(contact, receive(proc));
+        contact.receive(receive(proc));
 
         proc.journal(proc, 0, "started")
 

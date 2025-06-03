@@ -89,7 +89,7 @@ function sendDHCPv4Hdr(proc: Process<DHCPClientData>, dhcpHdr: typeof DHCP_HEADE
         dmac: dmac,
         ethertype: ETHER_TYPES.IPv4,
     });
-    proc.data.contact.send(proc.data.contact, {
+    proc.data.contact.send({
         buffer: iphdr.getBuffer(),
         broadcast: true,
     }, new BaseAddress(etherhdr.getBuffer()), {
@@ -256,7 +256,7 @@ export const DEVICE_PROGRAM_DHCP_CLIENT: Program<DHCPClientData> = {
             return ProcessSignal.ERROR;
         }
 
-        let contact = proc.contact_create(proc, "RAW", "RAW").data!;
+        let contact = proc.resources.create(proc.device.contact_create("RAW", "RAW").data!);
 
         (<DHCPClientData>proc.data) = {
             xid: Math.floor(Math.random() * (2 ** 14)),
@@ -273,10 +273,10 @@ export const DEVICE_PROGRAM_DHCP_CLIENT: Program<DHCPClientData> = {
         }
 
         proc.handle(proc, () => {
-            contact.close(contact);
+            contact.close();
         })
 
-        contact.receive(contact, receive(proc));
+        contact.receive(receive(proc));
 
         let dhcpDiscoverHdr = DHCP_HEADER.create({
             op: DCHP_OP.BOOTREQUEST,

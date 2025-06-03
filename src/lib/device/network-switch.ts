@@ -150,11 +150,11 @@ const NETWORK_SWITCH_BRIDGING_DAEMON: Program = {
             data.macaddresses = data.macaddresses.filter(v => v.outgoing_port != port.port_no);
         }
 
-       proc.resources.create(proc.device.event_create("interface_disconnect", iface_disconnect_handler))
+        proc.resources.create(proc.device.event_create("interface_disconnect", iface_disconnect_handler))
 
         // setup a contact to listen to all incoming requests
-        const contact = proc.contact_create(proc, "RAW", "RAW").data!;
-        contact.receive(contact, (_, ndata) => {
+        const contact = proc.resources.create(proc.device.contact_create("RAW", "RAW").data!);
+        contact.receive((_, ndata) => {
             let port = Object.values(data.ports).find(({ iface }) => iface === ndata.rcvif);
             if (!port) return; // this check also handles the type of the rcvif
 
@@ -229,8 +229,8 @@ export const NETWORK_SWITCH_STP_DAEMON: Program = {
         }
 
         let initialized = false;
-        const contact = proc.contact_create(proc, "RAW", "RAW").data!;
-        contact.receive(contact, (_, data) => {
+        const contact = proc.resources.create(proc.device.contact_create("RAW", "RAW").data!);
+        contact.receive((_, data) => {
             if (!initialized) return;
 
             let port = Object.values(bdata.ports).find(({ iface }) => iface == data.rcvif)
@@ -261,7 +261,7 @@ export const NETWORK_SWITCH_STP_DAEMON: Program = {
         proc.handle(proc, () => {
             deinitialize(device);
             initialized = false;
-            contact.close(contact);
+            contact.close();
         })
 
         return ProcessSignal.__EXPLICIT__;

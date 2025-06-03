@@ -14,8 +14,8 @@ export const DAEMON_ROUTING: Program = {
         if (proc.device.processes.find(p => p?.id.includes(this.name) && proc != p)) {
             return ProcessSignal.EXIT;
         }
-        let contact4 = proc.contact_create(proc, "IPv4", "RAW").data!;
-        contact4.receive(contact4, (contact, data) => {
+        let contact4 = proc.resources.create(proc.device.contact_create("IPv4", "RAW").data!);
+        contact4.receive((contact, data) => {
             let iphdr = IPV4_HEADER.from(data.buffer);
 
             // use new data flags     #IDONOTLIKE_MULTICAST
@@ -38,7 +38,7 @@ export const DAEMON_ROUTING: Program = {
                     payload: icmphdr.getBuffer()
                 });
 
-                return contact.send(contact, { buffer: iphdr.getBuffer() }, iphdr.get("daddr"));
+                return contact.send({ buffer: iphdr.getBuffer() }, iphdr.get("daddr"));
             }
 
             let route = proc.device.route_resolve(iphdr.get("daddr"));
@@ -57,7 +57,7 @@ export const DAEMON_ROUTING: Program = {
                     payload: icmphdr.getBuffer(),
                 })
 
-                return contact.send(contact, { buffer: iphdr.getBuffer() }, iphdr.get("daddr"))
+                return contact.send({ buffer: iphdr.getBuffer() }, iphdr.get("daddr"))
             }
 
             /* do not route within the same subnet */
@@ -71,11 +71,11 @@ export const DAEMON_ROUTING: Program = {
             iphdr.set("csum", calculateChecksum(iphdr.getBuffer().subarray(0, iphdr.get("ihl") << 2)));
 
             console.log(proc.device.name, "[ROUTING]")
-            contact.send(contact, { buffer: iphdr.getBuffer() }, iphdr.get("daddr"), route)
+            contact.send({ buffer: iphdr.getBuffer() }, iphdr.get("daddr"), route)
         }, RECEIVE_OPTIONS);
 
-        let contact6 = proc.contact_create(proc, "IPv6", "RAW").data!;
-        contact6.receive(contact6, (contact, data) => {
+        let contact6 = proc.resources.create(proc.device.contact_create("IPv6", "RAW").data!);
+        contact6.receive((contact, data) => {
             let iphdr = IPV6_HEADER.from(data.buffer);
 
             // use new data flags     #IDONOTLIKE_MULTICAST
@@ -109,7 +109,7 @@ export const DAEMON_ROUTING: Program = {
                     payload: icmphdr.getBuffer(),
                 });
 
-                return contact.send(contact, { buffer: iphdr.getBuffer() }, iphdr.get("daddr"), route);
+                return contact.send({ buffer: iphdr.getBuffer() }, iphdr.get("daddr"), route);
             }
 
             let route = proc.device.route_resolve(iphdr.get("daddr"));
@@ -141,15 +141,15 @@ export const DAEMON_ROUTING: Program = {
                     payload: icmphdr.getBuffer(),
                 });
 
-                return contact.send(contact, { buffer: iphdr.getBuffer() }, iphdr.get("daddr"), route);
+                return contact.send({ buffer: iphdr.getBuffer() }, iphdr.get("daddr"), route);
             }
 
             iphdr.set("hopLimit", iphdr.get("hopLimit") - 1)
         }, RECEIVE_OPTIONS);
 
         proc.handle(proc, () => {
-            contact4.close(contact4);
-            contact6.close(contact6);
+            contact4.close();
+            contact6.close();
         });
 
         return ProcessSignal.__EXPLICIT__;
