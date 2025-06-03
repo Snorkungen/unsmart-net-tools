@@ -26,7 +26,6 @@ export function termquery(proc: Process): Promise<TermQuery> {
 
         let original_cursor_position: undefined | number = undefined;
         const termquery_reader = (bytes: Uint8Array) => {
-            console.log("reader", bytes)
             // assume that the ctrl code is the only data in the bytes
             if (bytes.byteLength < 3) return;
             if (bytes[0] != ASCIICodes.Escape || bytes[1] != ASCIICodes.OpenSquareBracket) return;
@@ -41,14 +40,14 @@ export function termquery(proc: Process): Promise<TermQuery> {
                     rawParams.push(byte);
                     break;
                 } else {
-                    proc.close(proc, ProcessSignal.ERROR);
+                    proc.close(ProcessSignal.ERROR);
                     return;
                 }
             }
 
 
             if (rawParams.length == 0) {
-                proc.close(proc, ProcessSignal.ERROR);
+                proc.close(ProcessSignal.ERROR);
                 return;
             }
 
