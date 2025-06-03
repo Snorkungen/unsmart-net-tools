@@ -6,6 +6,7 @@ import { uint8_concat, uint8_equals, uint8_fromString } from "../../binary/uint8
 import { ICMP_ECHO_HEADER, ICMP_HEADER, ICMP_UNUSED_HEADER, ICMPV4_TYPES, ICMPV6_TYPES } from "../../header/icmp";
 import { IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
 import { Contact, DeviceResult, DeviceRoute, NetworkData, Process, ProcessSignal, Program } from "../device";
+import { getaddress_by_host } from "./hostsinfo";
 
 const MSG_DST_UNREACH = uint8_fromString(
     "Destination unreachable"
@@ -285,7 +286,7 @@ export const DEVICE_PROGRAM_PING: Program = {
     content: `<ping [destination] ?[sendCount]>
 <ping 192.168.1.1>
 <ping ::1 4>`,
-    init(proc, argv) {
+    async init(proc, argv) {
         let [, target, sendCount] = argv
         let destination: IPV4Address | IPV6Address;
         let contact: Contact | undefined;
@@ -294,27 +295,6 @@ export const DEVICE_PROGRAM_PING: Program = {
         let maxSendCount = parseInt(sendCount);
         if (isNaN(maxSendCount)) {
             maxSendCount = DEFAULT_MAX_SENDCOUNT;
-        }
-
-        if (IPV4Address.validate(target)) {
-            contact = proc.resources.create(proc.device.contact_create("IPv4", "RAW").data!);
-            destination = new IPV4Address(target);
-        } else if (IPV6Address.validate(target)) {
-            contact = proc.resources.create(proc.device.contact_create("IPv6", "RAW").data!);
-            destination = new IPV6Address(target);
-        } else {
-            // maybe in future dns resolution
-            proc.io.write(uint8_fromString(
-                "Failed to parse given address: " + target
-            ));
-
-            return ProcessSignal.EXIT;
-        }
-
-        let route = proc.device.route_resolve(destination);
-        if (!route) {
-            proc.io.write(MSG_DST_UNREACH);
-            return ProcessSignal.EXIT;
         }
 
         const on_error: HeadlessPingReceiveErrorHandler = (e) => {
@@ -327,6 +307,42 @@ export const DEVICE_PROGRAM_PING: Program = {
 
         const on_sucess: HeadlessPingReceiveHandler = (...params) => {
             handlereply(proc, ...params);
+        }
+
+        if (IPV4Address.validate(target)) {
+            contact = proc.resources.create(proc.device.contact_create("IPv4", "RAW").data!);
+            destination = new IPV4Address(target);
+        } else if (IPV6Address.validate(target)) {
+            contact = proc.resources.create(proc.device.contact_create("IPv6", "RAW").data!);
+            destination = new IPV6Address(target);
+        } else {
+            // maybe in future dns resolution
+
+            let addresses = await getaddress_by_host(proc.device, target);
+            if (!addresses.length) {
+                proc.io.write(uint8_fromString(
+                    "Failed to parse given address: " + target
+                ));
+
+                return ProcessSignal.ERROR;
+            }
+
+            if (addresses[0] instanceof IPV4Address) {
+                contact = proc.resources.create(proc.device.contact_create("IPv4", "RAW").data!);
+                destination = addresses[0];
+            } else if (addresses[0] instanceof IPV6Address) {
+                contact = proc.resources.create(proc.device.contact_create("IPv6", "RAW").data!);
+                destination = addresses[0];
+            } else {
+                throw new Error("bad address found: " + addresses[0])
+                return ProcessSignal.ERROR;
+            }
+        }
+
+        let route = proc.device.route_resolve(destination);
+        if (!route) {
+            proc.io.write(MSG_DST_UNREACH);
+            return ProcessSignal.EXIT;
         }
 
         (<Process<PingData>>proc).data = {

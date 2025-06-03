@@ -16,6 +16,7 @@ import { DEVICE_PROGRAM_IFINFO } from "../lib/device/program/ifinfo";
 import { DEVICE_PROGRAM_PING } from "../lib/device/program/ping";
 import { DEVICE_PROGRAM_ROUTEINFO } from "../lib/device/program/routeinfo";
 import { DeviceViewComponent } from "../components/device-view";
+import { DEVICE_PROGRAM_HOSTSINFO, setaddress_by_host } from "../lib/device/program/hostsinfo";
 
 let terminal_device: Device | undefined;
 let terminal: Terminal;
@@ -47,6 +48,7 @@ const DeviceComponent: Component<{ device: Device }> = ({ device }) => {
         DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_IFINFO, DEVICE_PROGRAM_ROUTEINFO,
 
         DEVICE_PROGRAM_DAEMAN,
+        DEVICE_PROGRAM_HOSTSINFO,
     )
 
     return <>
@@ -120,6 +122,10 @@ let dhcp_server_config: DHCPServer_Store = {
 server_pc.store_set(DAEMON_DHCP_SERVER.name, dhcp_server_config);
 
 server_pc.process_start(DAEMON_DHCP_SERVER)
+
+setaddress_by_host(pc1, "server", new IPV4Address("10.10.0.100"))
+setaddress_by_host(pc1, "pc2", new IPV4Address("10.20.0.20"))
+setaddress_by_host(pc1, "router", new IPV4Address("10.10.0.1"))
 
 export const TestingComponent: Component = () => {
     createEffect(attach_device_to_terminal(pc1));
