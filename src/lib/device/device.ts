@@ -1742,7 +1742,9 @@ export class Device {
         return { success: true, data: contact as Contact<CAF, CProto> };
     }
     contact_close(contact: Contact): DeviceResult<ContactError> {
-        contact.abort_controller.signal.throwIfAborted();
+        if (contact.abort_controller.signal.aborted) {
+            throw new Error("contact is closed")
+        }
 
         // remove contacts created by contact
         for (let i = 0; i < this.contacts.items.length; i++) {
@@ -1764,7 +1766,9 @@ export class Device {
         return { success: true, error: undefined, data: undefined };
     }
     contact_bind<Addr extends BaseAddress = BaseAddress>(contact: Contact, caddr: ContactAddress<Addr>): DeviceResult<ContactError, ContactAddress<Addr>> {
-        contact.abort_controller.signal.throwIfAborted();
+        if (contact.abort_controller.signal.aborted) {
+            throw new Error("contact is closed")
+        }
         if (contact.addressFamily == "RAW" || contact.proto == "RAW") {
             return { success: false, error: undefined, message: "cannot bind a RAW contact" };
         }
@@ -1851,7 +1855,9 @@ export class Device {
     }
 
     private contact_method_not_supported = (contact: Contact): DeviceResult<ContactError> => {
-        contact.abort_controller.signal.throwIfAborted();
+        if (contact.abort_controller.signal.aborted) {
+            throw new Error("contact is closed")
+        }
         return { success: false, error: undefined, message: "method not supported for protocol" }
     }
 
@@ -2370,7 +2376,9 @@ export class Device {
         return { success: true, data: undefined };
     }
     private contact_m_send_raw: DeviceContactMethod<Contact["send"]> = (contact, data, destination, rtentry) => {
-        contact.abort_controller.signal.throwIfAborted();
+        if (contact.abort_controller.signal.aborted) {
+            throw new Error("contact is closed")
+        }
 
         if (!destination) {
             return { success: false, error: undefined, message: "destination missing" }
@@ -2399,7 +2407,9 @@ export class Device {
     }
 
     private contact_m_send_udp: DeviceContactMethod<Contact["send"]> = (contact, data, _, rtentry) => {
-        contact.abort_controller.signal.throwIfAborted();
+        if (contact.abort_controller.signal.aborted) {
+            throw new Error("contact is closed")
+        }
         if (contact.addressFamily == "RAW") {
             return { success: false, error: undefined, message: "cannot send incorrect \"address family\": " + contact.addressFamily }
         }
@@ -2425,7 +2435,9 @@ export class Device {
     }
 
     private contact_m_sendTo_udp: DeviceContactMethod<Contact["sendTo"]> = (contact, data, caddr, rtentry) => {
-        contact.abort_controller.signal.throwIfAborted();
+        if (contact.abort_controller.signal.aborted) {
+            throw new Error("contact is closed")
+        }
         if (contact.addressFamily == "RAW") {
             return { success: false, error: undefined, message: "cannot send incorrect \"address family\": " + contact.addressFamily };
         }
