@@ -258,7 +258,7 @@ export const NETWORK_SWITCH_STP_DAEMON: Program = {
         initialization(device);
         initialized = true;
 
-        proc.handle(proc, () => {
+        proc.handle(() => {
             deinitialize(device);
             initialized = false;
             contact.close();
