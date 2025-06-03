@@ -42,39 +42,6 @@ export function chunkString(
     return chunks;
 }
 
-export function parseArgs(args: string): string[] {
-    let argv: string[] = [];
-
-    let p = 0, i = 0, c: string;
-    while (p < args.length) {
-        c = args[p];
-
-        if (c == '"') {
-            p++
-            while (p < args.length) {
-                c = args[p];
-
-                if (c == '"') {
-                    p++;
-                    break;
-                } else if (c) {
-                    argv[i] ? argv[i] += c : argv[i] = c;
-                }
-                p++;
-            }
-            continue;
-        } else if (c == " ") {
-            i++;
-        } else {
-            argv[i] ? argv[i] += c : argv[i] = c;
-        }
-
-        p++;
-    }
-
-    return argv;
-}
-
 /** source <https://stackoverflow.com/a/44646838> */
 export function getLengthOfLongestElement(arr: { length: number }[]) {
     return Math.max(0, ...arr.map(s => s?.length || 0));

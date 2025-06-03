@@ -1,7 +1,7 @@
 import { uint8_concat, uint8_fromString } from "../../binary/uint8-array";
 import { ASCIICodes, CSI, numbertonumbers, readParams } from "../../terminal/shared";
+import { args_parse } from "../../utils/args-parse";
 import { Process, ProcessSignal, Program } from "../device";
-import { parseArgs } from "./helpers";
 import { termquery } from "./termquery";
 
 enum ShellState {
@@ -363,7 +363,7 @@ function read(proc: Process<ShellData>, bytes: Uint8Array) {
                 console.log("[ENTER] Pressed")
                 // do stuff
 
-                let argv = parseArgs(proc.data.promptBuffer);
+                let argv = args_parse(proc.data.promptBuffer);
                 let name = argv.shift();
                 let program: Program | undefined = proc.device.programs.find(p => p.name == name);
                 while (argv.length > 0 && program) {
@@ -383,8 +383,7 @@ function read(proc: Process<ShellData>, bytes: Uint8Array) {
                 if (program) {
                     proc.io.write(new Uint8Array([ASCIICodes.NewLine]));
                     proc.data.state = ShellState.RUNNING_PROGRAM;
-
-                    proc.data.runningProc = proc.spawn(program, parseArgs(proc.data.promptBuffer), undefined, {
+                    proc.data.runningProc = proc.spawn(program, args_parse(proc.data.promptBuffer), undefined, {
                         on_close(_, status) {
                             (<ShellData>proc.data).state = ShellState.RUNNING_PROGRAM;
                             (<ShellData>proc.data).promptBuffer = "";
