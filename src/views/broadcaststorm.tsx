@@ -107,9 +107,9 @@ export function BroadcastStorm() {
             sw3.process_start(NETWORK_SWITCH_STP_DAEMON)
         }}>Start</button>
         <button onclick={() => {
-            let p = sw1.processes.find(p => p?.program.name === NETWORK_SWITCH_STP_DAEMON.name); (p) && p.close(p, ProcessSignal.INTERRUPT);
-            p = sw2.processes.find(p => p?.program.name === NETWORK_SWITCH_STP_DAEMON.name); (p) && p.close(p, ProcessSignal.INTERRUPT);
-            p = sw3.processes.find(p => p?.program.name === NETWORK_SWITCH_STP_DAEMON.name); (p) && p.close(p, ProcessSignal.INTERRUPT);
+            let p = sw1.processes.items.find(p => p?.program.name === NETWORK_SWITCH_STP_DAEMON.name); (p) && p.close(ProcessSignal.INTERRUPT);
+            p = sw2.processes.items.find(p => p?.program.name === NETWORK_SWITCH_STP_DAEMON.name); (p) && p.close(ProcessSignal.INTERRUPT);
+            p = sw3.processes.items.find(p => p?.program.name === NETWORK_SWITCH_STP_DAEMON.name); (p) && p.close(ProcessSignal.INTERRUPT);
 
             if (!redundant_connection()) { // fix state
                 network_switch_set_port_state(sw2, sw2_sw3_iface, NetworkSwitchPortState.BLOCKING);

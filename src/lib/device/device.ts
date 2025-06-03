@@ -213,8 +213,10 @@ type ProcessStartHandlers = Partial<{
     io_on_write: DeviceIO["on_write"];
     io_on_close: DeviceIO["on_close"];
     io_on_flush: DeviceIO["on_flush"];
-}>
+}>;
+type DeviceProcessMethod<T extends (...params: any[]) => any> = (contact: Process, ...params: Parameters<T>) => ReturnType<T>
 export type Process<DT = any> = {
+    abort_controller: AbortController;
     status: "UNINIT" | "MARKED_CLOSED" | "CLOSED" | "RUNNING"
     signal: ProcessSignal;
 
@@ -224,20 +226,20 @@ export type Process<DT = any> = {
     data: DT;
 
 
-    close(proc: Process, status: ProcessSignal): void;
-    spawn<SDT extends any>(proc: Process, program: Program<SDT>, args?: string[], data?: Partial<SDT>, handlers?: ProcessStartHandlers): Process | undefined;
-    handle(proc: Process, signal_handler: (proc: Process, signal: ProcessSignal) => void): void
+    close(status?: ProcessSignal): void;
+    spawn<SDT extends any>(program: Program<SDT>, args?: string[], data?: Partial<SDT>, handlers?: ProcessStartHandlers): Process | undefined;
+    handle(signal_handler: (proc: Process, signal: ProcessSignal) => void): void
 
     /** write an entry into a process diary \
      * type: 0(info), 1(warning), 2(error)
     */
-    journal(proc: Process, type: number, message: string): void;
+    journal(type: number, message: string): void;
 
     io: DeviceIO;
     resources: DeviceResources;
 
     // !TODO: for now it is the users responsibility to close contacts
-}
+};
 
 export type DeviceTerminal = {
     read?: (bytes: Uint8Array) => void;
@@ -406,7 +408,7 @@ export class Device {
     }
 
     event_dispatch<T extends DeviceEventType>(evt: T, ...params: Parameters<DeviceEventHandler<T>>) {
-        for (let event of this.events.resources) {
+        for (let event of this.events.items) {
             if (event && event.keys.includes(evt)) {
                 event.handler(...params);
             }
@@ -417,7 +419,7 @@ export class Device {
     
     */
     programs: Program[] = [];
-    processes: (Process | undefined)[] = [];
+    processes = new DeviceResources<Process>();
     private process_handlers: ({ proc: Process, handler: ProcessHandler, id: ProcessID } | undefined)[] = [];
     private PROCESS_ID_SEPARATOR = ":";
     private process_journal_entries: Map<string, [type: number, timestamp: number, message: string][]> = new Map();
@@ -426,8 +428,6 @@ export class Device {
     process_start<DT extends any>(program: Program<DT>, args?: string[], data?: Partial<DT>): void
     process_start<DT extends any>(program: Program<DT>, args: string[] | undefined, data: Partial<DT> | undefined, parent_proc: Process, handlers?: ProcessStartHandlers): Process | undefined;
     process_start<DT extends any>(program: Program<DT>, args?: string[], data?: Partial<DT>, parent_proc?: Process, handlers?: ProcessStartHandlers): Process | undefined {
-        let i = -1; while (this.processes[++i]) { continue; };
-
         let id: ProcessID = "";
         if (parent_proc) {
             id = parent_proc.id + this.PROCESS_ID_SEPARATOR;
@@ -451,65 +451,69 @@ export class Device {
         }
 
         const proc_resources = new DeviceResources();
-
-        this.processes[i] = {
+        const device = this;
+        let id_idx = this.processes.items.indexOf(undefined);
+        if (id_idx < 0) id_idx = this.processes.items.length;
+        
+        const proc = this.processes.create<Process<DT>>({
+            abort_controller: new AbortController(),
             status: "UNINIT",
             signal: ProcessSignal.__EXPLICIT__,
 
-            id: id + program.name + i,
+            id: id + program.name + id_idx,
             device: this,
             program: program,
-            data: undefined,
+            data: undefined as DT,
 
-            close: this.process_close.bind(this),
-            spawn: this.process_spawn.bind(this),
-            handle: this.process_handle.bind(this),
-            journal: this.process_journal.bind(this),
+            close(...p) { return device.process_close(this, ...p) },
+            spawn(...p) { return device.process_spawn(this, ...p) },
+            handle(...p) { return device.process_handle(this, ...p) },
+            journal(...p) { return device.process_journal(this, ...p) },
 
             resources: proc_resources,
             io: proc_resources.create(io),
-        };
+        });
 
 
         if (parent_proc && handlers && handlers.on_close) {
-            this.process_handle(this.processes[i]!, handlers.on_close, parent_proc.id);
+            this.process_handle(proc, handlers.on_close, parent_proc.id);
         }
 
-        let init_sig = program.init(this.processes[i]!, args || [], data);
+        let init_sig = program.init(proc, args || [], data);
 
         if (init_sig instanceof Promise) {
             init_sig.then(sig => {
-                if (this.process_should_close(this.processes[i]!, sig)) {
-                    this.processes[i]!.status = "MARKED_CLOSED";
-                    this.process_close(this.processes[i]!, sig);
+                if (this.process_should_close(proc, sig)) {
+                    proc.status = "MARKED_CLOSED";
+                    this.process_close(proc, sig);
 
                     if (!parent_proc) {
-                        this.processes[i]!.status = "CLOSED";
-                        delete this.processes[i]
+                        proc.status = "CLOSED";
+                        proc.abort_controller.abort();
                     }
-
                 }
             });
         } else {
-            this.processes[i]!.signal = init_sig;
+            proc.signal = init_sig;
 
-            if (this.process_should_close(this.processes[i]!, init_sig)) {
-                this.processes[i]!.status = "MARKED_CLOSED";
-                this.process_close(this.processes[i]!, init_sig);
+            if (this.process_should_close(proc, init_sig)) {
+                proc.status = "MARKED_CLOSED";
+                this.process_close(proc, init_sig);
 
-                if (!parent_proc && this.processes[i]) {
-                    this.processes[i]!.status = "CLOSED";
-                    delete this.processes[i]
+                if (!parent_proc && proc) {
+                    proc.status = "CLOSED";
+                    proc.abort_controller.abort();
+                    return undefined;
                 }
 
-                return this.processes[i]!
+                return proc;
             }
         }
 
-        this.processes[i]!.status = "RUNNING";
+        proc.status = "RUNNING";
 
         if (parent_proc) {
-            return this.processes[i]!;
+            return proc;
         }
 
         return undefined;
@@ -526,16 +530,11 @@ export class Device {
         return false;
     }
 
-    process_close(proc: Process, signal: ProcessSignal) {
-        if (proc.status === "CLOSED") {
+    process_close(proc: Process, signal: ProcessSignal = ProcessSignal.EXIT) {
+        if (proc.status === "CLOSED" || proc.abort_controller.signal.aborted) {
             return; // to prevent loops 
         } if (proc.status === "UNINIT") {
             proc.status = "MARKED_CLOSED";
-            return;
-        }
-
-        let i = this.processes.indexOf(proc);
-        if (i < 0 || !this.processes[i]) {
             return;
         }
 
@@ -560,7 +559,7 @@ export class Device {
         }
 
         // close spawned processes, abuse the id
-        for (let sproc of this.processes) {
+        for (let sproc of this.processes.items) {
             if (sproc && sproc.id.startsWith(proc.id + this.PROCESS_ID_SEPARATOR) && sproc.id.length > proc.id.length) {
                 this.process_close(sproc, signal);
             }
@@ -571,11 +570,11 @@ export class Device {
 
         proc.resources.close();
 
-        this.processes[i]!.status = "CLOSED";
-        delete this.processes[i];
+        proc.status = "CLOSED";
+        proc.abort_controller.abort();
     }
 
-    process_spawn: Process["spawn"] = (proc, program, args, data, handlers) => {
+    process_spawn: DeviceProcessMethod<Process["spawn"]> = (proc, program, args, data, handlers) => {
         return this.process_start(program, args, data, proc, handlers);
     }
 
@@ -1750,9 +1749,9 @@ export class Device {
         contact.abort_controller.signal.throwIfAborted();
 
         // remove contacts created by contact
-        for (let i = 0; i < this.contacts.resources.length; i++) {
-            if (this.contacts.resources[i]?.root_contact === contact) {
-                this.contacts.resources[i]!.close();
+        for (let i = 0; i < this.contacts.items.length; i++) {
+            if (this.contacts.items[i]?.root_contact === contact) {
+                this.contacts.items[i]!.close();
             }
         }
 
@@ -1787,7 +1786,7 @@ export class Device {
             return { success: false, error: undefined, message: "address mismatch" }
         };
 
-        for (let h_contact of this.contacts.resources) {
+        for (let h_contact of this.contacts.items) {
             if (!h_contact ||
                 h_contact == contact ||
                 !h_contact.address ||

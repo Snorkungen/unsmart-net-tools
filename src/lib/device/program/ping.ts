@@ -247,7 +247,7 @@ function handleExternalExit(proc: Process<PingData>) {
 
 function send(proc: Process<PingData>) {
     if (proc.data.sequence >= proc.data.maxSendCount) {
-        proc.close(proc, ProcessSignal.INTERRUPT);
+        proc.close(ProcessSignal.INTERRUPT);
         return;
     }
 
@@ -321,7 +321,7 @@ export const DEVICE_PROGRAM_PING: Program = {
             if (e === "DESTINATION_UNREACHABLE") {
                 proc.data.contact.close(proc.data.contact);
                 proc.io.write(MSG_DST_UNREACH)
-                proc.close(proc, ProcessSignal.ERROR);
+                proc.close(ProcessSignal.ERROR);
             }
         }
 
@@ -341,7 +341,7 @@ export const DEVICE_PROGRAM_PING: Program = {
         }
 
         // register methods
-        proc.handle(proc, handleExternalExit);
+        proc.handle(handleExternalExit);
         contact.receive(headless_ping_receive(destination, route, identifier, on_sucess, on_error));
 
         send(proc); // send first ping

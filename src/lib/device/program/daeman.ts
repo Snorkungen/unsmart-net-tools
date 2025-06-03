@@ -17,7 +17,7 @@ export const DEVICE_PROGRAM_DAEMAN: Program = {
     init: function (proc: Process<any>, args: string[], data?: Partial<any> | undefined): ProcessSignal {
         let i = 0;
         /* write out line-by-line each process */
-        for (let p of proc.device.processes) {
+        for (let p of proc.device.processes.items) {
             if (!p?.id || p == proc) continue;
 
             // @ts-expect-error

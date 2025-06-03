@@ -185,7 +185,7 @@ function init_nmap(el: SVGSVGElement) {
         terminalOwner?.terminal_detach()
         terminalOwner = dev;
         terminalOwner.terminal_attach(terminal);
-        let proc = terminalOwner.processes.find(p => p && p.id.includes(DAEMON_SHELL.name))
+        let proc = terminalOwner.processes.items.find(p => p && p.id.includes(DAEMON_SHELL.name))
         if (!proc) {
             terminalOwner.process_start(DAEMON_SHELL);
         } else {
@@ -256,6 +256,9 @@ function remove_device_from_state(device: Device) {
     network_map_remove_device(state, device);
 
     device.terminal_detach();
+    device.processes.close();
+    // @ts-expect-error
+    device.contacts.close();
     terminalOwner = undefined;
     set_active_device(undefined);
 

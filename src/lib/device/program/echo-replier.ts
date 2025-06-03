@@ -78,7 +78,7 @@ export const DAEMON_ECHO_REPLIER: Program = {
     name: "daemon_echo_replier",
     init(proc) {
         // check that program is not running
-        if (proc.device.processes.find(p => p?.id.includes(this.name) && proc != p)) {
+        if (proc.device.processes.items.find(p => p?.id.includes(this.name) && proc != p)) {
             return ProcessSignal.EXIT;
         }
         let contact4 = proc.resources.create(proc.device.contact_create("IPv4", "RAW").data!);
@@ -87,7 +87,7 @@ export const DAEMON_ECHO_REPLIER: Program = {
         let contact6 = proc.resources.create(proc.device.contact_create("IPv6", "RAW").data!);
         contact6.receive(receive6);
 
-        proc.handle(proc, () => {
+        proc.handle(() => {
             contact4.close();
             contact6.close();
         });

@@ -28,7 +28,7 @@ function attach_device_to_terminal(device: Device) {
         }
 
         device.terminal_attach(terminal);
-        let p = device.processes.find(p => p?.id.includes(DAEMON_SHELL.name));
+        let p = device.processes.items.find(p => p?.id.includes(DAEMON_SHELL.name));
         if (p) {
             device.terminal_read(new Uint8Array([10])); // press enter
         } else {

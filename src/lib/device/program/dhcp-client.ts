@@ -240,7 +240,7 @@ function receive(proc: Process<DHCPClientData>) {
                 proc.data.state = DHCPClientState.BOUND;
                 // !TODO: set timeout to revalidate with least time
                 // for now just exit
-                proc.close(proc, ProcessSignal.INTERRUPT); // interrupt is to call the cleanup "handle" function
+                proc.close(ProcessSignal.INTERRUPT); // interrupt is to call the cleanup "handle" function
             }
         }
     }
@@ -272,7 +272,7 @@ export const DEVICE_PROGRAM_DHCP_CLIENT: Program<DHCPClientData> = {
             ]))
         }
 
-        proc.handle(proc, () => {
+        proc.handle(() => {
             contact.close();
         })
 

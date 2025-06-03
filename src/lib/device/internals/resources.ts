@@ -5,23 +5,23 @@ export interface DeviceResource {
 }
 
 export class DeviceResources<T extends DeviceResource = DeviceResource> {
-    resources: (undefined | T)[] = [];
+    items: (undefined | T)[] = [];
 
     create<CT extends T>(resource: CT): CT {
-        let i = -1; while (this.resources[++i]) { continue; }
+        let i = -1; while (this.items[++i]) { continue; }
         resource.abort_controller.signal.addEventListener("abort", () => {
-            delete this.resources[i];
+            delete this.items[i];
         }, { once: true });
-        this.resources[i] = resource;
+        this.items[i] = resource;
 
         return resource;
     }
     close() {
-        for (let resource of this.resources) {
+        for (let resource of this.items) {
             if (resource) {
                 resource.close();
             }
         }
-        this.resources.length = 0;
+        this.items.length = 0;
     }
 }

@@ -11,7 +11,7 @@ export const DAEMON_ROUTING: Program = {
     name: "daemon_routing",
     init(proc) {
         // check that program is not running
-        if (proc.device.processes.find(p => p?.id.includes(this.name) && proc != p)) {
+        if (proc.device.processes.items.find(p => p?.id.includes(this.name) && proc != p)) {
             return ProcessSignal.EXIT;
         }
         let contact4 = proc.resources.create(proc.device.contact_create("IPv4", "RAW").data!);
@@ -147,7 +147,7 @@ export const DAEMON_ROUTING: Program = {
             iphdr.set("hopLimit", iphdr.get("hopLimit") - 1)
         }, RECEIVE_OPTIONS);
 
-        proc.handle(proc, () => {
+        proc.handle(() => {
             contact4.close();
             contact6.close();
         });

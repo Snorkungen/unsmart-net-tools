@@ -244,7 +244,7 @@ const lazywriter: Program<string> = {
                 proc.data = root + options[selected_option_idx]
                 // move cursor to start clear line and go up on line
                 proc.io.write(CSI(...numbertonumbers(1), ASCIICodes.G, ...CSI(ASCIICodes.Two, ASCIICodes.K), ...CSI(ASCIICodes.A)));
-                proc.close(proc, ProcessSignal.EXIT);
+                proc.close(ProcessSignal.EXIT);
                 return true;
             }
 
@@ -253,7 +253,7 @@ const lazywriter: Program<string> = {
                 byte === 3
             ) {
                 proc.io.write(CSI(...numbertonumbers(1), ASCIICodes.G, ...CSI(ASCIICodes.Two, ASCIICodes.K), ...CSI(ASCIICodes.A)));
-                proc.close(proc, ProcessSignal.EXIT);
+                proc.close(ProcessSignal.EXIT);
                 return true;
             }
 
@@ -340,7 +340,7 @@ function read(proc: Process<ShellData>, bytes: Uint8Array) {
             } else if (byte == ASCIICodes.Tab) {
                 console.log("[TAB] Pressed")
                 proc.data.state = ShellState.LAZY_WRITING;
-                proc.data.runningProc = proc.spawn(proc, lazywriter, undefined, proc.data.promptBuffer, {
+                proc.data.runningProc = proc.spawn(lazywriter, undefined, proc.data.promptBuffer, {
                     on_close(sproc) {
                         proc.data.state = ShellState.PROMPT;
                         delete proc.data.runningProc
@@ -384,7 +384,7 @@ function read(proc: Process<ShellData>, bytes: Uint8Array) {
                     proc.io.write(new Uint8Array([ASCIICodes.NewLine]));
                     proc.data.state = ShellState.RUNNING_PROGRAM;
 
-                    proc.data.runningProc = proc.spawn(proc, program, parseArgs(proc.data.promptBuffer), undefined, {
+                    proc.data.runningProc = proc.spawn(program, parseArgs(proc.data.promptBuffer), undefined, {
                         on_close(_, status) {
                             (<ShellData>proc.data).state = ShellState.RUNNING_PROGRAM;
                             (<ShellData>proc.data).promptBuffer = "";
@@ -575,7 +575,7 @@ function read(proc: Process<ShellData>, bytes: Uint8Array) {
         }
 
         if (bytes.includes(3)) {
-            proc.data.runningProc.close(proc.data.runningProc, ProcessSignal.INTERRUPT);
+            proc.data.runningProc.close(ProcessSignal.INTERRUPT);
         }
     }
 

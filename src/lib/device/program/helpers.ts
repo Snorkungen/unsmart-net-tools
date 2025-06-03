@@ -176,7 +176,7 @@ export function formatTable(table: (string | undefined)[][], columns = TERMINAL_
 }
 
 export function spawn_program_promisify<T extends any>(proc: Process, program: Program<T>, args?: string[], data?: Partial<T> | undefined,): Promise<T> {
-    return new Promise((resolve) => proc.spawn(proc, program, args, data, {
+    return new Promise((resolve) => proc.spawn(program, args, data, {
         on_close(sproc) {
             resolve(sproc.data)
         }
