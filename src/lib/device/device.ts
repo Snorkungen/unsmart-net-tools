@@ -217,7 +217,7 @@ type ProcessStartHandlers = Partial<{
 type DeviceProcessMethod<T extends (...params: any[]) => any> = (contact: Process, ...params: Parameters<T>) => ReturnType<T>
 export type Process<DT = any> = {
     abort_controller: AbortController;
-    status: "UNINIT" | "MARKED_CLOSED" | "CLOSED" | "RUNNING"
+    status: "UNINIT" | "MARKED_CLOSED" | "RUNNING"
     signal: ProcessSignal;
 
     id: ProcessID;
@@ -454,7 +454,7 @@ export class Device {
         const device = this;
         let id_idx = this.processes.items.indexOf(undefined);
         if (id_idx < 0) id_idx = this.processes.items.length;
-        
+
         const proc = this.processes.create<Process<DT>>({
             abort_controller: new AbortController(),
             status: "UNINIT",
@@ -488,7 +488,6 @@ export class Device {
                     this.process_close(proc, sig);
 
                     if (!parent_proc) {
-                        proc.status = "CLOSED";
                         proc.abort_controller.abort();
                     }
                 }
@@ -501,7 +500,6 @@ export class Device {
                 this.process_close(proc, init_sig);
 
                 if (!parent_proc && proc) {
-                    proc.status = "CLOSED";
                     proc.abort_controller.abort();
                     return undefined;
                 }
@@ -531,7 +529,7 @@ export class Device {
     }
 
     process_close(proc: Process, signal: ProcessSignal = ProcessSignal.EXIT) {
-        if (proc.status === "CLOSED" || proc.abort_controller.signal.aborted) {
+        if (proc.abort_controller.signal.aborted) {
             return; // to prevent loops 
         } if (proc.status === "UNINIT") {
             proc.status = "MARKED_CLOSED";
@@ -569,8 +567,6 @@ export class Device {
         this.process_journal_entries.delete(proc.id);
 
         proc.resources.close();
-
-        proc.status = "CLOSED";
         proc.abort_controller.abort();
     }
 
