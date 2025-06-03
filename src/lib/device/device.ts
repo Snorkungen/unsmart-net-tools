@@ -76,16 +76,71 @@ export type DeviceRoute<AddrType extends typeof BaseAddress = typeof BaseAddress
 }
 
 export type DeviceIO = {
-    active: boolean;
-
     on_close?: () => void;
     on_flush?: () => void;
     on_write?: (bytes: Uint8Array) => void;
-    /** Return value signifies something for the writer  */
-    read?: (bytes: Uint8Array) => void | boolean;
+
+    readers: ((bytes: Uint8Array) => void)[];
+    /** Returns the reader index */
+    reader_add(reader: DeviceIO["readers"][number]): void;
+    reader_remove(reader: DeviceIO["readers"][number]): void
+
+    /** call the readers */
+    read(...values: Parameters<DeviceIO["readers"][number]>): void
+
     flush(): void;
     write(bytes: Uint8Array): void;
     close(): void;
+} & DeviceResource;
+
+function device_io_create(): DeviceIO {
+    return {
+        abort_controller: new AbortController(),
+
+        on_close: undefined,
+        on_flush: undefined,
+        on_write: undefined,
+
+        readers: [],
+        reader_add(reader) {
+            if (this.abort_controller.signal.aborted) return;
+            this.readers.push(reader);
+        },
+        reader_remove(reader) {
+            if (this.abort_controller.signal.aborted) return;
+            this.readers = this.readers.filter(v => v != reader);
+        },
+        read(bytes) {
+            if (this.abort_controller.signal.aborted) return;
+            for (let reader of this.readers) {
+                reader(bytes);
+            }
+        },
+        flush() {
+            if (this.abort_controller.signal.aborted) return;
+            if (this.on_flush) {
+                this.on_flush();
+            }
+        },
+        write(bytes) {
+            if (this.abort_controller.signal.aborted) return;
+            if (this.on_write) {
+                this.on_write(bytes);
+            }
+        },
+        close() {
+            if (this.abort_controller.signal.aborted) return;
+            if (this.on_close) {
+                this.on_close();
+            }
+            this.abort_controller.abort();
+            this.readers.length = 0;
+
+            delete this.on_close;
+            delete this.on_flush;
+            delete this.on_write;
+        }
+    }
 }
 
 export type ContactAF = "RAW" | "IPv4" | "IPv6";
@@ -393,7 +448,7 @@ export class Device {
             return;
         }
 
-        const io = this.process_io_create();
+        const io = device_io_create();
         if (handlers) {
             if (handlers.io_on_close)
                 io.on_close = handlers.io_on_close;
@@ -404,6 +459,8 @@ export class Device {
             if (handlers.io_on_write)
                 io.on_write = handlers.io_on_write;
         }
+
+        const proc_resources = new DeviceResources();
 
         this.processes[i] = {
             status: "UNINIT",
@@ -429,9 +486,8 @@ export class Device {
                 return res;
             },
 
-            io: io,
-
-            resources: new DeviceResources()
+            resources: proc_resources,
+            io: proc_resources.create(io),
         };
 
         this.process_resources[this.processes[i]!.id] = [];
@@ -543,7 +599,6 @@ export class Device {
         // delete journal entries
         this.process_journal_entries.delete(proc.id);
 
-        proc.io.close();
         proc.resources.close();
 
         this.processes[i]!.status = "CLOSED";
@@ -596,7 +651,7 @@ export class Device {
 
     private terminal_read(bytes: Uint8Array) {
         for (let attached_io of this.io_terminal_attached) {
-            if (!attached_io.active || !attached_io.read) continue;
+            if (attached_io.abort_controller.signal.aborted) continue;
             attached_io.read(bytes);
         }
     }
@@ -605,13 +660,13 @@ export class Device {
     io_terminal_attach(io: DeviceIO) {
         const device = this;
         io.on_write = function (bytes) {
-            (this.active && device.terminal) && device.terminal.write(bytes);
+            (!this.abort_controller.signal.aborted && device.terminal) && device.terminal.write(bytes);
         }
         io.on_flush = function () {
-            (this.active && device.terminal) && device.terminal.flush();
+            (!this.abort_controller.signal.aborted && device.terminal) && device.terminal.flush();
         }
         io.on_close = function () {
-            (this.active) && device.io_terminal_detach(this);
+            (!this.abort_controller.signal.aborted) && device.io_terminal_detach(this)
         }
 
         this.io_terminal_attached.push(io);
@@ -621,29 +676,6 @@ export class Device {
         delete io.on_close;
         delete io.on_flush;
         this.io_terminal_attached.filter(v => v != io);
-    }
-
-    private process_io_create(): DeviceIO {
-        return {
-            active: true,
-            write(bytes) {
-                if (this.active && this.on_write) {
-                    this.on_write(bytes);
-                }
-            },
-            flush() {
-                if (this.active && this.on_flush) {
-                    this.on_flush();
-                }
-            },
-            close() {
-                if (this.on_close) this.on_close();
-                this.active = false;
-                delete this.on_close;
-                delete this.on_flush;
-                delete this.on_write;
-            }
-        }
     }
 
     private process_init_resource(proc: Process, resource: ProcessResource) {

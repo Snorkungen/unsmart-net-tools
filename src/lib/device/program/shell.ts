@@ -229,7 +229,7 @@ const lazywriter: Program<string> = {
         let selected_option_idx = 0;
         proc.io.write(new Uint8Array([ASCIICodes.NewLine]));
 
-        proc.io.read = (bytes) => {
+        proc.io.reader_add((bytes) => {
             let byte = bytes[0];
 
             if (byte === ASCIICodes.Space) {
@@ -277,11 +277,12 @@ const lazywriter: Program<string> = {
             selected_option_idx = (selected_option_idx + 1) % options.length;
             lazywriter_write_options(proc, options, selected_option_idx, term_width)
             return true;
-        };
+        });
 
         termquery(proc).then((data) => {
-            if (!data.width) return;
-            term_width = data.width;
+            if (data.width) {
+                term_width = data.width;
+            };
             lazywriter_write_options(proc, options, selected_option_idx, term_width);
         })
         // lazywriter_write_options(proc, options, selected_option_idx, term_width);
@@ -294,6 +295,7 @@ function read(proc: Process<ShellData>, bytes: Uint8Array) {
     if (proc.data.state === ShellState.UNITIALIZED) {
         return; // do nothing
     }
+
 
     if (proc.data.state === ShellState.PROMPT) {
         let i = 0; char_parse_loop: while (i < bytes.byteLength) {
@@ -354,9 +356,7 @@ function read(proc: Process<ShellData>, bytes: Uint8Array) {
                     }
                 });
 
-                if (proc.data.runningProc?.io.read && i < (bytes.length - 1)) {
-                    proc.data.runningProc.io.read(bytes.subarray(i + 1))
-                }
+                // proc.data.runningProc?.io.read(bytes.subarray(i + 1))
 
                 return; // early return
             } else if (byte == ASCIICodes.CarriageReturn || byte == ASCIICodes.NewLine) {
@@ -571,9 +571,7 @@ function read(proc: Process<ShellData>, bytes: Uint8Array) {
         }
 
         if (proc.data.runningProc.io.read) {
-            if (proc.data.runningProc.io.read(bytes)) {
-                return; // by returning a truthy value it assumes that spawned process takes care of all input
-            }
+            (proc.data.runningProc.io.read(bytes))
         }
 
         if (bytes.includes(3)) {
@@ -582,9 +580,7 @@ function read(proc: Process<ShellData>, bytes: Uint8Array) {
     }
 
     if (proc.data.state === ShellState.LAZY_WRITING && proc.data.runningProc) {
-        if (proc.data.runningProc.io.read) {
-            proc.data.runningProc.io.read(bytes)
-        }
+        proc.data.runningProc.io.read(bytes)
     }
 }
 
@@ -602,9 +598,9 @@ export const DAEMON_SHELL: Program = {
         };
 
         proc.device.io_terminal_attach(proc.io);
-        proc.io.read = (bytes) => {
+        proc.io.reader_add((bytes) => {
             read(proc, bytes)
-        }
+        })
 
         writePrompt(proc);
 

@@ -7,7 +7,7 @@ export interface DeviceResource {
 export class DeviceResources<T extends DeviceResource = DeviceResource> {
     resources: (undefined | T)[] = [];
 
-    create(resource: T): T {
+    create<CT extends T>(resource: CT): CT {
         let i = -1; while (this.resources[++i]) { continue; }
         resource.abort_controller.signal.addEventListener("abort", () => {
             delete this.resources[i];

@@ -14,16 +14,19 @@ export function termquery(proc: Process): Promise<TermQuery> {
     const data: TermQuery = {};
 
     return new Promise((resolve) => {
+        function quit() {
+            proc.io.reader_remove(termquery_reader)
+            max_timer.close();
+            resolve(data);
+        }
+
         let max_timer = proc.resources.create(
-            proc.device.schedule(() => {
-                proc.io.read = io_reader;
-                resolve(data)
-            }, MAX_QUERY_WAIT)
+            proc.device.schedule(quit, MAX_QUERY_WAIT)
         );
 
         let original_cursor_position: undefined | number = undefined;
-        let io_reader = proc.io.read;
-        proc.io.read = (bytes) => {
+        const termquery_reader = (bytes: Uint8Array) => {
+            console.log("reader", bytes)
             // assume that the ctrl code is the only data in the bytes
             if (bytes.byteLength < 3) return;
             if (bytes[0] != ASCIICodes.Escape || bytes[1] != ASCIICodes.OpenSquareBracket) return;
@@ -65,18 +68,12 @@ export function termquery(proc: Process): Promise<TermQuery> {
                     data!.width = horizontal
                     proc.io.write(CSI(...numbertonumbers(original_cursor_position), ASCIICodes.G))
 
-                    proc.io.read = io_reader;
-                    max_timer.close();
-                    resolve(data);
-                }
-
-                if (io_reader) {
-                    io_reader(bytes);
+                    quit();
                 }
             }
-
-            return true;
         }
+
+        proc.io.reader_add(termquery_reader);
 
         // fix issue with some stuff
         proc.resources.create(
@@ -85,6 +82,6 @@ export function termquery(proc: Process): Promise<TermQuery> {
                 proc.io.write(CSI(0x36, ASCIICodes.n));
                 proc.io.flush();
             })
-        )
+        );
     })
 }
