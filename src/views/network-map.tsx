@@ -189,7 +189,7 @@ function init_nmap(el: SVGSVGElement) {
         if (!proc) {
             terminalOwner.process_start(DAEMON_SHELL);
         } else {
-            proc.device.process_termwriteto(proc, new Uint8Array([10])); // press enter
+            proc.device.terminal_read(new Uint8Array([10])); // press enter
         }
         set_active_device(terminalOwner)
     }
@@ -254,11 +254,11 @@ function remove_interface_from_device(device: Device, iface: EthernetInterface) 
 function remove_device_from_state(device: Device) {
     if (!state) return;
     network_map_remove_device(state, device);
-    
+
     device.terminal_detach();
     terminalOwner = undefined;
     set_active_device(undefined);
-    
+
     network_map_render(state);
 }
 

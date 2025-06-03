@@ -133,7 +133,7 @@ export const TestingComponent2: Component = () => {
         for (let i = 0; i < n; i++) {
             terminal.write(uint8_fromString(`Hello, World ${i + 1}\n`), false);
         }
-        newdevice.process_termwriteto(shellproc, new Uint8Array([10]))
+        newdevice.terminal_read(new Uint8Array([10]))
     }
 
     function change_terminal_size(size = 30) {
