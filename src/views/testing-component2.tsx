@@ -20,13 +20,12 @@ import { ASCIICodes } from "../lib/terminal/shared";
 import { terminal_resize } from "../lib/terminal/renderer";
 
 export const TestingComponent2: Component = () => {
-    let shellproc: any
     let terminal: Terminal;
 
     createEffect(() => {
         terminal.write(uint8_fromString("Hello wte"))
         newdevice.terminal_attach(terminal);
-        shellproc = newdevice.process_start(DAEMON_SHELL, []);
+        newdevice.process_start(DAEMON_SHELL, []);
     });
 
     let newdevice = new Device();
@@ -133,7 +132,7 @@ export const TestingComponent2: Component = () => {
         for (let i = 0; i < n; i++) {
             terminal.write(uint8_fromString(`Hello, World ${i + 1}\n`), false);
         }
-        newdevice.terminal_read(new Uint8Array([10]))
+        terminal.read!(new Uint8Array([10]))
     }
 
     function change_terminal_size(size = 30) {

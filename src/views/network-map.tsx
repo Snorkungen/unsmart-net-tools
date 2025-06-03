@@ -189,7 +189,7 @@ function init_nmap(el: SVGSVGElement) {
         if (!proc) {
             terminalOwner.process_start(DAEMON_SHELL);
         } else {
-            proc.device.terminal_read(new Uint8Array([10])); // press enter
+            proc.io.read(new Uint8Array([10])); // Press enter
         }
         set_active_device(terminalOwner)
     }

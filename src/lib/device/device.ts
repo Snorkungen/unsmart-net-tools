@@ -618,7 +618,7 @@ export class Device {
         delete this.terminal;
     }
 
-    terminal_read(bytes: Uint8Array) {
+    private terminal_read(bytes: Uint8Array) {
         for (let attached_io of this.io_terminal_attached) {
             if (attached_io.abort_controller.signal.aborted) continue;
             attached_io.read(bytes);
