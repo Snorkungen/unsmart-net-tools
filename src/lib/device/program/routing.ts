@@ -23,7 +23,7 @@ export const DAEMON_ROUTING: Program = {
                 return;
             }
 
-            if (iphdr.get("ttl") < 1) {
+            if (iphdr.get("ttl") <= 1) {
                 let icmphdr = ICMP_HEADER.create({
                     type: ICMPV4_TYPES.TIME_EXCEEDED,
                     code: ICMPV4_CODES[ICMPV4_TYPES.TIME_EXCEEDED].TTL,

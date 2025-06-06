@@ -10,7 +10,7 @@ import { IPV4_HEADER, IPV4_PSEUDO_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTO
 import { ARP_HEADER, ARP_OPCODES } from "../header/arp";
 import { PacketCaptureEthernetReader, type PacketCaptureRecordData } from "../packet-capture/reader";
 import { calculateChecksum } from "../binary/checksum";
-import { ICMPV4_TYPES, ICMPV6_TYPES, ICMP_HEADER, ICMP_NDPFLAG_SOLICITED, ICMP_NDP_HEADER } from "../header/icmp";
+import { ICMPV4_CODES, ICMPV4_TYPES, ICMPV6_CODES, ICMPV6_TYPES, ICMP_HEADER, ICMP_NDPFLAG_SOLICITED, ICMP_NDP_HEADER, ICMP_UNUSED_HEADER } from "../header/icmp";
 import { UDP_HEADER } from "../header/udp";
 import { BaseInterface, VlanInterface, EthernetInterface } from "./interface";
 import { TCP_FLAGS, TCP_HEADER, TCP_OPTION_KINDS } from "../header/tcp";
@@ -712,12 +712,33 @@ export class Device {
             }
         }
 
-        this.contact_input_udp("IPv4", { ...data, buffer: udphdr.get("payload") }, {
+        if (!this.contact_input_udp("IPv4", { ...data, buffer: udphdr.get("payload") }, {
             saddr: iphdr.get("daddr"),
             daddr: iphdr.get("saddr"),
             sport: udphdr.get("dport"),
             dport: udphdr.get("sport")
-        });
+        }) && !(data.multicast || data.broadcast)) {
+            // Reply with an icmp error (UNREACHABLE_PORT)
+            let icmphdr = ICMP_HEADER.create({
+                type: ICMPV4_TYPES.DESTINATION_UNREACHABLE,
+                code: ICMPV4_CODES[ICMPV4_TYPES.DESTINATION_UNREACHABLE].UNREACHABLE_PORT,
+                data: ICMP_UNUSED_HEADER.create({
+                    data: iphdr.getBuffer().slice(0, 64)
+                }).getBuffer(),
+                csum: 0,
+            });
+
+            icmphdr.set("csum", calculateChecksum(icmphdr.getBuffer()))
+            iphdr = IPV4_HEADER.create({
+                daddr: iphdr.get("saddr"),
+                proto: PROTOCOLS.ICMP,
+                payload: icmphdr.getBuffer()
+            });
+
+            this.output_ipv4({
+                buffer: iphdr.getBuffer()
+            }, iphdr.get("saddr"),); // ignore problems
+        }
     }
 
     input_udp6(iphdr: typeof IPV6_HEADER, data: NetworkData) {
@@ -734,12 +755,43 @@ export class Device {
             return;
         }
 
-        this.contact_input_udp("IPv6", { ...data, buffer: udphdr.get("payload") }, {
+        if (!this.contact_input_udp("IPv6", { ...data, buffer: udphdr.get("payload") }, {
             saddr: iphdr.get("daddr"),
             daddr: iphdr.get("saddr"),
             sport: udphdr.get("dport"),
             dport: udphdr.get("sport")
-        });
+        }) && !(data.multicast || data.broadcast)) {
+            // Reply with an icmp error (UNREACHABLE_PORT)
+            let icmphdr = ICMP_HEADER.create({
+                type: ICMPV6_TYPES.DESTINATION_UNREACHABLE,
+                code: ICMPV6_CODES[ICMPV6_TYPES.DESTINATION_UNREACHABLE].PORT_UNREACHABLE,
+                data: ICMP_UNUSED_HEADER.create({ data: iphdr.getBuffer().slice(0, 64 * 4) }).getBuffer()
+            });
+
+            let route = this.route_resolve(iphdr.get("saddr"));
+            if (!route) return;
+            let source = route.iface.addresses.find(a => a.address instanceof IPV6Address)
+            if (!source) return;
+
+            let pseudohdr = IPV4_PSEUDO_HEADER.create({
+                saddr: source.address,
+                daddr: iphdr.get("saddr"),
+                proto: PROTOCOLS.IPV6_ICMP,
+                len: icmphdr.size
+            });
+
+            icmphdr.set("csum", calculateChecksum(uint8_concat([pseudohdr.getBuffer(), icmphdr.getBuffer()])))
+
+            iphdr = IPV6_HEADER.create({
+                daddr: iphdr.get("saddr"),
+                nextHeader: PROTOCOLS.IPV6_ICMP,
+                payload: icmphdr.getBuffer(),
+            });
+
+            this.output_ipv6({
+                buffer: iphdr.getBuffer()
+            }, iphdr.get("saddr")); // ignore problems
+        };
     }
 
     input_ndp(iphdr: typeof IPV6_HEADER, data: NetworkData) {
@@ -1846,12 +1898,16 @@ export class Device {
             creciver.receiver(creciver.contact, ...receiver_params);
         }
     }
-    private contact_input_udp(af: ContactAF, ...receiver_params: DropFirst<Parameters<ContactReceiver>>) {
+    /** @returns  true = (no problem),  false = (reply with an icmp error) */
+    private contact_input_udp(af: ContactAF, ...receiver_params: DropFirst<Parameters<ContactReceiver>>): boolean {
         let input_caddr = receiver_params[1];
-        if (!input_caddr) return;
+        if (!input_caddr) return true;
         let best = __find_best_caddr_match(af, "UDP", input_caddr, this.contact_receivers);
-        if (!best) return;
+        if (!best) {
+            return false;
+        };
         best.receiver(best.contact, ...receiver_params);
+        return true;
     }
 
     private contact_method_not_supported = (contact: Contact): DeviceResult<ContactError> => {
@@ -2418,20 +2474,81 @@ export class Device {
             return { success: false, error: undefined, message: "contact must be bound" };
         }
 
+        const destination = contact.address.daddr
+
+        if (!rtentry) {
+            rtentry = this.route_resolve(destination);
+        }
+
+        if (!rtentry) {
+            return {
+                success: false,
+                error: "HOSTUNREACH",
+                message: "No outgoing route found"
+            }
+        }
+
+        let source = rtentry.iface.addresses.find(value => value.address.constructor == destination.constructor);
+        if (!source) {
+            return {
+                success: false,
+                error: "HOSTUNREACH",
+                message: "no source address for interface found"
+            }
+        }
+
         let udphdr = UDP_HEADER.create({
             sport: contact.address.sport,
             dport: contact.address.dport,
             payload: data.buffer
         });
+        udphdr.set("length", udphdr.size);
 
-        let pseudo_header = IPV4_PSEUDO_HEADER.create({
-            saddr: contact.address.saddr,
-            daddr: contact.address.daddr,
-        })
+        if (destination instanceof IPV4Address) {
+            let pseudohdr = IPV4_PSEUDO_HEADER.create({
+                saddr: source.address,
+                daddr: destination,
+                proto: PROTOCOLS.UDP,
+                len: udphdr.size
+            })
 
-        data.buffer = uint8_concat([pseudo_header.getBuffer(), udphdr.getBuffer()]);
-        let res = this.output_udp(data, contact.address.daddr, rtentry);
-        return { success: res.success, error: undefined, data: undefined, message: res.message }
+            udphdr.set("csum", calculateChecksum(uint8_concat([
+                pseudohdr.getBuffer(),
+                udphdr.getBuffer()])) || 0xffff);
+
+            return this.output_ipv4({
+                ...data, buffer: IPV4_HEADER.create({
+                    daddr: destination,
+                    saddr: source.address,
+                    proto: PROTOCOLS.UDP,
+                    payload: udphdr.getBuffer()
+                }).getBuffer()
+            }, destination, rtentry);
+        }
+
+        if (destination instanceof IPV6Address && source.address instanceof IPV6Address) {
+            let pseudohdr = IPV4_PSEUDO_HEADER.create({
+                saddr: source.address,
+                daddr: destination,
+                proto: PROTOCOLS.UDP,
+                len: udphdr.size
+            });
+
+            udphdr.set("csum", calculateChecksum(uint8_concat([
+                pseudohdr.getBuffer(),
+                udphdr.getBuffer()])));
+
+            return this.output_ipv6({
+                ...data, buffer: IPV6_HEADER.create({
+                    daddr: destination,
+                    saddr: source.address,
+                    nextHeader: PROTOCOLS.UDP,
+                    payload: udphdr.getBuffer()
+                }).getBuffer()
+            }, destination, rtentry);
+        }
+
+        return { success: false, error: "HOSTUNREACH", message: "destination MUST be an ip address" };
     }
 
     private contact_m_sendTo_udp: DeviceContactMethod<Contact["sendTo"]> = (contact, data, caddr, rtentry) => {
