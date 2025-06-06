@@ -728,16 +728,18 @@ export class Device {
                 csum: 0,
             });
 
+            let reply_destination = iphdr.get("saddr")
+
             icmphdr.set("csum", calculateChecksum(icmphdr.getBuffer()))
             iphdr = IPV4_HEADER.create({
-                daddr: iphdr.get("saddr"),
+                daddr: reply_destination,
                 proto: PROTOCOLS.ICMP,
                 payload: icmphdr.getBuffer()
             });
 
             this.output_ipv4({
                 buffer: iphdr.getBuffer()
-            }, iphdr.get("saddr"),); // ignore problems
+            }, reply_destination); // ignore problems
         }
     }
 
@@ -773,9 +775,11 @@ export class Device {
             let source = route.iface.addresses.find(a => a.address instanceof IPV6Address)
             if (!source) return;
 
+            let reply_destination = iphdr.get("saddr")
+
             let pseudohdr = IPV4_PSEUDO_HEADER.create({
                 saddr: source.address,
-                daddr: iphdr.get("saddr"),
+                daddr: reply_destination,
                 proto: PROTOCOLS.IPV6_ICMP,
                 len: icmphdr.size
             });
@@ -783,14 +787,14 @@ export class Device {
             icmphdr.set("csum", calculateChecksum(uint8_concat([pseudohdr.getBuffer(), icmphdr.getBuffer()])))
 
             iphdr = IPV6_HEADER.create({
-                daddr: iphdr.get("saddr"),
+                daddr: reply_destination,
                 nextHeader: PROTOCOLS.IPV6_ICMP,
                 payload: icmphdr.getBuffer(),
             });
 
             this.output_ipv6({
                 buffer: iphdr.getBuffer()
-            }, iphdr.get("saddr")); // ignore problems
+            }, reply_destination); // ignore problems
         };
     }
 
@@ -1231,6 +1235,14 @@ export class Device {
     }
 
     output_ipv6(data: NetworkData, destination: IPV6Address, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
+        if (uint8_equals(destination.buffer, _UNSET_ADDRESS_IPV6.buffer)) {
+            return {
+                success: false,
+                error: "HOSTUNREACH",
+                message: "bad destination",
+            }
+        }
+
         // Select route
         if (!route && !(route = this.route_resolve(destination))) return {
             success: false,
@@ -1287,7 +1299,13 @@ export class Device {
 
     output_ipv4(data: NetworkData, destination: IPV4Address, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
         /** So the thinking is that the user would construct the iphdr */
-
+        if (uint8_equals(destination.buffer, _UNSET_ADDRESS_IPV4.buffer)) {
+            return {
+                success: false,
+                error: "HOSTUNREACH",
+                message: "bad destination",
+            }
+        }
         // Select route
         if (!route && !(route = this.route_resolve(destination))) return {
             success: false,
