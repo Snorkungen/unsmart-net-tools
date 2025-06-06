@@ -3,7 +3,7 @@ import { IPV4Address } from "../lib/address/ipv4";
 import { createMask } from "../lib/address/mask";
 import { NetworkSwitch } from "../lib/device/network-switch";
 import Terminal from "../lib/terminal/terminal";
-import { Device, ProcessSignal } from "../lib/device/device";
+import { Device } from "../lib/device/device";
 import { DAEMON_SHELL } from "../lib/device/program/shell";
 import { DAEMON_ECHO_REPLIER } from "../lib/device/program/echo-replier";
 import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_HELP } from "../lib/device/program/program";
@@ -15,6 +15,8 @@ import { EthernetInterface, VlanInterface } from "../lib/device/interface";
 import { DEVICE_PROGRAM_ROUTEINFO } from "../lib/device/program/routeinfo";
 import { network_map_init_device_shape as network_map_init_device, network_map_init_state, network_map_remove_device_shape as network_map_remove_device, network_map_render } from "../lib/network-map/network-map";
 import { createSignal, For, Show, Switch } from "solid-js";
+import { DEVICE_PROGRAM_TRACEROUTE } from "../lib/device/program/traceroute";
+import { DEVICE_PROGRAM_HOSTSINFO } from "../lib/device/program/hostsinfo";
 
 function init_programs(device: Device) {
     device.process_start(DAEMON_ECHO_REPLIER);
@@ -26,7 +28,9 @@ function init_programs(device: Device) {
         DEVICE_PROGRAM_HELP,
         DEVICE_PROGRAM_CLEAR,
         DEVICE_PROGRAM_PING,
-        DEVICE_PROGRAM_DOWNLOAD
+        DEVICE_PROGRAM_DOWNLOAD,
+        DEVICE_PROGRAM_TRACEROUTE,
+        DEVICE_PROGRAM_HOSTSINFO,
     ]
 }
 

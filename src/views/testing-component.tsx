@@ -17,6 +17,7 @@ import { DEVICE_PROGRAM_PING } from "../lib/device/program/ping";
 import { DEVICE_PROGRAM_ROUTEINFO } from "../lib/device/program/routeinfo";
 import { DeviceViewComponent } from "../components/device-view";
 import { DEVICE_PROGRAM_HOSTSINFO, setaddress_by_host } from "../lib/device/program/hostsinfo";
+import { DEVICE_PROGRAM_TRACEROUTE } from "../lib/device/program/traceroute";
 
 let terminal_device: Device | undefined;
 let terminal: Terminal;
@@ -49,6 +50,7 @@ const DeviceComponent: Component<{ device: Device }> = ({ device }) => {
 
         DEVICE_PROGRAM_DAEMAN,
         DEVICE_PROGRAM_HOSTSINFO,
+        DEVICE_PROGRAM_TRACEROUTE,
     )
 
     return <>

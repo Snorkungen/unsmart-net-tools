@@ -18,6 +18,8 @@ import { IPV4_HEADER, PROTOCOLS, createIPV4Header } from "../lib/header/ip";
 import { DEVICE_PROGRAM_DAEMAN } from "../lib/device/program/daeman";
 import { ASCIICodes } from "../lib/terminal/shared";
 import { terminal_resize } from "../lib/terminal/renderer";
+import { DEVICE_PROGRAM_TRACEROUTE } from "../lib/device/program/traceroute";
+import { DEVICE_PROGRAM_HOSTSINFO, setaddress_by_host } from "../lib/device/program/hostsinfo";
 
 export const TestingComponent2: Component = () => {
     let terminal: Terminal;
@@ -37,6 +39,8 @@ export const TestingComponent2: Component = () => {
         DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_IFINFO, DEVICE_PROGRAM_ROUTEINFO,
 
         DEVICE_PROGRAM_DAEMAN,
+        DEVICE_PROGRAM_HOSTSINFO,
+        DEVICE_PROGRAM_TRACEROUTE,
     )
 
     // ADD ECHO REPLIER TO DEVICES
@@ -46,6 +50,8 @@ export const TestingComponent2: Component = () => {
     const osif_destination = new IPV4Address("10.1.1.40");
     const osif_dport = 10011;
     newdevice.interface_address_set(osif, new IPV4Address("10.1.1.100"), createMask(IPV4Address, 16))
+    setaddress_by_host(newdevice, "remote.osif", osif_destination)
+
 
     function send_ping() {
         function success() {
