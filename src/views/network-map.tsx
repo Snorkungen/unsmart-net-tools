@@ -137,21 +137,19 @@ init_programs(pc3)
 init_programs(pc4)
 init_programs(pc5)
 
-Object.entries({
-    "pc1": new IPV4Address("192.168.1.10"),
-    "pc2": new IPV4Address("192.168.1.20"),
-    "r1": new IPV4Address("192.168.1.1"),
-    "r1.10": new IPV4Address("192.168.1.1"),
-    "r1.20": new IPV4Address("172.16.0.1"),
-    "pc4": new IPV4Address("172.16.0.40"),
-    "pc5": new IPV4Address("172.16.0.50"),
-}).forEach(([host, address]) => {
-    setaddress_by_host(pc1, host, address);
-    setaddress_by_host(pc2, host, address);
-    setaddress_by_host(networkRouter, host, address);
-    setaddress_by_host(pc4, host, address);
-    setaddress_by_host(pc5  , host, address);
-})
+function bulk_set_addresses(host: string, ...addresses: IPV4Address[]) {
+    setaddress_by_host(pc1, host, ...addresses);
+    setaddress_by_host(pc2, host, ...addresses);
+    setaddress_by_host(networkRouter, host, ...addresses);
+    setaddress_by_host(pc4, host, ...addresses);
+    setaddress_by_host(pc5, host, ...addresses);
+};
+
+bulk_set_addresses("pc1", new IPV4Address("192.168.1.10"))
+bulk_set_addresses("pc2", new IPV4Address("192.168.1.20"))
+bulk_set_addresses("r1", new IPV4Address("192.168.1.1"), new IPV4Address("172.16.0.1"))
+bulk_set_addresses("pc4", new IPV4Address("172.16.0.40"))
+bulk_set_addresses("pc5", new IPV4Address("172.16.0.50"))
 
 const switch_dimensions = { width: 85, height: 25 }
 let terminalOwner: Device | undefined = pc1;

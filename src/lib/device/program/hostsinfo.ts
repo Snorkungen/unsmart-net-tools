@@ -1,8 +1,8 @@
 // A tool to handle the host database
 
 import type { BaseAddress } from "../../address/base";
-import { uint8_fromString } from "../../binary/uint8-array";
-import { Device, ProcessSignal, Program } from "../device";
+import { Device, DeviceRoute, ProcessSignal, Program } from "../device";
+import { ioprint } from "./helpers";
 
 export type HostsinfoData = {
     hosts: string[];
@@ -20,6 +20,21 @@ function get_store_data(device: Device): HostsinfoData {
 
 }
 
+function sort_addresses_by_routes(routes: DeviceRoute[], addresses: BaseAddress[]): BaseAddress[] {
+    return addresses.sort((a, b) => {
+        let a_route: DeviceRoute | undefined = undefined, b_route: DeviceRoute | undefined = undefined;
+        for (let r of routes) { // caching the routes would be nice but, then again who cares about performance
+            if ((!a_route || a_route.netmask.length < r.netmask.length) && r.netmask.compare(r.destination, a)) a_route = r;
+            if ((!b_route || b_route.netmask.length < r.netmask.length) && r.netmask.compare(r.destination, b)) b_route = r;
+        }
+
+        if (!a_route) return -1;
+        if (!b_route) return 1;
+
+        return b_route.netmask.length - a_route.netmask.length
+    })
+}
+
 export function getaddress_by_host(device: Device, host: string): Promise<BaseAddress[]> {
     let addresses: BaseAddress[] = [];
     let data = get_store_data(device);
@@ -31,6 +46,8 @@ export function getaddress_by_host(device: Device, host: string): Promise<BaseAd
 
         addresses.push(...data.addresses[i]);
     }
+
+    addresses = sort_addresses_by_routes(device.routes, addresses);
 
     return new Promise(resolve => {
         resolve(addresses)
@@ -46,7 +63,7 @@ export function setaddress_by_host(device: Device, host: string, ...addresses: B
         data.hosts[hidx] = host;
     }
 
-    data.addresses[hidx] = addresses;
+    data.addresses[hidx] = sort_addresses_by_routes(device.routes, addresses);
     device.store_set(HOSTSINFO_STORE_KEY, data);
     return;
 }
@@ -57,10 +74,7 @@ export const DEVICE_PROGRAM_HOSTSINFO: Program = {
         let data = get_store_data(proc.device)
 
         for (let i = 0; i < data.hosts.length; i++) {
-            proc.io.write(uint8_fromString("\n" + data.hosts[i]))
-            for (let address of data.addresses[i]) {
-                proc.io.write(uint8_fromString("\t" + address.toString()))
-            }
+            ioprint(proc.io, "\n" + data.hosts[i] + "\t" + sort_addresses_by_routes(proc.device.routes, data.addresses[i]).join(", "))
         }
 
         return ProcessSignal.EXIT;
