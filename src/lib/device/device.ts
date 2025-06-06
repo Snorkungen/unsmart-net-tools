@@ -717,7 +717,7 @@ export class Device {
             daddr: iphdr.get("saddr"),
             sport: udphdr.get("dport"),
             dport: udphdr.get("sport")
-        }) && !(data.multicast || data.broadcast)) {
+        }) && !(data.multicast || data.broadcast) && data.destination) {
             // Reply with an icmp error (UNREACHABLE_PORT)
             let icmphdr = ICMP_HEADER.create({
                 type: ICMPV4_TYPES.DESTINATION_UNREACHABLE,
@@ -733,6 +733,7 @@ export class Device {
             icmphdr.set("csum", calculateChecksum(icmphdr.getBuffer()))
             iphdr = IPV4_HEADER.create({
                 daddr: reply_destination,
+                saddr: iphdr.get("daddr"),
                 proto: PROTOCOLS.ICMP,
                 payload: icmphdr.getBuffer()
             });
@@ -762,7 +763,7 @@ export class Device {
             daddr: iphdr.get("saddr"),
             sport: udphdr.get("dport"),
             dport: udphdr.get("sport")
-        }) && !(data.multicast || data.broadcast)) {
+        }) && !(data.multicast || data.broadcast) && data.destination) {
             // Reply with an icmp error (UNREACHABLE_PORT)
             let icmphdr = ICMP_HEADER.create({
                 type: ICMPV6_TYPES.DESTINATION_UNREACHABLE,
@@ -1250,14 +1251,6 @@ export class Device {
             message: "No outgoing route found"
         }
 
-        // select an address from the outgoing interface
-        let source = route.iface.addresses.find(value => value.address.constructor == destination.constructor);
-        if (!source) return {
-            success: false,
-            error: "HOSTUNREACH",
-            message: "no source address for intreface found"
-        }
-
         if (data.buffer.length < IPV6_HEADER.getMinSize()) return { success: false, error: "ERROR", message: "bad header" };
         let iphdr = IPV6_HEADER.from(data.buffer);
 
@@ -1266,10 +1259,21 @@ export class Device {
         const DEFAULT_TTL = 64; iphdr.set("hopLimit", iphdr.get("hopLimit") || DEFAULT_TTL);
         iphdr.set("payloadLength", iphdr.get("payload").byteLength);
 
-        if (iphdr.get("daddr").toString(4) == "::")
+        if (uint8_equals(iphdr.get("daddr").buffer, _UNSET_ADDRESS_IPV6.buffer)) {
             iphdr.set("daddr", destination);
-        if (iphdr.get("saddr").toString(4) == "::")
-            iphdr.set("saddr", source.address as IPV6Address); // if there's no source set; use the outgoing interfaces ip address
+        }
+
+        if (uint8_equals(iphdr.get("saddr").buffer, _UNSET_ADDRESS_IPV6.buffer)) { // if there's no source set; use the outgoing interfaces ip address
+            // select an address from the outgoing interface
+            let source = route.iface.addresses.find(value => value.address.constructor == destination.constructor);
+            if (!source) return {
+                success: false,
+                error: "HOSTUNREACH",
+                message: "no source address for intreface found"
+            }
+
+            iphdr.set("saddr", source.address as IPV6Address);
+        }
 
         if (iphdr.get("payloadLength") > route.iface.mtu) {
             return {
@@ -1312,13 +1316,7 @@ export class Device {
             error: "HOSTUNREACH",
             message: "No outgoing route found"
         }
-        // select an address from the outgoing interface
-        let source = route.iface.addresses.find(value => value.address.constructor == destination.constructor);
-        if (!source) return {
-            success: false,
-            error: "HOSTUNREACH",
-            message: "no source address for intreface found"
-        }
+
         //  I'm unsure of how i want to access the outgoing data and if the iphdr has all the requisite data
         if (data.buffer.length < IPV4_HEADER.getMinSize()) return { success: false, error: "ERROR", message: "bad header" };
         let iphdr = IPV4_HEADER.from(data.buffer);
@@ -1329,10 +1327,25 @@ export class Device {
         const DEFAULT_TTL = 64; iphdr.set("ttl", iphdr.get("ttl") || DEFAULT_TTL);
         iphdr.set("len", iphdr.getBuffer().byteLength);
 
-        if (uint8_readUint32BE(iphdr.get("daddr").buffer) === 0)
+        if (uint8_readUint32BE(iphdr.get("daddr").buffer) === 0) {
             iphdr.set("daddr", destination);
-        if (uint8_readUint32BE(iphdr.get("saddr").buffer) === 0)
-            iphdr.set("saddr", source.address); // if there's no source set; use the outgoing interfaces ip address
+        }
+
+        if (uint8_readUint32BE(iphdr.get("saddr").buffer) === 0) { // if there's no source set; use the outgoing interfaces ip addressping 
+            // select an address from the outgoing interface
+            let source = route.iface.addresses.find(value => value.address.constructor == destination.constructor);
+            if (!source) return {
+                success: false,
+                error: "HOSTUNREACH",
+                message: "no source address for intreface found"
+            }
+
+            iphdr.set("saddr", source.address);
+
+            // put some thinking to if the destination is a broadcast address
+            let broadcast = uint8_readUint32BE(not(or(source.netmask.buffer, iphdr.get("daddr").buffer))) === 0;
+            if (broadcast) { data.broadcast = broadcast }
+        }
 
         if (iphdr.get("len") > route.iface.mtu) {
             return {
@@ -1346,10 +1359,6 @@ export class Device {
         iphdr.set("csum", calculateChecksum(iphdr.getBuffer().slice(0, iphdr.get("ihl") << 2)));
 
         data.buffer = iphdr.getBuffer()
-
-        // put some thinking to if the destination is a broadcast address
-        let broadcast = uint8_readUint32BE(not(or(source.netmask.buffer, iphdr.get("daddr").buffer))) === 0;
-        if (broadcast) { data.broadcast = broadcast }
 
         // !TODO: this could check all addresses on the device if its for the device
         if (route.iface.addresses.find(a => uint8_equals(a.address.buffer, destination.buffer))) {
