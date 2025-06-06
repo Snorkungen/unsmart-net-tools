@@ -1,6 +1,6 @@
 import { uint8_concat, uint8_fromString } from "../../binary/uint8-array";
 import { CSI, ASCIICodes, TERMINAL_DEFAULT_COLUMNS } from "../../terminal/shared";
-import { Process, Program } from "../device";
+import { DeviceIO, Process, Program } from "../device";
 
 export const TAB_SIZE = 8;
 
@@ -148,4 +148,11 @@ export function spawn_program_promisify<T extends any>(proc: Process, program: P
             resolve(sproc.data)
         }
     }));
+}
+
+export function ioprint(io: DeviceIO, text: string) {
+    return io.write(uint8_fromString(text));
+}
+export function ioprintln(io: DeviceIO, text: string) {
+    return io.write(uint8_fromString(text + "\n"));
 }

@@ -6,6 +6,7 @@ import { uint8_concat, uint8_equals, uint8_fromString } from "../../binary/uint8
 import { ICMP_ECHO_HEADER, ICMP_HEADER, ICMP_UNUSED_HEADER, ICMPV4_TYPES, ICMPV6_TYPES } from "../../header/icmp";
 import { IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
 import { Contact, DeviceResult, DeviceRoute, NetworkData, Process, ProcessSignal, Program } from "../device";
+import { ioprint, ioprintln } from "./helpers";
 import { getaddress_by_host } from "./hostsinfo";
 
 const MSG_DST_UNREACH = uint8_fromString(
@@ -218,6 +219,29 @@ export function headless_ping_receive(destination: BaseAddress, route: DeviceRou
     throw new Error("bad destination")
 }
 
+export async function headless_ping_resolve_destination(proc: Process, destination: string): Promise<IPV4Address | IPV6Address | null> {
+    if (IPV4Address.validate(destination)) {
+        return new IPV4Address(destination);
+    } else if (IPV6Address.validate(destination)) {
+        return new IPV6Address(destination);
+    }
+
+    let addresses = await getaddress_by_host(proc.device, destination);
+    if (!addresses.length) {
+        return null;
+    }
+
+    for (let address of addresses) {
+        if (address instanceof IPV4Address) {
+            return address;
+        } else if (address instanceof IPV6Address) {
+            return address;
+        }
+    }
+
+    return null;
+}
+
 type PingData = {
     contact: Contact;
     identifier: number;
@@ -241,9 +265,7 @@ function handleExternalExit(proc: Process<PingData>) {
     if (count == 0) return;
     let avg = (sum / count);
 
-    proc.io.write(uint8_fromString(
-        `\n${count} replies received, with an average time of ${avg.toFixed(1)} ms`
-    ))
+    ioprint(proc.io, `\n${count} replies received, with an average time of ${avg.toFixed(1)} ms`)
 }
 
 function send(proc: Process<PingData>) {
@@ -265,9 +287,7 @@ function handlereply(proc: Process<PingData>, source: BaseAddress, bytes: number
 
     let time = Date.now() - sendTime;
 
-    proc.io.write(uint8_fromString(
-        `${bytes} bytes from ${source}: seq=${seq} ttl=${ttl} time=${time} ms\n`
-    ));
+    ioprintln(proc.io, `${bytes} bytes from ${source}: seq=${seq} ttl=${ttl} time=${time} ms`);
 
     if (seq != proc.data.sequence) {
         return; // wait for the correct sequence number to be replied
@@ -288,9 +308,13 @@ export const DEVICE_PROGRAM_PING: Program = {
 <ping ::1 4>`,
     async init(proc, argv) {
         let [, target, sendCount] = argv
-        let destination: IPV4Address | IPV6Address;
         let contact: Contact | undefined;
         let identifier = Math.floor(Math.random() * (0xffff));
+
+        if (!target) {
+            ioprint(proc.io, "destination mising");
+            return ProcessSignal.ERROR;
+        }
 
         let maxSendCount = parseInt(sendCount);
         if (isNaN(maxSendCount)) {
@@ -309,34 +333,14 @@ export const DEVICE_PROGRAM_PING: Program = {
             handlereply(proc, ...params);
         }
 
-        if (IPV4Address.validate(target)) {
+        let destination = await headless_ping_resolve_destination(proc, target);
+        if (destination instanceof IPV4Address) {
             contact = proc.resources.create(proc.device.contact_create("IPv4", "RAW").data!);
-            destination = new IPV4Address(target);
-        } else if (IPV6Address.validate(target)) {
+        } else if (destination instanceof IPV6Address) {
             contact = proc.resources.create(proc.device.contact_create("IPv6", "RAW").data!);
-            destination = new IPV6Address(target);
         } else {
-            // maybe in future dns resolution
-
-            let addresses = await getaddress_by_host(proc.device, target);
-            if (!addresses.length) {
-                proc.io.write(uint8_fromString(
-                    "Failed to parse given address: " + target
-                ));
-
-                return ProcessSignal.ERROR;
-            }
-
-            if (addresses[0] instanceof IPV4Address) {
-                contact = proc.resources.create(proc.device.contact_create("IPv4", "RAW").data!);
-                destination = addresses[0];
-            } else if (addresses[0] instanceof IPV6Address) {
-                contact = proc.resources.create(proc.device.contact_create("IPv6", "RAW").data!);
-                destination = addresses[0];
-            } else {
-                throw new Error("bad address found: " + addresses[0])
-                return ProcessSignal.ERROR;
-            }
+            ioprint(proc.io, "Failed to parse given destination: " + target);
+            return ProcessSignal.ERROR;
         }
 
         let route = proc.device.route_resolve(destination);
