@@ -16,7 +16,7 @@ import { DEVICE_PROGRAM_ROUTEINFO } from "../lib/device/program/routeinfo";
 import { network_map_init_device_shape as network_map_init_device, network_map_init_state, network_map_remove_device_shape as network_map_remove_device, network_map_render } from "../lib/network-map/network-map";
 import { createSignal, For, Show, Switch } from "solid-js";
 import { DEVICE_PROGRAM_TRACEROUTE } from "../lib/device/program/traceroute";
-import { DEVICE_PROGRAM_HOSTSINFO } from "../lib/device/program/hostsinfo";
+import { DEVICE_PROGRAM_HOSTSINFO, setaddress_by_host } from "../lib/device/program/hostsinfo";
 
 function init_programs(device: Device) {
     device.process_start(DAEMON_ECHO_REPLIER);
@@ -136,6 +136,22 @@ init_programs(pc2)
 init_programs(pc3)
 init_programs(pc4)
 init_programs(pc5)
+
+Object.entries({
+    "pc1": new IPV4Address("192.168.1.10"),
+    "pc2": new IPV4Address("192.168.1.20"),
+    "r1": new IPV4Address("192.168.1.1"),
+    "r1.10": new IPV4Address("192.168.1.1"),
+    "r1.20": new IPV4Address("172.16.0.1"),
+    "pc4": new IPV4Address("172.16.0.40"),
+    "pc5": new IPV4Address("172.16.0.50"),
+}).forEach(([host, address]) => {
+    setaddress_by_host(pc1, host, address);
+    setaddress_by_host(pc2, host, address);
+    setaddress_by_host(networkRouter, host, address);
+    setaddress_by_host(pc4, host, address);
+    setaddress_by_host(pc5  , host, address);
+})
 
 const switch_dimensions = { width: 85, height: 25 }
 let terminalOwner: Device | undefined = pc1;
