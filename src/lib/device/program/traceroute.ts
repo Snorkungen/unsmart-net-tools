@@ -191,7 +191,7 @@ export const DEVICE_PROGRAM_TRACEROUTE: Program<TracerouteData> = {
         let send: (data: TracerouteData) => DeviceResult<unknown, unknown>;
         let receive: (_: unknown, data: NetworkData) => void;
         let udppayload = new Uint8Array(40);
-        let port = 0xfffe - (Math.floor(Math.random() * 10_000));
+        let port = 0x7ffe - (Math.floor(Math.random() * 2_000));
 
         // construct a UDP Datagram
         let udphdr = UDP_HEADER.create({

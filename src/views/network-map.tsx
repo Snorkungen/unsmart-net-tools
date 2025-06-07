@@ -10,7 +10,7 @@ import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_ECHO, DEV
 import { DEVICE_PROGRAM_VLANINFO } from "../lib/device/program/vlaninfo";
 import { DEVICE_PROGRAM_PING } from "../lib/device/program/ping";
 import { DEVICE_PROGRAM_IFINFO } from "../lib/device/program/ifinfo";
-import { DAEMON_ROUTING } from "../lib/device/program/routing";
+import { DAEMON_ROUTING, DEVICE_PROGRAM_ROUTINGMAN } from "../lib/device/program/routing";
 import { EthernetInterface, VlanInterface } from "../lib/device/interface";
 import { DEVICE_PROGRAM_ROUTEINFO } from "../lib/device/program/routeinfo";
 import { network_map_init_device_shape as network_map_init_device, network_map_init_state, network_map_remove_device_shape as network_map_remove_device, network_map_render } from "../lib/network-map/network-map";
@@ -31,6 +31,7 @@ function init_programs(device: Device) {
         DEVICE_PROGRAM_DOWNLOAD,
         DEVICE_PROGRAM_TRACEROUTE,
         DEVICE_PROGRAM_HOSTSINFO,
+        DEVICE_PROGRAM_ROUTINGMAN
     ]
 }
 

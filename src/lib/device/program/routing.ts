@@ -1,9 +1,10 @@
 import { IPV6Address } from "../../address/ipv6";
 import { calculateChecksum } from "../../binary/checksum";
-import { uint8_concat, uint8_equals } from "../../binary/uint8-array";
+import { uint8_concat } from "../../binary/uint8-array";
 import { ICMPV4_CODES, ICMPV4_TYPES, ICMPV6_CODES, ICMPV6_TYPES, ICMP_HEADER, ICMP_UNUSED_HEADER } from "../../header/icmp";
 import { IPV4_HEADER, IPV4_PSEUDO_HEADER, IPV6_HEADER, PROTOCOLS } from "../../header/ip";
-import { Program, ProcessSignal, ContactReceiveOptions } from "../device";
+import { Program, ProcessSignal, ContactReceiveOptions, Process } from "../device";
+import { ioprintln } from "./helpers";
 
 const RECEIVE_OPTIONS: ContactReceiveOptions = { promiscuous: true };
 
@@ -156,4 +157,27 @@ export const DAEMON_ROUTING: Program = {
     },
 
     __NODATA__: true,
+}
+
+export const DEVICE_PROGRAM_ROUTINGMAN: Program = {
+    name: "routingman",
+    description: `manage the status of the routing daemon
+    <routingman [start | stop]>`,
+    init: function (proc: Process<any>, args: string[]): ProcessSignal {
+        let [, action] = args
+
+        if (action === "start") {
+            proc.device.process_start(DAEMON_ROUTING);
+        }
+
+        let routingd = proc.device.processes.items.find(p => p?.id.includes(DAEMON_ROUTING.name) && proc != p)
+
+        if (routingd && action == "stop") {
+            routingd.close(ProcessSignal.INTERRUPT);
+            routingd = undefined;
+        }
+
+        ioprintln(proc.io, "Status: " + (routingd ? "started" : "stopped"))
+        return ProcessSignal.EXIT;
+    }
 }
