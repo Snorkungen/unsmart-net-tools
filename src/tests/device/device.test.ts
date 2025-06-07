@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { Contact, Device, DeviceRoute, __find_best_caddr_match, __output_protocol_fill_in_addresses } from "../../lib/device/device";
+import { Contact, Device, __find_best_caddr_match, } from "../../lib/device/device";
 import { IPV4Address } from "../../lib/address/ipv4";
 import { createMask } from "../../lib/address/mask";
 import { IPV6Address } from "../../lib/address/ipv6";
@@ -246,38 +246,4 @@ describe("Device __find_best_caddr_match", () => {
         sport: 10,
         dport: 20
     }, crecivers)?.idx).eq(3_000))
-})
-
-describe("Device __output_protocol_fill_in_addresses", () => {
-    let route6: DeviceRoute = {
-        destination: lb_address6,
-        netmask: lb_netmask6,
-        gateway: new IPV6Address("::"),
-        iface: lb_iface
-    }, route4: DeviceRoute = {
-        destination: lb_address4,
-        netmask: lb_netmask4,
-        gateway: new IPV4Address("0.0.0.0"),
-        iface: lb_iface
-    }
-
-    test("ipv4", () => {
-        let destination = new IPV4Address("10.1.1.12")
-        let pseudohdr = IPV4_PSEUDO_HEADER.create({});
-
-        __output_protocol_fill_in_addresses(pseudohdr, destination, route4);
-
-        expect(pseudohdr.get("daddr").toString()).eq(destination.toString());
-        expect(pseudohdr.get("saddr").toString()).eq(lb_address4.toString());
-    })
-
-    test("ipv6", () => {
-        let destination = new IPV6Address("fe08::faff:2ff")
-        let pseudohdr = IPV6_PSEUDO_HEADER.create({});
-
-        __output_protocol_fill_in_addresses(pseudohdr, destination, route6);
-
-        expect(pseudohdr.get("daddr").toString()).eq(destination.toString());
-        expect(pseudohdr.get("saddr").toString()).eq(lb_address6.toString());
-    })
 })
