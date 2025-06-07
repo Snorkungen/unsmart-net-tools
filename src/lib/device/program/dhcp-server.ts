@@ -1,547 +1,18 @@
 import { IPV4Address } from "../../address/ipv4";
-import { AddressMask, createMask } from "../../address/mask";
-import { and, mutateNot, mutateAnd, mutateOr, not, or } from "../../binary";
+import { AddressMask } from "../../address/mask";
+import { and, mutateNot, mutateAnd, mutateOr } from "../../binary";
 import { calculateChecksum } from "../../binary/checksum";
 import { uint8_concat, uint8_equals, uint8_fromNumber, uint8_readUint32BE } from "../../binary/uint8-array";
-import { DCHP_OP, DCHP_PORT_CLIENT, DCHP_PORT_SERVER, DHCP_END_OPTION, DHCP_HEADER, DHCP_MAGIC_COOKIE, DHCP_OPTION } from "../../header/dhcp/dhcp";
+import { DHCP_OP, DHCP_PORT_CLIENT, DHCP_PORT_SERVER, DHCP_END_OPTION, DHCP_HEADER, DHCP_MAGIC_COOKIE, DHCP_OPTION } from "../../header/dhcp/dhcp";
 import { parseDHCPOptions } from "../../header/dhcp/parse-options";
 import { DHCP_MESSGAGE_TYPES, DHCP_TAGS } from "../../header/dhcp/tags";
 import { createDHCPOptionsMap } from "../../header/dhcp/utils";
-import { ETHERNET_HEADER, ETHER_TYPES } from "../../header/ethernet";
+import { ETHERNET_HEADER } from "../../header/ethernet";
 import { IPV4_HEADER, IPV4_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
 import { UDP_HEADER } from "../../header/udp";
-import { Program, ProcessSignal, Process, Contact, NetworkData } from "../device";
-import { BaseInterface } from "../interface";
+import { Program, ProcessSignal, Process, Contact, NetworkData, Device, address_is_unset } from "../device";
 
-enum DHCPServerState {
-    BINDING,
-    BOUND,
-    EXPIRED
-}
-
-type DHCPServerSerializedCLID = string;
-function serializeClientID(buffer: Uint8Array): string {
-    return buffer.reduce((res, v) => (
-        res + v.toString(16)
-    ), "")
-}
-
-type DHCPServerData = {
-    /** server id */
-    sid: Uint8Array;
-    contact: Contact;
-    iface: BaseInterface;
-    addressRange4: [start: IPV4Address, end: IPV4Address];
-    netmask4: AddressMask<typeof IPV4Address>;
-    gateways4?: IPV4Address[];
-
-
-    /** <https://www.rfc-editor.org/rfc/rfc213 1#section-2.1> IE Configuration Parameters Repository */
-    repo: Map<DHCPServerSerializedCLID, DHCPServerClientParameters>
-}
-
-type DHCPServerClientParameters = {
-    state: DHCPServerState;
-    xid: number;
-
-    address4?: IPV4Address;
-    netmask4?: AddressMask<typeof IPV4Address>;
-    gateways4?: IPV4Address[];
-    leaseTime?: number;
-
-    /** server id */
-    sid: Uint8Array;
-}
-
-const UNSET_IPV4_ADDRESS = new IPV4Address("0.0.0.0");
 const BROADCAST_IPV4_ADDRESS = new IPV4Address("255.255.255.255");
-
-function sendDHCPv4HdrServer(proc: Process<DHCPServerData>, dhcpHdr: typeof DHCP_HEADER, daddr: IPV4Address = BROADCAST_IPV4_ADDRESS, saddr?: IPV4Address) {
-
-    if (!saddr) {
-        let source = proc.data.iface.addresses.find(a => a.address instanceof IPV4Address);
-        if (!source) return;
-        saddr = source.address
-    }
-
-    let udphdr = UDP_HEADER.create({
-        dport: DCHP_PORT_CLIENT,
-        sport: DCHP_PORT_SERVER,
-        payload: dhcpHdr.getBuffer(),
-    });
-    udphdr.set("length", udphdr.size)
-
-    let pseudohdr = IPV4_PSEUDO_HEADER.create({
-        saddr, daddr, proto: PROTOCOLS.UDP, len: udphdr.size,
-    });
-    udphdr.set("csum", calculateChecksum(uint8_concat([pseudohdr.getBuffer(), udphdr.getBuffer()])));
-
-    let iphdr = IPV4_HEADER.create({
-        daddr, saddr,
-        payload: udphdr.getBuffer(),
-        proto: PROTOCOLS.UDP
-    })
-
-    return proc.device.output_ipv4(({
-        buffer: iphdr.getBuffer(),
-        broadcast: true
-    }), daddr, {
-        destination: daddr,
-        gateway: UNSET_IPV4_ADDRESS,
-        netmask: createMask(IPV4Address, 0),
-        iface: proc.data.iface
-    })
-}
-
-function getAddress(proc: Process<DHCPServerData>): IPV4Address | null {
-    let reservedAddresses: Array<string> = [];
-
-    for (let val of proc.data.repo.values()) {
-        if (!val.address4) continue;
-        reservedAddresses.push(val.address4.toString());
-    }
-
-    let [start, end] = proc.data.addressRange4;
-    let addr: IPV4Address = start;
-
-    while (true) {
-        if (!reservedAddresses.includes(addr.toString())) {
-            console.warn("should do a ping request to ensure that address is not in use");
-            return addr;
-        }
-
-        if (addr.toString() == end.toString()) {
-            console.warn("should do some magic where i use an expired address");
-            return null;
-        }
-
-        incrementAddress(addr, proc.data.netmask4);
-    }
-}
-
-function handleDiscover(proc: Process<DHCPServerData>, dhcphdr: typeof DHCP_HEADER, opts: ReturnType<typeof createDHCPOptionsMap>) {
-    let clientIdentifier: DHCPServerSerializedCLID = serializeClientID(
-        opts.get(DHCP_TAGS.CLIENT_IDENTIFIER)
-        || dhcphdr.get("chaddr")
-    );
-
-    let address: IPV4Address | null;
-    let params = proc.data.repo.get(clientIdentifier);
-    if (params?.address4) {
-        address = params.address4;
-    } else {
-        address = getAddress(proc);
-    }
-
-    if (!address) {
-        return;
-    }
-
-    const RENEWAL_TIME_IN_SECS = 60 * 15; // 15 mins
-    const REBINDING_TIME_IN_SECS = 60 * 25; // 25 mins
-    const IPLEASE_TIME_IN_SECS = 60 * 20; // 20 mins
-
-    proc.data.repo.set(
-        clientIdentifier,
-        {
-            state: DHCPServerState.BINDING,
-            address4: address,
-            netmask4: proc.data.netmask4,
-            gateways4: proc.data.gateways4,
-            sid: proc.data.sid,
-            leaseTime: IPLEASE_TIME_IN_SECS,
-            xid: dhcphdr.get("xid")
-        }
-    )
-    proc.journal(0, `${clientIdentifier}: created client`);
-
-    let replyOptions: Uint8Array[] = []
-
-    if (opts.get(DHCP_TAGS.PARAMETER_REQUEST_LIST)) {
-        let paramReqList = opts.get(DHCP_TAGS.PARAMETER_REQUEST_LIST)!;
-
-        for (let i = 0; i < paramReqList.byteLength; i++) {
-            let tag = paramReqList[i];
-
-            if (tag == DHCP_TAGS.SUBNET_MASK && proc.data.netmask4) {
-                replyOptions.push(DHCP_OPTION.create({
-                    tag: DHCP_TAGS.SUBNET_MASK,
-                    len: 4,
-                    data: new Uint8Array(proc.data.netmask4.buffer)
-                }).getBuffer())
-            } else if (tag == DHCP_TAGS.ROUTER && proc.data.gateways4?.length) {
-                replyOptions.push(DHCP_OPTION.create({
-                    tag: DHCP_TAGS.ROUTER,
-                    len: proc.data.gateways4.length * 4,
-                    data: uint8_concat(proc.data.gateways4.map(({ buffer }) => buffer))
-                }).getBuffer())
-            }
-        }
-    }
-
-    let replyDHCPHdr = DHCP_HEADER.create({
-        op: DCHP_OP.BOOTREPLY,
-        htype: 0x01,
-        hlen: 0x06,
-        //...
-        xid: dhcphdr.get("xid"),
-        //...
-        yiaddr: address,
-        //...
-        chaddr: dhcphdr.get("chaddr"),
-        //...
-        options: uint8_concat([
-            DHCP_MAGIC_COOKIE,
-            // Message Type
-            DHCP_OPTION.create({
-                tag: DHCP_TAGS.DHCP_MESSAGE_TYPE,
-                len: 0x01,
-                data: new Uint8Array([DHCP_MESSGAGE_TYPES.DHCPOFFER])
-            }).getBuffer(),
-
-            uint8_concat(replyOptions),
-
-            // arbitrary time assignments
-
-            // T1 Renewal Time
-            DHCP_OPTION.create({ tag: DHCP_TAGS.RENEWAL_TIME_VALUE, len: 4, data: uint8_fromNumber(RENEWAL_TIME_IN_SECS, 4) }).getBuffer(),
-            // T2 Rebinding Time
-            DHCP_OPTION.create({ tag: DHCP_TAGS.REBINDING_TIME_VALUE, len: 4, data: uint8_fromNumber(REBINDING_TIME_IN_SECS, 4) }).getBuffer(),
-            // IP Address Lease Time
-            DHCP_OPTION.create({ tag: DHCP_TAGS.IP_ADDRESS_LEASE_TIME, len: 4, data: uint8_fromNumber(IPLEASE_TIME_IN_SECS, 4) }).getBuffer(),
-
-
-            // SubnetMask
-            DHCP_OPTION.create({ tag: DHCP_TAGS.SUBNET_MASK, len: 4, data: new Uint8Array(proc.data.netmask4.buffer) }).getBuffer(),
-
-            // Server Identifier
-            DHCP_OPTION.create({
-                tag: DHCP_TAGS.SERVER_IDENTIFIER,
-                len: proc.data.sid.byteLength,
-                data: new Uint8Array(proc.data.sid)
-            }).getBuffer(),
-            DHCP_END_OPTION
-        ])
-    });
-
-    let source = proc.data.iface.addresses.find(a => a.address instanceof IPV4Address);
-    if (!source) return;
-    sendDHCPv4HdrServer(proc, replyDHCPHdr, BROADCAST_IPV4_ADDRESS, source.address);
-}
-
-function handleRequest(proc: Process<DHCPServerData>, dhcphdr: typeof DHCP_HEADER, opts: ReturnType<typeof createDHCPOptionsMap>) {
-    let clientIdentifier: DHCPServerSerializedCLID = serializeClientID(
-        opts.get(DHCP_TAGS.CLIENT_IDENTIFIER)
-        || dhcphdr.get("chaddr")
-    )
-    let params = proc.data.repo.get(clientIdentifier);
-
-    if (!params) {
-        console.warn("This DHCPServer only support the DHCP (DORA)[Discover, Offer, Requst, Ack] procedure")
-        return;
-    };
-
-    let reqServerID = opts.get(DHCP_TAGS.SERVER_IDENTIFIER);
-    if (!reqServerID || (!params.sid || !uint8_equals(reqServerID, params.sid))) {
-        return
-    }
-
-
-    let success = true;
-
-    let subnetMaskBuf = opts.get(DHCP_TAGS.SUBNET_MASK);
-    if (!subnetMaskBuf || !uint8_equals(subnetMaskBuf, params.netmask4!.buffer /* #TRUSTMEBRO */)) {
-        success = false;
-    }
-
-    let reqIPBuf = opts.get(DHCP_TAGS.REQUESTED_IP_ADDRESS);
-    if (!reqIPBuf || !uint8_equals(reqIPBuf, params.address4!.buffer /* #TRUSTMEBRO */)) {
-        success = false;
-    }
-
-    let leaseTimeBuf = opts.get(DHCP_TAGS.IP_ADDRESS_LEASE_TIME);
-    if (!leaseTimeBuf || uint8_readUint32BE(leaseTimeBuf) != params.leaseTime) {
-        success = false;
-    }
-
-    let routerBuf = opts.get(DHCP_TAGS.ROUTER);
-    if (routerBuf) {
-        // check that if a `routerBuf` check that routers are correct
-
-        if (!params.gateways4) {
-            success = false;
-        }
-
-        while (routerBuf.byteLength && success) {
-            // check that address exists in params
-
-            // if not found a match `success = false`
-            if (!params.gateways4!.find(({ buffer }) =>
-                uint8_equals(buffer, routerBuf!.subarray(0, 4)))) {
-                success = false;
-                break;
-            };
-
-            routerBuf = routerBuf.subarray(4);
-        }
-    }
-
-    if (!success) {
-        let nakDHCPHdr = DHCP_HEADER.create({
-            op: DCHP_OP.BOOTREPLY,
-            htype: dhcphdr.get("htype"),
-            hlen: dhcphdr.get("hlen"),
-            xid: dhcphdr.get("xid"),
-            chaddr: dhcphdr.get("chaddr"),
-            options: uint8_concat([
-                DHCP_MAGIC_COOKIE,
-                // DHCP Message Type
-                DHCP_OPTION.create({
-                    tag: DHCP_TAGS.DHCP_MESSAGE_TYPE,
-                    len: 0x01,
-                    data: new Uint8Array([DHCP_MESSGAGE_TYPES.DHCPNAK])
-                }).getBuffer(),
-                // Server Identifier
-                DHCP_OPTION.create({
-                    tag: DHCP_TAGS.SERVER_IDENTIFIER,
-                    len: params.sid.byteLength,
-                    data: new Uint8Array(params.sid)
-                }).getBuffer(),
-                DHCP_END_OPTION
-            ])
-        })
-
-        proc.data.repo.delete(clientIdentifier)
-        return sendDHCPv4HdrServer(proc, nakDHCPHdr, BROADCAST_IPV4_ADDRESS);
-    }
-
-    let clid = opts.get(DHCP_TAGS.CLIENT_IDENTIFIER);
-    let ackDHCPHdr = DHCP_HEADER.create({
-        op: DCHP_OP.BOOTREPLY,
-        htype: dhcphdr.get("htype"),
-        hlen: dhcphdr.get("hlen"),
-        xid: dhcphdr.get("xid"),
-        chaddr: dhcphdr.get("chaddr"),
-        options: uint8_concat([
-            DHCP_MAGIC_COOKIE,
-            // DHCP Message Type
-            DHCP_OPTION.create({
-                tag: DHCP_TAGS.DHCP_MESSAGE_TYPE,
-                len: 0x01,
-                data: new Uint8Array([DHCP_MESSGAGE_TYPES.DHCPACK])
-            }).getBuffer(),
-            // Server Identifier
-            DHCP_OPTION.create({
-                tag: DHCP_TAGS.SERVER_IDENTIFIER,
-                len: params.sid.byteLength,
-                data: new Uint8Array(params.sid)
-            }).getBuffer(),
-
-            (clid ? DHCP_OPTION.create({ tag: DHCP_TAGS.CLIENT_IDENTIFIER, len: clid.length, data: clid }).getBuffer() : new Uint8Array(0)),
-
-            // SUBNET MASK
-            DHCP_OPTION.create({
-                tag: DHCP_TAGS.SUBNET_MASK,
-                len: 0x04,
-                data: subnetMaskBuf
-            }).getBuffer(),
-            // REQUESTED IP
-            DHCP_OPTION.create({
-                tag: DHCP_TAGS.REQUESTED_IP_ADDRESS,
-                len: 0x04,
-                data: reqIPBuf
-            }).getBuffer(),
-            // LEASE TIME
-            DHCP_OPTION.create({
-                tag: DHCP_TAGS.IP_ADDRESS_LEASE_TIME,
-                len: 0x04,
-                data: leaseTimeBuf
-            }).getBuffer(),
-
-            DHCP_END_OPTION
-        ])
-    })
-
-    proc.data.repo.set(clientIdentifier, { ...params, state: DHCPServerState.BOUND })
-    proc.journal(0, `${clientIdentifier}: bound client`);
-    return sendDHCPv4HdrServer(proc, ackDHCPHdr, BROADCAST_IPV4_ADDRESS);
-}
-
-function receive(proc: Process<DHCPServerData>) {
-    return function (_: Contact, data: NetworkData) {
-        if (data.rcvif != proc.data.iface)
-            return;
-
-        if (data.loopback)
-            return; // do not handle loopback 
-
-        let etherhdr = ETHERNET_HEADER.from(data.buffer);
-        if (etherhdr.get("ethertype") != ETHER_TYPES.IPv4) {
-            // only support DHCP(4)
-            return;
-        }
-
-        let iphdr = IPV4_HEADER.from(etherhdr.get("payload"));
-        if (calculateChecksum(iphdr.getBuffer().slice(0, iphdr.get("ihl") << 2)) != 0) {
-            return;
-        }
-
-        if (iphdr.get("proto") != PROTOCOLS.UDP) {
-            return;
-        }
-
-        let udphdr = UDP_HEADER.from(iphdr.get("payload"));
-        // !TODO: validate checksum
-        if (udphdr.get("sport") != DCHP_PORT_CLIENT || udphdr.get("dport") != DCHP_PORT_SERVER) {
-            return;
-        }
-
-        let dhcphdr = DHCP_HEADER.from(udphdr.get("payload"));
-        if (dhcphdr.get("op") != DCHP_OP.BOOTREQUEST) {
-            return;
-        }
-        let opts = createDHCPOptionsMap(parseDHCPOptions(dhcphdr.get("options")));
-
-        let typeBuf = opts.get(DHCP_TAGS.DHCP_MESSAGE_TYPE);
-        if (!typeBuf) {
-            console.warn("DHCP Message type missing")
-            return;
-        }
-
-        switch (typeBuf[0]) {
-            case DHCP_MESSGAGE_TYPES.DHCPDISCOVER:
-                return handleDiscover(proc, dhcphdr, opts);
-            case DHCP_MESSGAGE_TYPES.DHCPREQUEST:
-                return handleRequest(proc, dhcphdr, opts);
-            default:
-                console.warn("Unknown DHCP Message Type")
-        }
-    }
-}
-
-/* shape of information stored in the device-store */
-export type DHCPServer_Store = {
-    /* the server can operate on multiple interfaces */
-
-    parameters: {
-        /** the interface the following parameters are associated with ... */
-        ifid: string;
-        /** the ip version that the following information applies to */
-        version: 4; // only support DHCPv4
-
-        /** the start of the address */
-        address_range?: [string, string]; /* begin and end */
-        /** list of gateways */
-        gateways?: string[];
-    }[];
-};
-
-export const DAEMON_DHCP_SERVER: Program<DHCPServerData> = {
-    name: "daemon_dhcp_server",
-    init(proc) {
-        // check that program is not running
-        if (proc.device.processes.items.find(p => p?.id.includes(this.name) && p != proc)) {
-            proc.journal(1, "process already running");
-            return ProcessSignal.EXIT;
-        }
-
-        // Read from store if there exist a configuration
-        let store = proc.device.store_get(this.name) as (DHCPServer_Store | null);
-        if (!store) {
-            proc.journal(2, "failed to read server configuration from device store");
-            return ProcessSignal.ERROR;
-        }
-
-        // TODO: validate that the store could be bad
-        // NOTE: it is note expected that daemon configuration would be directly touched by a human-user
-
-        // For testing only read the first parameter
-        if (store.parameters.length != 1) {
-            if (store.parameters.length > 1) {
-                throw "DHCP_SERVER: only supports operating on 1 interface";
-            }
-
-            proc.journal(1, "no interface configured");
-            return ProcessSignal.__EXPLICIT__; /* the server will hang and do nothing */
-        }
-        let params = store.parameters[0];
-
-        // ONLY SUPPORT IPv4
-        if (params.version != 4) {
-            throw "DCHP_SERVER: only supports ipv4"
-            return ProcessSignal.ERROR;
-        }
-
-        let iface = proc.device.interfaces.find(f => f.id() == params.ifid);
-        if (!iface || iface.header !== ETHERNET_HEADER) {
-            // no valid iface found
-            proc.journal(2, "failed to find valid interface with id:" + params.ifid);
-            return ProcessSignal.ERROR;
-        }
-
-        // the chosen interface must be configured with an ip address
-
-        let source = iface.addresses.find(a => a.address instanceof IPV4Address);
-        if (!source) {
-            // no valid source address found
-            proc.journal(2, "failed to find valid interface with id:" + params.ifid + " no source address configured");
-            return ProcessSignal.ERROR;
-        }
-
-        // TODO: create a logical an address pool, thing ...
-
-        // configure address pool
-        let ap_start: IPV4Address, ap_end: IPV4Address;
-        if (params.address_range) {
-            // use range from parameters
-
-            ap_start = new IPV4Address(params.address_range[0]);
-            ap_end = new IPV4Address(params.address_range[1]);
-
-            // validate that the range makes sense
-            // rules must be in the same subnet as the source address
-
-            if (!source.netmask.compare(source.address, ap_start) || !source.netmask.compare(source.address, ap_end)) {
-                console.warn(this.name, "bad range", `${source.address.toString()}: [${params.address_range[0]}, ${params.address_range[1]}]`)
-
-                proc.journal(2, `failed to use given address range ${source.address.toString()}: [${params.address_range[0]}, ${params.address_range[1]}]`);
-                return ProcessSignal.ERROR;
-            }
-
-        } else {
-            // use a default range
-            ap_start = new IPV4Address(source.address); incrementAddress(ap_start, source.netmask as AddressMask<typeof IPV4Address>);
-            ap_end = new IPV4Address(or(ap_start.buffer, not(source.netmask.buffer))); ap_end.buffer[3] ^ 1;
-        }
-
-        // initialise a contact
-        let contact = proc.resources.create(proc.device.contact_create("RAW", "RAW").data!); // should never fail
-
-        (<DHCPServerData>proc.data) = {
-            sid: source.address.buffer,
-            contact: contact,
-            iface: iface,
-            netmask4: source.netmask as AddressMask<typeof IPV4Address>,
-            addressRange4: [ap_start, ap_end], // this should really be a pool thing that keeps track of used addresses
-
-            repo: new Map(),
-        }
-
-        // setup default gateways if given in parameters
-        if (params.gateways) {
-            proc.data.gateways4 = params.gateways.map(v => new IPV4Address(v));
-        }
-
-        proc.handle(() => {
-            contact.close();
-        })
-        contact.receive(receive(proc));
-
-        proc.journal(0, "started")
-
-        return ProcessSignal.__EXPLICIT__;
-    }
-}
 
 export function incrementAddress(address: IPV4Address, subnetMask: AddressMask<typeof IPV4Address>) {
     let diff = IPV4Address.ADDRESS_LENGTH - subnetMask.length;
@@ -568,3 +39,458 @@ export function incrementAddress(address: IPV4Address, subnetMask: AddressMask<t
 
     address.buffer.set(buf, 4 - buf.length)
 }
+
+const RENEWAL_TIME_IN_SECS = 60 * 15; // 15 mins
+const REBINDING_TIME_IN_SECS = 60 * 25; // 25 mins
+const IPLEASE_TIME_IN_SECS = 60 * 20; // 20 mins
+
+enum DHCPServerClientState {
+    BINDING,
+    BOUND,
+    EXPIRED
+}
+type DHCPServerClient = {
+    state: DHCPServerClientState;
+    address4?: IPV4Address;
+    gateways4?: IPV4Address[];
+    netmask4?: AddressMask<typeof IPV4Address>;
+
+    transaction_id: number;
+
+    /** Unused legacy thing, because the time is not even kept track of */
+    lease_time: number;
+}
+type DHCPServerConfig = {
+    server_id4: Uint8Array;
+    clients: Record<string, DHCPServerClient | undefined>;
+
+    gateways4?: IPV4Address[];
+    address_range4?: [start: IPV4Address, end: IPV4Address];
+    netmask4?: AddressMask<typeof IPV4Address>;
+}
+export type DHCPServer_Store = {
+    configs: Record<string, DHCPServerConfig | undefined>;
+    probes_enabled?: boolean,
+};
+
+function serialize_clid(buffer: Uint8Array): string {
+    return buffer.reduce((res, v) => res + v.toString(16), "");
+}
+function get_store_data(device: Device): DHCPServer_Store {
+    let data: DHCPServer_Store | null = device.store_get(DAEMON_DHCP_SERVER_STORE_KEY);
+    if (!data) {
+        data = {
+            configs: {
+            },
+        };
+        device.store_set(DAEMON_DHCP_SERVER_STORE_KEY, data);
+    }
+
+    return data;
+}
+
+/** This is not good, this function makes alot of assumptions */
+function send_dhcp4(proc: Process<typeof DAEMON_DHCP_SERVER>, contact: Contact<"IPv4", "RAW">, dhcphdr: typeof DHCP_HEADER, data: NetworkData) {
+    if (!data.rcvif) return;
+    let source = data.rcvif.addresses.find(a => a.address instanceof IPV4Address);
+    if (!source) return;
+
+    let saddr = source.address;
+    let daddr = BROADCAST_IPV4_ADDRESS;
+    let broadcast = true;
+
+    // divine some weird information out of nowhere
+    if (address_is_unset(dhcphdr.get("siaddr"))) {
+        dhcphdr.set("siaddr", source.address);
+    }
+
+    if (!address_is_unset(dhcphdr.get("ciaddr"))) {
+        daddr = dhcphdr.get("ciaddr");
+        broadcast = false;
+    }
+
+    let udphdr = UDP_HEADER.create({
+        dport: DHCP_PORT_CLIENT,
+        sport: DHCP_PORT_SERVER,
+        payload: dhcphdr.getBuffer(),
+    });
+    udphdr.set("length", udphdr.size)
+
+    let pseudohdr = IPV4_PSEUDO_HEADER.create({
+        saddr, daddr, proto: PROTOCOLS.UDP, len: udphdr.size,
+    });
+    udphdr.set("csum", calculateChecksum(uint8_concat([pseudohdr.getBuffer(), udphdr.getBuffer()])));
+
+    let iphdr = IPV4_HEADER.create({
+        daddr, saddr,
+        payload: udphdr.getBuffer(),
+        proto: PROTOCOLS.UDP
+    });
+
+    contact.send({
+        buffer: iphdr.getBuffer(),
+        broadcast: broadcast,
+    }, daddr);
+}
+
+function createIPv4Address(config: DHCPServerConfig, probes_enabled: boolean = false): IPV4Address | undefined {
+    if (!config.address_range4 || !config.netmask4) return undefined;
+    // !TODO: does the config setting function check that the range start makes sense
+    let [start, end] = config.address_range4;
+    let address = new IPV4Address(start);
+
+    let addresses_left = uint8_readUint32BE(end.buffer) - uint8_readUint32BE(address.buffer);
+    outer_loop: while ((addresses_left--) > 0) {
+        // check the other exsting clients
+        for (let client of Object.values(config.clients)) {
+            if (!client || !client.address4) continue;
+
+            if (uint8_equals(address.buffer, client.address4.buffer)) {
+                incrementAddress(address, config.netmask4);
+                continue outer_loop;
+            }
+        }
+
+        break;
+    }
+
+    if (addresses_left <= 0) {
+        // !NOTE: the configured address range has been exhausted
+        console.warn("the configured address range has been exhausted: " + `[${start}, ${end}]`);
+        return undefined;
+    }
+
+    if (probes_enabled) {
+        throw new Error("probing an address not suported")
+    }
+
+    return address;
+}
+
+function handle_discover(proc: Process<typeof DAEMON_DHCP_SERVER>, contact: Contact<"IPv4", "RAW">, data: NetworkData, dhcphdr: typeof DHCP_HEADER, opts: ReturnType<typeof createDHCPOptionsMap>) {
+    let clid = serialize_clid(opts.get(DHCP_TAGS.CLIENT_IDENTIFIER) || dhcphdr.get("chaddr"));
+    let store_data = get_store_data(proc.device);
+    let config = store_data.configs[data.rcvif!.id()]!;
+    if (!config.netmask4) {
+        return; // this is not configured correctly
+    }
+
+    let client: DHCPServerClient = config.clients[clid] || {
+        state: DHCPServerClientState.BINDING,
+        lease_time: IPLEASE_TIME_IN_SECS,
+        transaction_id: 0, // !NOTE: set below
+    };
+
+
+    if (!address_is_unset(dhcphdr.get("ciaddr"))) {
+        // this is because I want to hack something togheter
+        client.address4 = dhcphdr.get("ciaddr");
+    }
+
+    // initialize client
+    client.address4 = client.address4 ?? createIPv4Address(config, store_data.probes_enabled);
+    if (!client.address4) {
+        return; // there was no address give to the following client
+    }
+    client.gateways4 = config.gateways4;
+    client.netmask4 = config.netmask4;
+    client.transaction_id = dhcphdr.get("xid");
+    proc.journal(0, `${clid}: binding, with ${client.address4}`);
+
+    // commit information
+    config.clients[clid] = client;
+    proc.device.store_set(DAEMON_DHCP_SERVER_STORE_KEY, store_data);
+
+    let reply_opts: Uint8Array[] = [];
+
+    let preq_list = opts.get(DHCP_TAGS.PARAMETER_REQUEST_LIST)
+    if (preq_list) {
+        for (let i = 0; i < preq_list.byteLength; i++) {
+            let tag = preq_list[i];
+            if (tag == DHCP_TAGS.SUBNET_MASK && client.netmask4) {
+                reply_opts.push(DHCP_OPTION.create({
+                    tag: DHCP_TAGS.SUBNET_MASK,
+                    len: 4,
+                    data: client.netmask4.buffer
+                }).getBuffer())
+            } else if (tag == DHCP_TAGS.ROUTER && client.gateways4?.length) {
+                reply_opts.push(DHCP_OPTION.create({
+                    tag: DHCP_TAGS.ROUTER,
+                    len: client.gateways4.length * 4,
+                    data: uint8_concat(client.gateways4.map(({ buffer }) => buffer))
+                }).getBuffer())
+            }
+        }
+    }
+
+    let reply_dhcphdr = dhcphdr.create({
+        op: DHCP_OP.BOOTREPLY,
+        htype: 0x01,
+        hlen: 0x06,
+        yiaddr: client.address4,
+        xid: dhcphdr.get("xid"),
+        chaddr: dhcphdr.get("chaddr"),
+        options: uint8_concat([
+            DHCP_MAGIC_COOKIE,
+            // Message Type
+            DHCP_OPTION.create({
+                tag: DHCP_TAGS.DHCP_MESSAGE_TYPE,
+                len: 0x01,
+                data: new Uint8Array([DHCP_MESSGAGE_TYPES.DHCPOFFER])
+            }).getBuffer(),
+
+            uint8_concat(reply_opts),
+
+            // arbitrary time assignments
+            // T1 Renewal Time
+            DHCP_OPTION.create({ tag: DHCP_TAGS.RENEWAL_TIME_VALUE, len: 4, data: uint8_fromNumber(RENEWAL_TIME_IN_SECS, 4) }).getBuffer(),
+            // T2 Rebinding Time
+            DHCP_OPTION.create({ tag: DHCP_TAGS.REBINDING_TIME_VALUE, len: 4, data: uint8_fromNumber(REBINDING_TIME_IN_SECS, 4) }).getBuffer(),
+            // IP Address Lease Time
+            DHCP_OPTION.create({ tag: DHCP_TAGS.IP_ADDRESS_LEASE_TIME, len: 4, data: uint8_fromNumber(IPLEASE_TIME_IN_SECS, 4) }).getBuffer(),
+
+            // SubnetMask
+            DHCP_OPTION.create({ tag: DHCP_TAGS.SUBNET_MASK, len: 4, data: config.netmask4.buffer }).getBuffer(),
+
+            // Server Identifier
+            DHCP_OPTION.create({
+                tag: DHCP_TAGS.SERVER_IDENTIFIER,
+                len: config.server_id4.byteLength,
+                data: config.server_id4
+            }).getBuffer(),
+            DHCP_END_OPTION
+        ])
+    });
+
+    send_dhcp4(proc, contact, reply_dhcphdr, data);
+}
+
+function handle_request(proc: Process<typeof DAEMON_DHCP_SERVER>, contact: Contact<"IPv4", "RAW">, data: NetworkData, dhcphdr: typeof DHCP_HEADER, opts: ReturnType<typeof createDHCPOptionsMap>) {
+    let clid = serialize_clid(opts.get(DHCP_TAGS.CLIENT_IDENTIFIER) || dhcphdr.get("chaddr"));
+    let store_data = get_store_data(proc.device);
+    let config = store_data.configs[data.rcvif!.id()]!;
+    let client = config.clients[clid];
+    if (!client) {
+        return;
+    }
+    // compare server_id
+    let req_server_id = opts.get(DHCP_TAGS.SERVER_IDENTIFIER);
+    if (!req_server_id || !config.server_id4 || !uint8_equals(req_server_id, config.server_id4)) {
+        return;
+    }
+
+    let success = true;
+
+    let subnet_mask_buf = opts.get(DHCP_TAGS.SUBNET_MASK);
+    if (!subnet_mask_buf || !client.netmask4 || !uint8_equals(subnet_mask_buf, client.netmask4.buffer)) {
+        success = false;
+    }
+
+    let req_ipbuf = opts.get(DHCP_TAGS.REQUESTED_IP_ADDRESS);
+    if (!req_ipbuf || !client.address4 || !uint8_equals(req_ipbuf, client.address4.buffer)) {
+        success = false;
+    }
+
+    let lease_time_buf = opts.get(DHCP_TAGS.IP_ADDRESS_LEASE_TIME);
+    if (!lease_time_buf || uint8_readUint32BE(lease_time_buf) != client.lease_time) {
+        success = false;
+    }
+
+    let router_buf = opts.get(DHCP_TAGS.ROUTER);
+    if (router_buf) {
+        if (!client.gateways4) {
+            success = false;
+        }
+
+        while (router_buf.byteLength && success) {
+            // check that address exists in params
+
+            // if not found a match `success = false`
+            if (!client.gateways4!.find(({ buffer }) =>
+                uint8_equals(buffer, router_buf!.subarray(0, 4)))) {
+                success = false;
+                break;
+            };
+
+            router_buf = router_buf.subarray(4);
+        }
+    }
+
+    if (!success) {
+        let nakhdr = dhcphdr.create({
+            op: DHCP_OP.BOOTREPLY,
+            htype: dhcphdr.get("htype"),
+            hlen: dhcphdr.get("hlen"),
+            xid: dhcphdr.get("xid"),
+            chaddr: dhcphdr.get("chaddr"),
+            options: uint8_concat([
+                DHCP_MAGIC_COOKIE,
+                // DHCP Message Type
+                DHCP_OPTION.create({
+                    tag: DHCP_TAGS.DHCP_MESSAGE_TYPE,
+                    len: 0x01,
+                    data: new Uint8Array([DHCP_MESSGAGE_TYPES.DHCPNAK])
+                }).getBuffer(),
+                // Server Identifier
+                DHCP_OPTION.create({
+                    tag: DHCP_TAGS.SERVER_IDENTIFIER,
+                    len: config.server_id4.byteLength,
+                    data: config.server_id4
+                }).getBuffer(),
+                DHCP_END_OPTION
+            ])
+        })
+
+        delete config.clients[clid];
+        proc.device.store_set(DAEMON_DHCP_SERVER_STORE_KEY, store_data);
+        return send_dhcp4(proc, contact, nakhdr, data);
+    }
+
+    let clid_buf = opts.get(DHCP_TAGS.CLIENT_IDENTIFIER);
+
+    let ackhdr = dhcphdr.create({
+        op: DHCP_OP.BOOTREPLY,
+        htype: dhcphdr.get("htype"),
+        hlen: dhcphdr.get("hlen"),
+        xid: dhcphdr.get("xid"),
+        chaddr: dhcphdr.get("chaddr"),
+        options: uint8_concat([
+            DHCP_MAGIC_COOKIE,
+            // DHCP Message Type
+            DHCP_OPTION.create({
+                tag: DHCP_TAGS.DHCP_MESSAGE_TYPE,
+                len: 0x01,
+                data: new Uint8Array([DHCP_MESSGAGE_TYPES.DHCPACK])
+            }).getBuffer(),
+            // Server Identifier
+            DHCP_OPTION.create({
+                tag: DHCP_TAGS.SERVER_IDENTIFIER,
+                len: config.server_id4.byteLength,
+                data: config.server_id4
+            }).getBuffer(),
+
+            (clid_buf ? DHCP_OPTION.create({ tag: DHCP_TAGS.CLIENT_IDENTIFIER, len: clid_buf.length, data: clid_buf }).getBuffer() : new Uint8Array(0)),
+
+            // SUBNET MASK
+            DHCP_OPTION.create({
+                tag: DHCP_TAGS.SUBNET_MASK,
+                len: 0x04,
+                data: subnet_mask_buf
+            }).getBuffer(),
+            // REQUESTED IP
+            DHCP_OPTION.create({
+                tag: DHCP_TAGS.REQUESTED_IP_ADDRESS,
+                len: 0x04,
+                data: req_ipbuf
+            }).getBuffer(),
+            // LEASE TIME
+            DHCP_OPTION.create({
+                tag: DHCP_TAGS.IP_ADDRESS_LEASE_TIME,
+                len: 0x04,
+                data: lease_time_buf
+            }).getBuffer(),
+
+            DHCP_END_OPTION
+        ])
+    });
+
+    client.state = DHCPServerClientState.BOUND;
+    proc.journal(0, `${clid}: bound, with ${client.address4}`);
+    proc.device.store_set(DAEMON_DHCP_SERVER_STORE_KEY, store_data);
+    return send_dhcp4(proc, contact, ackhdr, data);
+}
+
+function receive_ipv4(this: Process<typeof DAEMON_DHCP_SERVER>, contact: Contact<"IPv4", "RAW">, data: NetworkData) {
+    if (!data.rcvif) throw new Error("unreachable");
+    // The rcif must be of type ethernet header so that this thing can keep track of the rcvhwsaddr
+    if (data.rcvif.header !== ETHERNET_HEADER) return;// 
+
+    if (!data.destination || data.loopback) {
+        return; // not interested
+    }
+
+    // first filter if there is an configuration for the rcviface
+    let store_data = get_store_data(this.device);
+    if (!store_data.configs[data.rcvif.id()]) {
+        return; // not interested
+    };
+
+    let iphdr = IPV4_HEADER.from(data.buffer);
+    if (calculateChecksum(iphdr.getBuffer().slice(0, iphdr.get("ihl") << 2)) != 0) {
+        return; // not interested
+    }
+
+    if (iphdr.get("proto") != PROTOCOLS.UDP) {
+        return;
+    }
+
+    let udphdr = UDP_HEADER.from(iphdr.get("payload"));
+    if (udphdr.get("csum") > 0) {
+        let pseudohdr = IPV4_PSEUDO_HEADER.create({
+            saddr: iphdr.get("saddr"),
+            daddr: iphdr.get("daddr"),
+            proto: PROTOCOLS.UDP,
+            len: udphdr.size
+        });
+
+        if (calculateChecksum(uint8_concat([pseudohdr.getBuffer(), udphdr.getBuffer()])) !== 0) {
+            return; // bad checksum
+        }
+    }
+
+    if (udphdr.get("sport") != DHCP_PORT_CLIENT || udphdr.get("dport") != DHCP_PORT_SERVER) {
+        return; // not interested
+    }
+
+    let dhcphdr = DHCP_HEADER.from(udphdr.get("payload"));
+    if (dhcphdr.get("op") != DHCP_OP.BOOTREQUEST) {
+        return;
+    }
+    let opts = createDHCPOptionsMap(parseDHCPOptions(dhcphdr.get("options")));
+
+    let tbuf = opts.get(DHCP_TAGS.DHCP_MESSAGE_TYPE);
+    if (!tbuf) {
+        console.warn("DHCP Message type missing")
+        return;
+    }
+
+    // now there is room to do things as read the udp port and stuff ....
+    switch (tbuf[0]) {
+        case DHCP_MESSGAGE_TYPES.DHCPDISCOVER:
+            return handle_discover(this, contact, data, dhcphdr, opts);
+        case DHCP_MESSGAGE_TYPES.DHCPREQUEST:
+            return handle_request(this, contact, data, dhcphdr, opts);
+        default:
+            throw new Error("unhandled DHCP message type")
+    }
+}
+function receive_ipv6(this: Process<typeof DAEMON_DHCP_SERVER>, contact: Contact<"IPv6", "RAW">, data: NetworkData) {
+    throw "not supported"
+}
+
+export const DAEMON_DHCP_SERVER_STORE_KEY = "DAEMON_DHCP_SERVER:STORE_KEY";
+export const DAEMON_DHCP_SERVER: Program = {
+    name: "daemon_dhcp_server",
+    init(proc) {
+        // assert only on instance of the process can run;
+        if (proc.device.processes.items.find(p => p?.id.includes(this.name) && p != proc)) {
+            proc.journal(1, "process already running");
+            return ProcessSignal.ERROR;
+        }
+
+        proc.data = {};
+
+        proc.resources.create(
+            proc.device.contact_create("IPv4", "RAW").data!
+        ).receive(receive_ipv4.bind(proc), { promiscuous: true });
+
+        // IPv6 not supported in the initial re-write
+        // proc.resources.create(
+        //     proc.device.contact_create("IPv6", "RAW").data!
+        // ).receive(receive_ipv6.bind(proc));
+
+        return ProcessSignal.__EXPLICIT__;
+    }
+}
+
+// !TODO: create utility functions to interact with the store data

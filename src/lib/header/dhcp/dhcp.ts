@@ -44,7 +44,7 @@ import { IPV4_ADDRESS, MAC_ADDRESS } from "../../struct-types/address";
 */
 export const DHCP_HEADER = new Struct({
     /** Message op code / message type.  1 = BOOTREQUEST, 2 = BOOTREPLY */
-    op: <StructType<typeof DCHP_OP[keyof typeof DCHP_OP]>>UINT8,
+    op: <StructType<typeof DHCP_OP[keyof typeof DHCP_OP]>>UINT8,
     /** Hardware address type, see ARP section in "Assigned Numbers" RFC; e.g., '1' = 10mb ethernet. */
     htype: UINT8,
     /** Hardware address length (e.g.  '6' for 10mb ethernet). */
@@ -92,8 +92,8 @@ export const DHCP_HEADER = new Struct({
 
 export const DHCP_MAGIC = 0x63_82_53_63
 export const DHCP_MAGIC_COOKIE = new Uint8Array([0x63, 0x82, 0x53, 0x63])
-export const DCHP_PORT_SERVER = 67,
-    DCHP_PORT_CLIENT = 68;
+export const DHCP_PORT_SERVER = 67,
+    DHCP_PORT_CLIENT = 68;
 
 export const DHCP_OPTION = new Struct({
     tag: <StructType<typeof DHCP_TAGS[keyof typeof DHCP_TAGS]>>UINT8,
@@ -104,7 +104,7 @@ export const DHCP_OPTION = new Struct({
 export const DHCP_END_OPTION = new Uint8Array([0xff]),
     DHCP_PAD_OPTION = new Uint8Array([0x00])
 
-export const DCHP_OP = {
+export const DHCP_OP = {
     BOOTREQUEST: 1,
     BOOTREPLY: 2
 } as const;

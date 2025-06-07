@@ -4,7 +4,7 @@ import { MACAddress } from "../../address/mac";
 import { AddressMask, createMask } from "../../address/mask";
 import { calculateChecksum } from "../../binary/checksum";
 import { uint8_concat, uint8_equals, uint8_fromNumber, uint8_readUint32BE } from "../../binary/uint8-array";
-import { DCHP_OP, DCHP_PORT_CLIENT, DCHP_PORT_SERVER, DHCP_END_OPTION, DHCP_HEADER, DHCP_MAGIC_COOKIE, DHCP_OPTION } from "../../header/dhcp/dhcp";
+import { DHCP_OP, DHCP_PORT_CLIENT, DHCP_PORT_SERVER, DHCP_END_OPTION, DHCP_HEADER, DHCP_MAGIC_COOKIE, DHCP_OPTION } from "../../header/dhcp/dhcp";
 import { parseDHCPOptions } from "../../header/dhcp/parse-options";
 import { DHCPTag, DHCP_MESSGAGE_TYPES, DHCP_TAGS } from "../../header/dhcp/tags";
 import { createDHCPOptionsMap } from "../../header/dhcp/utils";
@@ -55,8 +55,8 @@ function createOptionBuffer(tag: DHCPTag, data: Uint8Array): Uint8Array {
 
 function sendDHCPv4Hdr(proc: Process<DHCPClientData>, dhcpHdr: typeof DHCP_HEADER, daddr: IPV4Address = BROADCAST_IPV4_ADDRESS, saddr: IPV4Address = UNSET_IPV4_ADDRESS) {
     let udphdr = UDP_HEADER.create({
-        sport: DCHP_PORT_CLIENT,
-        dport: DCHP_PORT_SERVER,
+        sport: DHCP_PORT_CLIENT,
+        dport: DHCP_PORT_SERVER,
         payload: dhcpHdr.getBuffer(),
     });
     udphdr.set("length", udphdr.size)
@@ -129,12 +129,12 @@ function receive(proc: Process<DHCPClientData>) {
 
         let udphdr = UDP_HEADER.from(iphdr.get("payload"));
         // !TODO: validate checksum
-        if (udphdr.get("sport") != DCHP_PORT_SERVER || udphdr.get("dport") != DCHP_PORT_CLIENT) {
+        if (udphdr.get("sport") != DHCP_PORT_SERVER || udphdr.get("dport") != DHCP_PORT_CLIENT) {
             return;
         }
 
         let dhcphdr = DHCP_HEADER.from(udphdr.get("payload"));
-        if (dhcphdr.get("op") != DCHP_OP.BOOTREPLY || dhcphdr.get("xid") != proc.data.xid) {
+        if (dhcphdr.get("op") != DHCP_OP.BOOTREPLY || dhcphdr.get("xid") != proc.data.xid) {
             return;
         }
 
@@ -200,7 +200,7 @@ function receive(proc: Process<DHCPClientData>) {
             replyDHCPHdrOptions.push(DHCP_END_OPTION);
 
             let replyDHCPHdr = DHCP_HEADER.create({
-                op: DCHP_OP.BOOTREQUEST,
+                op: DHCP_OP.BOOTREQUEST,
                 htype: 1,
                 hlen: 6,
                 xid: proc.data.xid,
@@ -279,7 +279,7 @@ export const DEVICE_PROGRAM_DHCP_CLIENT: Program<DHCPClientData> = {
         contact.receive(receive(proc));
 
         let dhcpDiscoverHdr = DHCP_HEADER.create({
-            op: DCHP_OP.BOOTREQUEST,
+            op: DHCP_OP.BOOTREQUEST,
             htype: 1,
             hlen: 6,
             xid: proc.data.xid,

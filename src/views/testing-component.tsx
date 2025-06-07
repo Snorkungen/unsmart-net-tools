@@ -7,7 +7,7 @@ import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_ECHO, DEV
 import { DAEMON_ECHO_REPLIER } from "../lib/device/program/echo-replier";
 import { NetworkSwitch } from "../lib/device/network-switch";
 import { DAEMON_ROUTING } from "../lib/device/program/routing";
-import { DAEMON_DHCP_SERVER, DHCPServer_Store } from "../lib/device/program/dhcp-server";
+import { DAEMON_DHCP_SERVER, DAEMON_DHCP_SERVER_STORE_KEY, DHCPServer_Store } from "../lib/device/program/dhcp-server";
 import { DEVICE_PROGRAM_DHCP_CLIENT } from "../lib/device/program/dhcp-client";
 import Terminal from "../lib/terminal/terminal";
 import { DAEMON_SHELL } from "../lib/device/program/shell";
@@ -109,20 +109,19 @@ pc1_iface.connect(r1_iface_pc1);
 pc2_iface.connect(r1_iface_pc2);
 
 // SRV start DHCP server ...
-// TODO DHCP support gateway ...
+
 let dhcp_server_config: DHCPServer_Store = {
-    parameters: [
-        {
-            ifid: server_iface_eth.id(),
-            version: 4,
-
-            address_range: ["10.10.0.200", "10.10.0.240"],
-            gateways: ["10.10.0.1"],
+    configs: {
+        [server_iface_eth.id()]: {
+            clients: {},
+            server_id4: new IPV4Address("10.10.0.100").buffer,
+            address_range4: [new IPV4Address("10.10.0.240"), new IPV4Address("10.10.0.250")],
+            gateways4: [new IPV4Address("10.10.0.1")],
+            netmask4: createMask(IPV4Address, 24)   
         }
-    ]
-};
-server_pc.store_set(DAEMON_DHCP_SERVER.name, dhcp_server_config);
-
+    }
+}
+server_pc.store_set(DAEMON_DHCP_SERVER_STORE_KEY, dhcp_server_config)
 server_pc.process_start(DAEMON_DHCP_SERVER)
 
 setaddress_by_host(pc1, "server", new IPV4Address("10.10.0.100"))

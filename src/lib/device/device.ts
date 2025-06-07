@@ -145,7 +145,7 @@ function device_io_create(): DeviceIO {
 
 export type ContactAF = "RAW" | "IPv4" | "IPv6";
 export type ContactProto = "RAW" | "UDP" | "TCP";
-export type ContactReceiver = (contact: Contact, data: NetworkData, caddr?: ContactAddress<BaseAddress>) => void;
+export type ContactReceiver<C extends Contact = Contact> = (contact: C, data: NetworkData, caddr?: ContactAddress<BaseAddress>) => void;
 export type ContactReceiveOptions = { promiscuous?: true };
 type ContactError = unknown; // !TODO: conjure up some type of problems that might occur
 
@@ -170,8 +170,8 @@ export interface Contact<AF extends ContactAF = ContactAF, Proto extends Contact
     close(): DeviceResult<ContactError>;
     bind(caddr: ContactAddress<Addr>): DeviceResult<ContactError, typeof caddr>;
 
-    receive(receiver: ContactReceiver, options?: ContactReceiveOptions): DeviceResult<ContactError>;
-    receiveFrom(receiver: ContactReceiver, caddr: Partial<ContactAddress<Addr>>, options?: ContactReceiveOptions): DeviceResult<ContactError>;
+    receive(receiver: ContactReceiver<Contact<AF, Proto>>, options?: ContactReceiveOptions): DeviceResult<ContactError>;
+    receiveFrom(receiver: ContactReceiver<Contact<AF, Proto>>, caddr: Partial<ContactAddress<Addr>>, options?: ContactReceiveOptions): DeviceResult<ContactError>;
 
     send(data: NetworkData, destination?: Addr, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
     sendTo(data: NetworkData, caddr?: Partial<ContactAddress<Addr>>, rtentry?: DeviceRoute<AT>): DeviceResult<ContactError>;
@@ -247,7 +247,7 @@ export type DeviceTerminal = {
     flush(): void;
 }
 
-function __address_is_unset(address: BaseAddress): boolean {
+export function address_is_unset(address: BaseAddress): boolean {
     let sum = 0, i = 0; while (i < address.buffer.byteLength && sum == 0) {
         sum += address.buffer[i++];
     }
@@ -272,9 +272,9 @@ export function __find_best_caddr_match<CR extends ({ contact: Contact } | undef
             continue
         }
 
-        if (!__address_is_unset(caddr.daddr) && !uint8_equals(caddr.daddr.buffer, input_caddr.daddr.buffer)) {
+        if (!address_is_unset(caddr.daddr) && !uint8_equals(caddr.daddr.buffer, input_caddr.daddr.buffer)) {
             continue;
-        } else if (!__address_is_unset(caddr.saddr) && !uint8_equals(caddr.saddr.buffer, input_caddr.saddr.buffer)) {
+        } else if (!address_is_unset(caddr.saddr) && !uint8_equals(caddr.saddr.buffer, input_caddr.saddr.buffer)) {
             continue;
         }
         if (!best) {
@@ -282,8 +282,8 @@ export function __find_best_caddr_match<CR extends ({ contact: Contact } | undef
         } else {
             if ((caddr.dport == 0 && best.contact.address?.dport != 0) ||
                 (caddr.sport == 0 && best.contact.address?.sport != 0) ||
-                (__address_is_unset(caddr.daddr) && !__address_is_unset(best.contact.address!.daddr)) ||
-                (__address_is_unset(caddr.saddr) && !__address_is_unset(best.contact.address!.saddr))
+                (address_is_unset(caddr.daddr) && !address_is_unset(best.contact.address!.daddr)) ||
+                (address_is_unset(caddr.saddr) && !address_is_unset(best.contact.address!.saddr))
             ) {
                 continue;
             }
@@ -347,8 +347,8 @@ export class Device {
     /* store key-value information about something ... */
     /** NOTE: store should only store simple types as Objects, Arrays, Numbers, Strings */
     private store_data: Record<string, Record<string, unknown>> = {};
-    store_get(key: string): Record<string, unknown> | null {
-        return this.store_data[key] ?? null;
+    store_get<T extends Record<string, unknown>>(key: string): T | null {
+        return (this.store_data[key] as T) ?? null;
     }
     store_set(key: string, data: Record<string, unknown>) {
         this.store_data[key] = data;
@@ -1026,9 +1026,9 @@ export class Device {
 
 
             if (true) { // optimisation to set an entry for the requester
-                if (__address_is_unset(arpHdr.get("spa")))
+                if (address_is_unset(arpHdr.get("spa")))
                     return; // not source protocol address set
-                else if (__address_is_unset(arpHdr.get("tpa")))
+                else if (address_is_unset(arpHdr.get("tpa")))
                     return
 
                 this.arp_cache_entry(arpHdr.get("spa"), {
@@ -1109,11 +1109,11 @@ export class Device {
             pseudo_header = IPV4_PSEUDO_HEADER.from(data.buffer.subarray(0, IPV4_PSEUDO_HEADER.size));
             tcphdr = TCP_HEADER.from(data.buffer.slice(pseudo_header.size));
             {
-                if (__address_is_unset(pseudo_header.get("daddr"))) {
+                if (address_is_unset(pseudo_header.get("daddr"))) {
                     pseudo_header.set("daddr", destination);
                 }
 
-                if (__address_is_unset(pseudo_header.get("saddr"))) { // if there's no source set; use the outgoing interfaces ip addressping 
+                if (address_is_unset(pseudo_header.get("saddr"))) { // if there's no source set; use the outgoing interfaces ip addressping 
                     // select an address from the outgoing interface
                     if (!source) {
                         return {
@@ -1130,11 +1130,11 @@ export class Device {
             pseudo_header = IPV6_PSEUDO_HEADER.from(data.buffer.subarray(0, IPV6_PSEUDO_HEADER.size));
             tcphdr = TCP_HEADER.from(data.buffer.slice(pseudo_header.size));
             {
-                if (__address_is_unset(pseudo_header.get("daddr"))) {
+                if (address_is_unset(pseudo_header.get("daddr"))) {
                     pseudo_header.set("daddr", destination);
                 }
 
-                if (__address_is_unset(pseudo_header.get("saddr"))) {
+                if (address_is_unset(pseudo_header.get("saddr"))) {
                     if (!source) {
                         return {
                             success: false,
@@ -1181,7 +1181,7 @@ export class Device {
     }
 
     output_ipv6(data: NetworkData, destination: IPV6Address, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
-        if (__address_is_unset(destination)) {
+        if (address_is_unset(destination)) {
             return {
                 success: false,
                 error: "HOSTUNREACH",
@@ -1204,11 +1204,11 @@ export class Device {
         const DEFAULT_TTL = 64; iphdr.set("hopLimit", iphdr.get("hopLimit") || DEFAULT_TTL);
         iphdr.set("payloadLength", iphdr.get("payload").byteLength);
 
-        if (__address_is_unset(iphdr.get("daddr"))) {
+        if (address_is_unset(iphdr.get("daddr"))) {
             iphdr.set("daddr", destination);
         }
 
-        if (__address_is_unset(iphdr.get("saddr"))) { // if there's no source set; use the outgoing interfaces ip address
+        if (address_is_unset(iphdr.get("saddr"))) { // if there's no source set; use the outgoing interfaces ip address
             // select an address from the outgoing interface
             let source = route.iface.addresses.find(value => value.address.constructor == destination.constructor);
             if (!source) return {
@@ -1248,7 +1248,7 @@ export class Device {
 
     output_ipv4(data: NetworkData, destination: IPV4Address, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
         /** So the thinking is that the user would construct the iphdr */
-        if (__address_is_unset(destination)) {
+        if (address_is_unset(destination)) {
             return {
                 success: false,
                 error: "HOSTUNREACH",
@@ -1272,11 +1272,11 @@ export class Device {
         const DEFAULT_TTL = 64; iphdr.set("ttl", iphdr.get("ttl") || DEFAULT_TTL);
         iphdr.set("len", iphdr.getBuffer().byteLength);
 
-        if (__address_is_unset(iphdr.get("daddr"))) {
+        if (address_is_unset(iphdr.get("daddr"))) {
             iphdr.set("daddr", destination);
         }
 
-        if (__address_is_unset(iphdr.get("saddr"))) { // if there's no source set; use the outgoing interfaces ip addressping 
+        if (address_is_unset(iphdr.get("saddr"))) { // if there's no source set; use the outgoing interfaces ip addressping 
             // select an address from the outgoing interface
             let source = route.iface.addresses.find(value => value.address.constructor == destination.constructor);
             if (!source) return {
@@ -2322,7 +2322,7 @@ export class Device {
             if (!bind_result.success)
                 return bind_result as ReturnType<Contact["connect"]>;
         } else {
-            if (__address_is_unset(contact.address.daddr) || contact.address.dport || contact.address.sport)
+            if (address_is_unset(contact.address.daddr) || contact.address.dport || contact.address.sport)
                 return { success: false, error: undefined, message: "source_port, destination_port and destination_address must be defined" }
         }
 
