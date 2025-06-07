@@ -1,8 +1,8 @@
 import { BaseAddress } from "../../address/base";
 import { IPV4Address } from "../../address/ipv4";
 import { AddressMask, createMask } from "../../address/mask";
-import { uint8_equals, uint8_fromString, uint8_readUint32BE } from "../../binary/uint8-array";
-import { Process, ProcessSignal, Program } from "../device";
+import { uint8_fromString, uint8_readUint32BE } from "../../binary/uint8-array";
+import { Device, Process, ProcessSignal, Program } from "../device";
 import { EthernetInterface, VlanInterface } from "../interface";
 import { formatTable } from "./helpers";
 
@@ -105,7 +105,17 @@ const DEVICE_PROGRAM_IFINFO_SET4: Program = {
 
         return ProcessSignal.EXIT;
     },
-    __NODATA__: true
+    __NODATA__: true,
+
+    // @ts-ignore
+    expected_arguments: {
+        v1: [
+            ["interface", (device: Device, val: string): string | string[] => {
+                let options = device.interfaces.map(iface => iface.id()).filter((v) => v.startsWith(val));
+                return options.length ? options : val;
+            }], "ipv4address", "ipv4netmask"
+        ]
+    }
 }
 
 export const DEVICE_PROGRAM_IFINFO: Program = {

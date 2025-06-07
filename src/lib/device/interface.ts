@@ -353,7 +353,6 @@ export class VlanInterface extends BaseInterface {
             return; // !TODO: this should mayber throw an error
         }
 
-        // !TODO: maybe pass other vlan information forward to the device
         this.macaddresses.set(etherframe.get("smac").toString(), data.rcvif);
 
         data = { rcvif: this, rcvif_hwaddress: data.rcvif_hwaddress, buffer: etherframe.getBuffer(), broadcast: data.broadcast }

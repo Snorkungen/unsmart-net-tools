@@ -235,7 +235,7 @@ export class PacketCaptureEthernetReader implements PacketCaptureReader {
         let hdr = UDP_HEADER.from(buf.subarray(begin));
         data.info.push(`port: ${hdr.get("sport")} => ${hdr.get("dport")}`);
 
-        // !TODO: create database of know destination and source ports
+        // !TODO: create database of known destination and source ports
 
         return data;
     }
@@ -245,7 +245,7 @@ export class PacketCaptureEthernetReader implements PacketCaptureReader {
         let hdr = TCP_HEADER.from(buf.subarray(begin));
         data.info.push(`port: ${hdr.get("sport")} => ${hdr.get("dport")}`);
 
-        // !TODO: create database of know destination and source portss
+        // !TODO: create database of known destination and source portss
 
         return data;
     }

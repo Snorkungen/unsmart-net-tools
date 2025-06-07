@@ -1583,8 +1583,6 @@ export class Device {
         // @ts-expect-error
         delete iface.device
         iface.up = false;
-        // !TODO: have some checking so that scheduled events get removed
-
         this.interfaces = this.interfaces.filter(f => f != iface)
 
         // !NOTE: network-map relies upon the fact that this gets dispatched after being removed from interfaces
@@ -2293,7 +2291,8 @@ export class Device {
             connection.state = TCPState.CLOSED;
 
             // in this case the contact actuallly closes
-            window.setTimeout(() => this.tcpconnections.delete(connection_id), 20); // !TODO: the time waiting should be variable
+            // !TODO: the time waiting should be variable
+            this.resources.create(this.schedule(() => this.tcpconnections.delete(connection_id), 20));
             return this.contact_close(contact)
         }
 

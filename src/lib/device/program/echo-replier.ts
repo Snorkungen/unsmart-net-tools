@@ -4,8 +4,6 @@ import { ICMPV4_TYPES, ICMPV6_TYPES, ICMP_HEADER } from "../../header/icmp";
 import { IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
 import { Contact, NetworkData, ProcessSignal, Program } from "../device";
 
-// !TODO: ttl is something that i do not know what doink
-
 function receive4(contact: Contact, data: NetworkData) {
     let iphdr = IPV4_HEADER.from(data.buffer);
     if (iphdr.get("proto") != PROTOCOLS.ICMP) {

@@ -238,7 +238,6 @@ function handle_add_device_submit(e: SubmitEvent & { currentTarget: HTMLFormElem
     let devtype = fd.get("form_add_device_devtype")!.toString()
 
     let device: Device;
-    // !TODO: allow for the creation of a router, eithe switch or device based
     if (devtype == "switch") {
         device = new NetworkSwitch();
     } else {
