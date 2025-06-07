@@ -248,7 +248,7 @@ export type DeviceTerminal = {
 }
 
 function __address_is_unset(address: BaseAddress): boolean {
-    let sum = 0, i = 0; while (i < address.buffer.byteLength) {
+    let sum = 0, i = 0; while (i < address.buffer.byteLength && sum == 0) {
         sum += address.buffer[i++];
     }
     return sum === 0;
@@ -1026,9 +1026,9 @@ export class Device {
 
 
             if (true) { // optimisation to set an entry for the requester
-                if (uint8_readUint32BE(arpHdr.get("spa").buffer) === 0)
+                if (__address_is_unset(arpHdr.get("spa")))
                     return; // not source protocol address set
-                else if (uint8_readUint32BE(arpHdr.get("tpa").buffer) === 0)
+                else if (__address_is_unset(arpHdr.get("tpa")))
                     return
 
                 this.arp_cache_entry(arpHdr.get("spa"), {
@@ -1109,11 +1109,11 @@ export class Device {
             pseudo_header = IPV4_PSEUDO_HEADER.from(data.buffer.subarray(0, IPV4_PSEUDO_HEADER.size));
             tcphdr = TCP_HEADER.from(data.buffer.slice(pseudo_header.size));
             {
-                if (uint8_readUint32BE(pseudo_header.get("daddr").buffer) === 0) {
+                if (__address_is_unset(pseudo_header.get("daddr"))) {
                     pseudo_header.set("daddr", destination);
                 }
 
-                if (uint8_readUint32BE(pseudo_header.get("saddr").buffer) === 0) { // if there's no source set; use the outgoing interfaces ip addressping 
+                if (__address_is_unset(pseudo_header.get("saddr"))) { // if there's no source set; use the outgoing interfaces ip addressping 
                     // select an address from the outgoing interface
                     if (!source) {
                         return {
@@ -1181,7 +1181,7 @@ export class Device {
     }
 
     output_ipv6(data: NetworkData, destination: IPV6Address, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
-        if (uint8_equals(destination.buffer, _UNSET_ADDRESS_IPV6.buffer)) {
+        if (__address_is_unset(destination)) {
             return {
                 success: false,
                 error: "HOSTUNREACH",
@@ -1204,11 +1204,11 @@ export class Device {
         const DEFAULT_TTL = 64; iphdr.set("hopLimit", iphdr.get("hopLimit") || DEFAULT_TTL);
         iphdr.set("payloadLength", iphdr.get("payload").byteLength);
 
-        if (uint8_equals(iphdr.get("daddr").buffer, _UNSET_ADDRESS_IPV6.buffer)) {
+        if (__address_is_unset(iphdr.get("daddr"))) {
             iphdr.set("daddr", destination);
         }
 
-        if (uint8_equals(iphdr.get("saddr").buffer, _UNSET_ADDRESS_IPV6.buffer)) { // if there's no source set; use the outgoing interfaces ip address
+        if (__address_is_unset(iphdr.get("saddr"))) { // if there's no source set; use the outgoing interfaces ip address
             // select an address from the outgoing interface
             let source = route.iface.addresses.find(value => value.address.constructor == destination.constructor);
             if (!source) return {
@@ -1248,7 +1248,7 @@ export class Device {
 
     output_ipv4(data: NetworkData, destination: IPV4Address, route?: DeviceRoute): DeviceResult<"HOSTUNREACH" | "ERROR"> {
         /** So the thinking is that the user would construct the iphdr */
-        if (uint8_equals(destination.buffer, _UNSET_ADDRESS_IPV4.buffer)) {
+        if (__address_is_unset(destination)) {
             return {
                 success: false,
                 error: "HOSTUNREACH",
@@ -1272,11 +1272,11 @@ export class Device {
         const DEFAULT_TTL = 64; iphdr.set("ttl", iphdr.get("ttl") || DEFAULT_TTL);
         iphdr.set("len", iphdr.getBuffer().byteLength);
 
-        if (uint8_readUint32BE(iphdr.get("daddr").buffer) === 0) {
+        if (__address_is_unset(iphdr.get("daddr"))) {
             iphdr.set("daddr", destination);
         }
 
-        if (uint8_readUint32BE(iphdr.get("saddr").buffer) === 0) { // if there's no source set; use the outgoing interfaces ip addressping 
+        if (__address_is_unset(iphdr.get("saddr"))) { // if there's no source set; use the outgoing interfaces ip addressping 
             // select an address from the outgoing interface
             let source = route.iface.addresses.find(value => value.address.constructor == destination.constructor);
             if (!source) return {
