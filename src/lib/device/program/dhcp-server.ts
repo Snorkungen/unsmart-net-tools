@@ -12,8 +12,8 @@ import { IPV4_HEADER, IPV4_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
 import { UDP_HEADER } from "../../header/udp";
 import { Program, ProcessSignal, Process, Contact, NetworkData, Device, address_is_unset, DeviceResult, DeviceIO } from "../device";
 import { BaseInterface } from "../interface";
-import { formatTable, ioprint, ioprintln } from "./helpers";
-import { menu_clear_line, menu_read_line, MenuFields, run_menu } from "./menu";
+import { formatTable, ioclearline, ioprint, ioprintln, ioreadline } from "./helpers";
+import { run_menu } from "./menu";
 
 const BROADCAST_IPV4_ADDRESS = new IPV4Address("255.255.255.255");
 
@@ -604,7 +604,7 @@ async function dhcp_server_conf_read_ipv4address(io: DeviceIO, message = "enter 
     let i = 0;
     for (i = 0; i < MAX_ATTEMPTS; i++) {
         ioprint(io, message)
-        let bytes = await menu_read_line(io);
+        let [bytes] = await ioreadline(io);
         let str = String.fromCharCode(...bytes).trim();
 
         if (IPV4Address.validate(str)) {
@@ -612,7 +612,7 @@ async function dhcp_server_conf_read_ipv4address(io: DeviceIO, message = "enter 
         }
 
         // io.write(new Uint8Array([10]))
-        menu_clear_line(io);
+        ioclearline(io);
     }
 
     return undefined;
@@ -690,7 +690,7 @@ const DEVICE_PROGRAM_DHCP_SERVER_MAN_CONF: Program = {
 
                     let addr = await dhcp_server_conf_read_ipv4address(proc.io, "Enter gateway: ")
                     proc.io.write(new Uint8Array([10]))
-                    
+
                     if (!addr) {
                         ioprintln(proc.io, "invalid input")
                     } else {
@@ -704,7 +704,7 @@ const DEVICE_PROGRAM_DHCP_SERVER_MAN_CONF: Program = {
                     }
 
                     ioprint(proc.io, "press enter to return to menu ...")
-                    await menu_read_line(proc.io);
+                    await ioreadline(proc.io);
                 },
             },
             [2]: {
@@ -719,7 +719,7 @@ const DEVICE_PROGRAM_DHCP_SERVER_MAN_CONF: Program = {
                     if (!start) {
                         ioprintln(proc.io, "invalid input")
                         ioprint(proc.io, "press enter to return to menu ...")
-                        await menu_read_line(proc.io);
+                        await ioreadline(proc.io);
                         return;
                     }
 
@@ -729,7 +729,7 @@ const DEVICE_PROGRAM_DHCP_SERVER_MAN_CONF: Program = {
                     if (!end) {
                         ioprintln(proc.io, "invalid input")
                         ioprint(proc.io, "press enter to return to menu ...")
-                        await menu_read_line(proc.io);
+                        await ioreadline(proc.io);
                         return;
                     }
 
@@ -743,7 +743,7 @@ const DEVICE_PROGRAM_DHCP_SERVER_MAN_CONF: Program = {
                     }
 
                     ioprint(proc.io, "press enter to return to menu ...")
-                    await menu_read_line(proc.io);
+                    await ioreadline(proc.io);
                 }
             },
             [3]: {
@@ -756,7 +756,7 @@ const DEVICE_PROGRAM_DHCP_SERVER_MAN_CONF: Program = {
                         (1) fa-ff-0f-00-00-86 10.20.0.20/24 BOUND
                     */
                     ioprintln(proc.io, "method not implemented")
-                    await menu_read_line(proc.io);
+                    await ioreadline(proc.io);
                 }
             },
             [100]: {

@@ -1,6 +1,6 @@
 import { ASCIICodes, CSI, numbertonumbers } from "../../terminal/shared";
-import { DeviceIO, Process, ProcessSignal, Program } from "../device";
-import { ioprint, ioprintln } from "./helpers";
+import { Process, ProcessSignal, Program } from "../device";
+import { ioprint, ioprintln, ioreadline } from "./helpers";
 import { termquery } from "./termquery";
 
 export type MenuFields = {
@@ -8,52 +8,6 @@ export type MenuFields = {
         description: string;
         cb(proc: Process): Promise<void>;
     };
-}
-
-export function menu_clear_line(io: DeviceIO) {
-    io.write(CSI(ASCIICodes.Zero, ASCIICodes.G)) // move cursor to begin of line
-    io.write(CSI(ASCIICodes.Zero, ASCIICodes.K))// Clear Line)
-}
-
-export function menu_read_line(io: DeviceIO, replay_bytes?: Uint8Array): Promise<Uint8Array> {
-    let xdiff = 0;
-    const buffer: number[] = [];
-
-    // !TODO: integrate this with the shell to and add more cursor movement features ...
-    return new Promise(resolve => {
-        let reader = io.reader_add(bytes => {
-            for (let i = 0; i < bytes.byteLength; i++) {
-                let byte = bytes[i];
-
-                // handle backspace
-                if (byte == ASCIICodes.Delete || byte == ASCIICodes.BackSpace) {
-                    if (xdiff == 0 || buffer.length == 0) {
-                        continue;
-                    }
-
-                    buffer.pop();
-                    xdiff -= 1;
-
-                    io.write(new Uint8Array([ASCIICodes.BackSpace]))
-                } else if (byte == ASCIICodes.CarriageReturn || byte == ASCIICodes.NewLine) {
-                    io.reader_remove(reader);
-                    resolve(new Uint8Array(buffer));
-
-                    if (i < (bytes.byteLength - 1)) {
-                        throw new Error("more bytes in the pipline")
-                    }
-                } else if (byte >= ASCIICodes.Space && byte < ASCIICodes.Delete) {
-                    io.write(new Uint8Array([byte]));
-                    buffer.push(byte);
-                    xdiff += 1;
-                }
-            }
-        });
-
-        if (replay_bytes) {
-            reader(replay_bytes);
-        }
-    })
 }
 
 export async function run_menu(proc: Process, fields: MenuFields): Promise<ProcessSignal.ERROR> {
@@ -79,8 +33,7 @@ export async function run_menu(proc: Process, fields: MenuFields): Promise<Proce
         ioprint(proc.io, "select an option: ");
 
         // wait for input
-        bytes = await menu_read_line(proc.io, bytes);
-
+        bytes = (await ioreadline(proc.io, { intial_bytes: bytes }))[0];
 
         let key = parseInt(String.fromCharCode(...bytes));
         // execute selected program
@@ -102,7 +55,7 @@ export async function run_menu(proc: Process, fields: MenuFields): Promise<Proce
 
 export const DEVICE_PROGRAM_MENU: Program = {
     name: "menu",
-    init(proc, args, data) {
+    init(proc) {
         return run_menu(proc, {
             [0]: {
                 description: "quit menu",
@@ -122,7 +75,7 @@ export const DEVICE_PROGRAM_MENU: Program = {
 
 async function menu_prog_example(proc: Process) {
     ioprint(proc.io, "How high shall I count? ");
-    let bytes = await menu_read_line(proc.io);
+    let [bytes] = await ioreadline(proc.io);
     proc.io.write(new Uint8Array([10])); // new line
     let n = parseInt(String.fromCharCode(...bytes))
     n = Math.abs(n);
@@ -134,6 +87,6 @@ async function menu_prog_example(proc: Process) {
     }
 
     ioprint(proc.io, "press enter to return to menu ... ");
-    await menu_read_line(proc.io);
+    await ioreadline(proc.io);
     return;
 }
