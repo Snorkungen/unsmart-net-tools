@@ -1,3 +1,4 @@
+import { uint8_mutateSet } from "../binary/uint8-array";
 import { BaseAddress } from "./base";
 
 const POSSIBLE_SEPARATOR = ["-", ":", "."] as const;
@@ -69,6 +70,15 @@ export class MACAddress implements BaseAddress {
             }
         }
         return true;
+    }
+
+    toEUI64(): Uint8Array {
+        let octets = new Uint8Array(8);
+        uint8_mutateSet(octets, this.buffer.subarray(0, 3));
+        octets[3] = 0xFF;
+        octets[4] = 0xFE;
+        uint8_mutateSet(octets, this.buffer.subarray(3), 5);
+        return octets;
     }
 };
 

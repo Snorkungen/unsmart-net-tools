@@ -3,7 +3,7 @@ import { calculateChecksum } from "../../binary/checksum";
 import { uint8_concat } from "../../binary/uint8-array";
 import { ICMPV4_CODES, ICMPV4_TYPES, ICMPV6_CODES, ICMPV6_TYPES, ICMP_HEADER, ICMP_UNUSED_HEADER } from "../../header/icmp";
 import { IPV4_HEADER, IPV4_PSEUDO_HEADER, IPV6_HEADER, PROTOCOLS } from "../../header/ip";
-import { Program, ProcessSignal, ContactReceiveOptions, Process } from "../device";
+import { Program, ProcessSignal, ContactReceiveOptions, Process, address_is_unset } from "../device";
 import { ioprintln } from "./helpers";
 
 const RECEIVE_OPTIONS: ContactReceiveOptions = { promiscuous: true };
@@ -22,6 +22,10 @@ export const DAEMON_ROUTING: Program = {
             // use new data flags     #IDONOTLIKE_MULTICAST
             if (data.destination || data.broadcast || data.multicast || data.loopback) {
                 return;
+            }
+
+            if (address_is_unset(iphdr.get("saddr"))) {
+                return; // discarded
             }
 
             if (iphdr.get("ttl") <= 1) {
@@ -82,6 +86,10 @@ export const DAEMON_ROUTING: Program = {
             // use new data flags     #IDONOTLIKE_MULTICAST
             if (data.broadcast || data.multicast || data.loopback) {
                 return;
+            }
+
+            if (address_is_unset(iphdr.get("saddr"))) {
+                return; // discarded
             }
 
             if (iphdr.get("hopLimit") <= 0) {
