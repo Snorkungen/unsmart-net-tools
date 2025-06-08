@@ -11,7 +11,7 @@ type MenuFields = {
     };
 }
 
-function menu_read_line(io: DeviceIO): Promise<number[]> {
+function menu_read_line(io: DeviceIO, bytes?: Uint8Array): Promise<Uint8Array> {
     let xdiff = 0;
     const buffer: number[] = [];
 
@@ -33,7 +33,7 @@ function menu_read_line(io: DeviceIO): Promise<number[]> {
                     io.write(new Uint8Array([ASCIICodes.BackSpace]))
                 } else if (byte == ASCIICodes.CarriageReturn || byte == ASCIICodes.NewLine) {
                     io.reader_remove(reader);
-                    resolve(buffer);
+                    resolve(new Uint8Array(buffer));
 
                     if (i < (bytes.byteLength - 1)) {
                         throw new Error("more bytes in the pipline")
@@ -44,7 +44,11 @@ function menu_read_line(io: DeviceIO): Promise<number[]> {
                     xdiff += 1;
                 }
             }
-        })
+        });
+
+        if (bytes) {
+            reader(bytes);
+        }
     })
 }
 
@@ -56,6 +60,8 @@ async function run_menu(proc: Process, fields: MenuFields): Promise<ProcessSigna
 
     let og_ch = tq.ch;
     let og_cv = tq.cv;
+
+    let bytes: undefined | Uint8Array = undefined;
 
     while (!proc.abort_controller.signal.aborted) {
         // reset view
@@ -69,7 +75,7 @@ async function run_menu(proc: Process, fields: MenuFields): Promise<ProcessSigna
         ioprint(proc.io, "select an option: ");
 
         // wait for input
-        let bytes = await menu_read_line(proc.io);
+        bytes = await menu_read_line(proc.io, bytes);
 
 
         let key = parseInt(String.fromCharCode(...bytes));
@@ -79,7 +85,8 @@ async function run_menu(proc: Process, fields: MenuFields): Promise<ProcessSigna
         if (!field) {
             continue
         }
-
+        bytes = undefined
+        
         proc.io.write(CSI(...numbertonumbers(og_cv), ASCIICodes.Semicolon, ...numbertonumbers(og_ch), ASCIICodes.H)); // move cursor position to original spot
         proc.io.write(CSI(ASCIICodes.Zero, ASCIICodes.J));// clear cursor to the end
 
@@ -122,7 +129,7 @@ async function menu_prog_example(proc: Process) {
         }
     }
 
-    ioprint(proc.io, "press enter to return to menu");
+    ioprint(proc.io, "press enter to return to menu ... ");
     await menu_read_line(proc.io);
     return;
 }
