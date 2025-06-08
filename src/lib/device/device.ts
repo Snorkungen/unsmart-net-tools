@@ -82,7 +82,7 @@ export type DeviceIO = {
 
     readers: ((bytes: Uint8Array) => void)[];
     /** Returns the reader index */
-    reader_add(reader: DeviceIO["readers"][number]): void;
+    reader_add(reader: DeviceIO["readers"][number]): DeviceIO["readers"][number];
     reader_remove(reader: DeviceIO["readers"][number]): void
 
     /** call the readers */
@@ -103,8 +103,10 @@ function device_io_create(): DeviceIO {
 
         readers: [],
         reader_add(reader) {
-            if (this.abort_controller.signal.aborted) return;
-            this.readers.push(reader);
+            if (this.abort_controller.signal.aborted) return reader;
+            // !NOTE: this thing unshift to allow for a reader to create a reader that does not read the read bytes
+            this.readers.unshift(reader);
+            return reader;
         },
         reader_remove(reader) {
             if (this.abort_controller.signal.aborted) return;

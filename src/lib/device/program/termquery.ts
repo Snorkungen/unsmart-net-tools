@@ -3,6 +3,11 @@ import { Process, ProcessSignal, Program } from "../device";
 
 export type TermQuery = Partial<{
     width: number;
+
+    /** cursor vertical */
+    cv: number;
+    /** cursor horizontal */
+    ch: number;
 }>;
 
 const MAX_QUERY_WAIT = 3;
@@ -24,7 +29,6 @@ export function termquery(proc: Process): Promise<TermQuery> {
             proc.device.schedule(quit, MAX_QUERY_WAIT)
         );
 
-        let original_cursor_position: undefined | number = undefined;
         const termquery_reader = (bytes: Uint8Array) => {
             // assume that the ctrl code is the only data in the bytes
             if (bytes.byteLength < 3) return;
@@ -55,17 +59,18 @@ export function termquery(proc: Process): Promise<TermQuery> {
 
             if (finalByte === ASCIICodes.R) {
                 // ^[<v>;<h>R
-                let [, horizontal] = readParams(rawParams, 0, 2);
+                let [vertical, horizontal] = readParams(rawParams, 0, 2);
 
-                if (!original_cursor_position) {
-                    original_cursor_position = horizontal
+                if (!data.ch) {
+                    data.cv = vertical;
+                    data.ch = horizontal;
 
                     // move cursor to extreme
                     proc.io.write(CSI(0x39, 0x39, 0x39, 0x39, ASCIICodes.G));
                     proc.io.write(CSI(0x36, ASCIICodes.n));
                 } else {
                     data!.width = horizontal
-                    proc.io.write(CSI(...numbertonumbers(original_cursor_position), ASCIICodes.G))
+                    proc.io.write(CSI(...numbertonumbers(data.ch), ASCIICodes.G))
 
                     quit();
                 }
