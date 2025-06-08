@@ -3,15 +3,19 @@ import { DeviceIO, Process, ProcessSignal, Program } from "../device";
 import { ioprint, ioprintln } from "./helpers";
 import { termquery } from "./termquery";
 
-
-type MenuFields = {
+export type MenuFields = {
     [id: number]: {
         description: string;
         cb(proc: Process): Promise<void>;
     };
 }
 
-function menu_read_line(io: DeviceIO, bytes?: Uint8Array): Promise<Uint8Array> {
+export function menu_clear_line(io: DeviceIO) {
+    io.write(CSI(ASCIICodes.Zero, ASCIICodes.G)) // move cursor to begin of line
+    io.write(CSI(ASCIICodes.Zero, ASCIICodes.K))// Clear Line)
+}
+
+export function menu_read_line(io: DeviceIO, replay_bytes?: Uint8Array): Promise<Uint8Array> {
     let xdiff = 0;
     const buffer: number[] = [];
 
@@ -46,13 +50,13 @@ function menu_read_line(io: DeviceIO, bytes?: Uint8Array): Promise<Uint8Array> {
             }
         });
 
-        if (bytes) {
-            reader(bytes);
+        if (replay_bytes) {
+            reader(replay_bytes);
         }
     })
 }
 
-async function run_menu(proc: Process, fields: MenuFields): Promise<ProcessSignal.__EXPLICIT__> {
+export async function run_menu(proc: Process, fields: MenuFields): Promise<ProcessSignal.ERROR> {
     let tq = await termquery(proc);
     if (!tq.ch || !tq.cv) {
         throw new Error("program does not work without original cursor position")
@@ -86,14 +90,14 @@ async function run_menu(proc: Process, fields: MenuFields): Promise<ProcessSigna
             continue
         }
         bytes = undefined
-        
+
         proc.io.write(CSI(...numbertonumbers(og_cv), ASCIICodes.Semicolon, ...numbertonumbers(og_ch), ASCIICodes.H)); // move cursor position to original spot
         proc.io.write(CSI(ASCIICodes.Zero, ASCIICodes.J));// clear cursor to the end
 
         await field.cb(proc);
     }
 
-    return ProcessSignal.__EXPLICIT__
+    return ProcessSignal.ERROR
 }
 
 export const DEVICE_PROGRAM_MENU: Program = {

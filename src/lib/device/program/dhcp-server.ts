@@ -10,9 +10,10 @@ import { createDHCPOptionsMap } from "../../header/dhcp/utils";
 import { ETHERNET_HEADER } from "../../header/ethernet";
 import { IPV4_HEADER, IPV4_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
 import { UDP_HEADER } from "../../header/udp";
-import { Program, ProcessSignal, Process, Contact, NetworkData, Device, address_is_unset, DeviceResult } from "../device";
+import { Program, ProcessSignal, Process, Contact, NetworkData, Device, address_is_unset, DeviceResult, DeviceIO } from "../device";
 import { BaseInterface } from "../interface";
-import { formatTable, ioprintln } from "./helpers";
+import { formatTable, ioprint, ioprintln } from "./helpers";
+import { menu_clear_line, menu_read_line, MenuFields, run_menu } from "./menu";
 
 const BROADCAST_IPV4_ADDRESS = new IPV4Address("255.255.255.255");
 
@@ -494,7 +495,80 @@ export const DAEMON_DHCP_SERVER: Program = {
     }
 }
 
-export function dhcp_server_init_iface(device: Device, iface: BaseInterface, config_params: Partial<DHCPServerConfig>): DeviceResult<keyof DHCPServerConfig | "iface", DHCPServerConfig> {
+export function dhcp_server_set_gateways4(device: Device, iface: BaseInterface, ...gateways: IPV4Address[]): ReturnType<typeof dhcp_server_init_iface> {
+    let res = dhcp_server_init_iface(device, iface);
+    if (!res.success) {
+        return res;
+    }
+
+    let config = res.data;
+
+    if (!gateways.length) {
+        return { success: true, data: config };
+    }
+
+    let gateways4: IPV4Address[] = [];
+    // ensure that the gateways are in the correct subnet
+    for (let a of gateways) {
+        if (config.netmask4.compare(config.server_id4, a)) {
+            gateways4.push(a);
+        }
+    }
+
+    if (!gateways4.length) {
+        return { success: false, error: "gateways4", message: "gateway must be in the same subnet as the server_id" }
+    }
+
+    config.gateways4 = gateways4;
+    device.store_set(DAEMON_DHCP_SERVER_STORE_KEY, get_store_data(device));
+    return { success: true, data: config }
+}
+
+export function dhcp_server_add_address_range(device: Device, iface: BaseInterface, start: IPV4Address, end: IPV4Address): ReturnType<typeof dhcp_server_init_iface> {
+    let res = dhcp_server_init_iface(device, iface);
+    if (!res.success) {
+        return res;
+    }
+
+    let config = res.data;
+    // check that the address range makes sense
+    if (!config.netmask4.compare(config.server_id4, start) || !config.netmask4.compare(config.server_id4, end)) {
+        return {
+            success: false, error: "address_range4", message: "address range is invalid"
+        }
+    }
+
+    // check edge-cases where the start is an id and end is an broadcast
+    // compute subnet-id 
+    if (uint8_equals(
+        and(config.netmask4.buffer, start.buffer), start.buffer
+    )) {
+        start = new IPV4Address(start);
+        incrementAddress(start, config.netmask4);
+    }
+
+    // compute subnet-broadcast
+    if (uint8_equals(
+        and(config.netmask4.buffer, mutateNot(new Uint8Array(4))),
+        end.buffer
+    )) {
+        // how is this address decremented
+        // would it be just the final bit ?
+        end.buffer[3] &= 0xfe;
+    }
+
+    if ((uint8_readUint32BE(end.buffer) - uint8_readUint32BE(start.buffer)) < 1) {
+        return {
+            success: false, error: "address_range4", message: "address range is invalid"
+        }
+    }
+
+    config.address_range4 = [start, end];
+    device.store_set(DAEMON_DHCP_SERVER_STORE_KEY, get_store_data(device));
+    return { success: true, data: config };
+}
+
+export function dhcp_server_init_iface(device: Device, iface: BaseInterface): DeviceResult<keyof DHCPServerConfig | "iface", DHCPServerConfig> {
     if (iface.header != ETHERNET_HEADER) {
         return {
             success: false, error: "iface", message: "only ethernet interfaces supported"
@@ -504,109 +578,205 @@ export function dhcp_server_init_iface(device: Device, iface: BaseInterface, con
     let data = get_store_data(device);
     let config = data.configs[iface.id()];
 
-    if (!config) {
-        if (config_params.server_id4 && config_params.netmask4) {
-            config = {
-                clients: {},
-                server_id4: config_params.server_id4,
-                netmask4: config_params.netmask4,
-            }
-        } else {
-            let source = iface.addresses.find(a => a.address instanceof IPV4Address);
-            if (!source) {
-                return {
-                    success: false, error: "iface", message: "address configuration missing",
-                }
-            }
-
-            config = {
-                clients: {},
-                server_id4: source.address,
-                netmask4: source.netmask as AddressMask<typeof IPV4Address>
-            }
+    if (config) {
+        return { success: true, data: config }
+    }
+    let source = iface.addresses.find(a => a.address instanceof IPV4Address);
+    if (!source) {
+        return {
+            success: false, error: "iface", message: "address configuration missing",
         }
     }
 
-    if (config_params.gateways4) {
-        let gateways4: IPV4Address[] = [];
-
-        // ensure that the gateways are in the correct subnet
-        for (let a of config_params.gateways4) {
-            if (config.netmask4.compare(config.server_id4, a)) {
-                gateways4.push(a);
-            }
-        }
-
-        if (gateways4.length) {
-            config.gateways4 = gateways4;
-        } else {
-            return { success: false, error: "gateways4", message: "gateway must be inte the same subnet as the server_id" }
-        }
+    config = {
+        clients: {},
+        server_id4: source.address,
+        netmask4: source.netmask as AddressMask<typeof IPV4Address>
     }
 
-    if (config_params.address_range4) {
-        let [start, end] = config_params.address_range4;
-
-        // check that the address range makes sense
-        if (!config.netmask4.compare(config.server_id4, start) || !config.netmask4.compare(config.server_id4, end)) {
-            return {
-                success: false, error: "address_range4", message: "address range is invalid"
-            }
-        }
-
-        // check edge-cases where the start is an id and end is an broadcast
-        // compute subnet-id 
-        if (uint8_equals(
-            and(config.netmask4.buffer, start.buffer), start.buffer
-        )) {
-            start = new IPV4Address(start);
-            incrementAddress(start, config.netmask4);
-        }
-
-        // compute subnet-broadcast
-        if (uint8_equals(
-            and(config.netmask4.buffer, mutateNot(new Uint8Array(4))),
-            end.buffer
-        )) {
-            // how is this address decremented
-            // would it be just the final bit ?
-            end.buffer[3] &= 0xfe;
-        }
-
-        if ((uint8_readUint32BE(end.buffer) - uint8_readUint32BE(start.buffer)) < 1) {
-            return {
-                success: false, error: "address_range4", message: "address range is invalid"
-            }
-        }
-    }
-
+    data.configs[iface.id()] = config;
+    device.store_set(DAEMON_DHCP_SERVER_STORE_KEY, get_store_data(device));
     return { success: true, data: config }
 }
 
-export const DEVICE_PROGRAM_DHCP_SERVER_MAN: Program = {
-    name: "dhcpsman",
-    description: "manage the status of the dhcp-server daemon",
-    content: `<dhcpsman (start | stop)>
-<dhcpsman conf [ifid]>`,
-    init: function (proc: Process<any>, args: string[]): ProcessSignal {
-        let [, action, ifid] = args
+const MAX_ATTEMPTS = 3;
+async function dhcp_server_conf_read_ipv4address(io: DeviceIO, message = "enter address: "): Promise<undefined | IPV4Address> {
+    let i = 0;
+    for (i = 0; i < MAX_ATTEMPTS; i++) {
+        ioprint(io, message)
+        let bytes = await menu_read_line(io);
+        let str = String.fromCharCode(...bytes).trim();
 
-        if (action == "conf") {
-            if (!ifid) {
-                ioprintln(proc.io, "ifid: missing");
-                return ProcessSignal.ERROR;
-            }
+        if (IPV4Address.validate(str)) {
+            return new IPV4Address(str);
+        }
 
-            let iface = proc.device.interfaces.find((iface) => iface.id() == ifid);
-            if (!iface) {
-                ioprintln(proc.io, "ifid: interface id is invalid")
-                return ProcessSignal.ERROR;
-            }
+        // io.write(new Uint8Array([10]))
+        menu_clear_line(io);
+    }
 
-            // !TODO: run a menu with options
+    return undefined;
+}
+
+function dhcp_server_man_print_config(io: DeviceIO, ifid: string, config: DHCPServerConfig) {
+    let table: (string | undefined)[][] = [[ifid + ":"]];
+
+    table.push(["server_id4", `${config.server_id4.toString()}/${config.netmask4.length}`])
+
+    let clients = Object.values(config.clients).filter(Boolean);
+    let bound_clients = clients.reduce((sum, c) => {
+        if ((c?.state == DHCPServerClientState.BOUND)) return sum + 1;
+        return sum;
+    }, 0);
+
+    if (config.address_range4) {
+        table.push(["address_range4", `${config.address_range4[0]}-${config.address_range4[1]}`]);
+    }
+
+    if (config.gateways4) {
+        for (let ga of config.gateways4) {
+            table.push(["gateway4", ga.toString()]);
+        }
+    }
+
+    if (clients.length > 0) {
+        table.push(["bound clients", bound_clients.toString()])
+        table.push(["known clients", `${clients.length}`])
+        // table.push(["known clients", `${clients.length} (${((bound_clients / clients.length) * 100).toFixed(0)}%)`])
+    }
+    io.write(formatTable(table));
+}
+
+const DEVICE_PROGRAM_DHCP_SERVER_MAN_CONF: Program = {
+    name: "conf",
+    description: "edit dhcp server configurations",
+    content: "<dhcpsman conf [ifid]>",
+    init(proc, args) {
+        let [, , ifid] = args;
+
+        if (!ifid) {
+            ioprintln(proc.io, "ifid: missing");
             return ProcessSignal.ERROR;
         }
 
+        let iface = proc.device.interfaces.find((iface) => iface.id() == ifid);
+        if (!iface) {
+            ioprintln(proc.io, "ifid: interface id is invalid")
+            return ProcessSignal.ERROR;
+        }
+
+        let res = dhcp_server_init_iface(proc.device, iface);
+        if (!res.success) {
+            ioprintln(proc.io, res.message!)
+            return ProcessSignal.ERROR;
+        }
+
+        let config = res.data;
+
+        return run_menu(proc, {
+            [0]: {
+                description: "exit",
+                async cb(proc) {
+                    dhcp_server_man_print_config(proc.io, iface.id(), config);
+                    ioprintln(proc.io, "Bye!");
+                    proc.close();
+                }
+            },
+            [1]: {
+                description: "set gateway4",
+                async cb(proc) {
+                    ioprintln(proc.io, this.description);
+                    ioprintln(proc.io, `server_id: ${config.server_id4.toString()}/${config.netmask4.length}`)
+
+                    let addr = await dhcp_server_conf_read_ipv4address(proc.io, "Enter gateway: ")
+                    proc.io.write(new Uint8Array([10]))
+                    
+                    if (!addr) {
+                        ioprintln(proc.io, "invalid input")
+                    } else {
+                        let res = dhcp_server_set_gateways4(proc.device, iface, addr)
+
+                        if (!res.success && res.message) {
+                            ioprintln(proc.io, res.message);
+                        } else {
+                            ioprintln(proc.io, "the following gateway was set: " + addr);
+                        }
+                    }
+
+                    ioprint(proc.io, "press enter to return to menu ...")
+                    await menu_read_line(proc.io);
+                },
+            },
+            [2]: {
+                description: "set address range4",
+                async cb(proc) {
+                    // fun thing compute a possible range
+                    // like for 192.168.1.23/24 -> 192.168.1.X-192.168.1.X
+                    ioprintln(proc.io, this.description);
+                    ioprintln(proc.io, `server_id: ${config.server_id4.toString()}/${config.netmask4.length}`)
+
+                    let start = await dhcp_server_conf_read_ipv4address(proc.io, "Enter start: ")
+                    if (!start) {
+                        ioprintln(proc.io, "invalid input")
+                        ioprint(proc.io, "press enter to return to menu ...")
+                        await menu_read_line(proc.io);
+                        return;
+                    }
+
+                    proc.io.write(new Uint8Array([10]))
+
+                    let end = await dhcp_server_conf_read_ipv4address(proc.io, "Enter end:  ")
+                    if (!end) {
+                        ioprintln(proc.io, "invalid input")
+                        ioprint(proc.io, "press enter to return to menu ...")
+                        await menu_read_line(proc.io);
+                        return;
+                    }
+
+                    proc.io.write(new Uint8Array([10]))
+
+                    let res = dhcp_server_add_address_range(proc.device, iface, start, end);
+                    if (!res.success && res.message) {
+                        ioprintln(proc.io, res.message)
+                    } else {
+                        ioprintln(proc.io, "the following address range was set:\n" + start.toString() + "-" + end.toString());
+                    }
+
+                    ioprint(proc.io, "press enter to return to menu ...")
+                    await menu_read_line(proc.io);
+                }
+            },
+            [3]: {
+                description: "clients exist",
+                async cb(proc) {
+                    // !TODO: list clients
+                    /*
+                        i.e. a new menu
+                        (n) (formatted clid) (client ip conf) (state)
+                        (1) fa-ff-0f-00-00-86 10.20.0.20/24 BOUND
+                    */
+                    ioprintln(proc.io, "method not implemented")
+                    await menu_read_line(proc.io);
+                }
+            },
+            [100]: {
+                description: "delete configuration",
+                async cb(proc) {
+                    let data = get_store_data(proc.device);
+                    delete data.configs[iface.id()];
+                    ioprintln(proc.io, "configuration deleted")
+                    proc.close();
+                }
+            }
+        })
+    }
+}
+export const DEVICE_PROGRAM_DHCP_SERVER_MAN: Program = {
+    name: "dhcpsman",
+    description: "manage the status of the dhcp-server daemon",
+    content: `<dhcpsman (start | stop)>`,
+    init(proc: Process, args) {
+        let [, action] = args
         let data = get_store_data(proc.device);
 
         if (action === "start") {
@@ -629,40 +799,16 @@ export const DEVICE_PROGRAM_DHCP_SERVER_MAN: Program = {
         // format the config data
         if (data.configs) {
             proc.io.write(new Uint8Array([10]))
-            let table: (string | undefined)[][] = [];
 
             for (let [ifid, config] of Object.entries(data.configs)) {
                 if (!config) continue;
-                table.push([ifid + ":", undefined]);
-                table.push([undefined, "server_id4", `${config.server_id4.toString()}/${config.netmask4.length}`])
-
-                let clients = Object.values(config.clients).filter(Boolean);
-                let bound_clients = clients.reduce((sum, c) => {
-                    if ((c?.state == DHCPServerClientState.BOUND)) return sum + 1;
-                    return sum;
-                }, 0);
-
-                if (config.address_range4) {
-                    table.push([undefined, "address_range4", `${config.address_range4[0]}-${config.address_range4[1]}`]);
-                }
-
-                if (config.gateways4) {
-                    for (let ga of config.gateways4) {
-                        table.push([undefined, "gateway4", ga.toString()]);
-                    }
-                }
-
-                if (clients.length > 0) {
-                    table.push([undefined, "bound clients", bound_clients.toString()])
-                    table.push([undefined, "known clients", `${clients.length}`])
-                    // table.push([undefined, "known clients", `${clients.length} (${((bound_clients / clients.length) * 100).toFixed(0)}%)`])
-                }
+                dhcp_server_man_print_config(proc.io, ifid, config);
             }
 
-            proc.io.write(formatTable(table));
         }
 
         return ProcessSignal.EXIT;
     },
     __NODATA__: true,
+    sub: [DEVICE_PROGRAM_DHCP_SERVER_MAN_CONF]
 }
