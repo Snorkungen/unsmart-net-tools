@@ -404,6 +404,7 @@ function read(proc: Process<ShellData>, bytes: Uint8Array) {
                         }
                     });
 
+                    bytes = bytes.subarray(i +1)
                     break char_parse_loop;
                 }
 
@@ -569,7 +570,7 @@ function read(proc: Process<ShellData>, bytes: Uint8Array) {
             throw new Error(DAEMON_SHELL.name + ": this.runningProc is undefined, ", proc.data.runningProc);
         }
 
-        if (proc.data.runningProc.io.read) {
+        if (proc.data.runningProc.io.read && bytes.length) {
             (proc.data.runningProc.io.read(bytes))
         }
 
