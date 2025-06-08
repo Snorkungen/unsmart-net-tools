@@ -169,8 +169,8 @@ export const DAEMON_ROUTING: Program = {
 
 export const DEVICE_PROGRAM_ROUTINGMAN: Program = {
     name: "routingman",
-    description: `manage the status of the routing daemon
-    <routingman [start | stop]>`,
+    description: "manage the status of the routing daemon",
+    content: `<routingman (start | stop)>`,
     init: function (proc: Process<any>, args: string[]): ProcessSignal {
         let [, action] = args
 
@@ -187,5 +187,6 @@ export const DEVICE_PROGRAM_ROUTINGMAN: Program = {
 
         ioprintln(proc.io, "Status: " + (routingd ? "started" : "stopped"))
         return ProcessSignal.EXIT;
-    }
+    },
+    __NODATA__: true,
 }
