@@ -86,8 +86,13 @@ export default class Terminal {
     }).bind(this)
     write(bytes: Uint8Array, fast = true) {
         if (fast || (bytes.byteLength + this.write_buffer_length) > this.write_buffer.byteLength) {
-            // do some special logic
-            if (this.write_buffer_length === 0)
+            if (!this.container.isConnected) {
+                uint8_mutateSet(this.write_buffer, bytes, this.write_buffer_length);
+                this.write_buffer_length += bytes.byteLength;
+                if (this.write_buffer_length > this.write_buffer.byteLength) {
+                    throw new Error(Terminal.name + " writter_buffer overflown")
+                }
+            } else if (this.write_buffer_length === 0)
                 this.renderer.buffer = bytes;
             else {
                 this.renderer.buffer = uint8_concat([this.write_buffer.subarray(0, this.write_buffer_length), bytes]);
@@ -105,6 +110,9 @@ export default class Terminal {
 
         uint8_mutateSet(this.write_buffer, bytes, this.write_buffer_length);
         this.write_buffer_length += bytes.byteLength;
+        if (this.write_buffer_length > this.write_buffer.byteLength) {
+            throw new Error(Terminal.name + " writter_buffer overflown")
+        }
 
         // create timeout that checks that the data is the
         if (this.write_waiting)
