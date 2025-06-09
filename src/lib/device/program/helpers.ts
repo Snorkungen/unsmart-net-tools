@@ -175,9 +175,9 @@ export async function ioreadline(io: DeviceIO, options: Partial<{
     const buffer: number[] = [];
 
     if (!options.targets) {
-        options.targets = [[ASCIICodes.CarriageReturn], [ASCIICodes.CarriageReturn]]
+        options.targets = [[ASCIICodes.NewLine], [ASCIICodes.CarriageReturn]]
     } else {
-        options.targets.push([ASCIICodes.CarriageReturn], [ASCIICodes.CarriageReturn])
+        options.targets.push([ASCIICodes.NewLine], [ASCIICodes.CarriageReturn])
     }
 
     return new Promise(resolve => {
