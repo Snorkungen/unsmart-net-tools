@@ -1,19 +1,14 @@
 import { uint8_concat, uint8_fromString } from "../../binary/uint8-array";
-import { ASCIICodes, CSI, numbertonumbers, readParams } from "../../terminal/shared";
+import { ASCIICodes, CSI, numbertonumbers } from "../../terminal/shared";
 import { args_parse } from "../../utils/args-parse";
-import { Process, ProcessSignal, Program } from "../device";
+import { Device, Process, ProcessSignal, Program } from "../device";
+import { ioclearline, ioreadline } from "./helpers";
 import { termquery } from "./termquery";
-
-enum ShellState {
-    UNITIALIZED,
-    PROMPT,
-    RUNNING_PROGRAM,
-    LAZY_WRITING
-}
 
 class ShellHistory {
     private history: string[] = [];
     private pos: number = -1;
+    private last_is_committed = false;
 
     previous(): string | null {
         if (this.pos <= 0) {
@@ -28,7 +23,13 @@ class ShellHistory {
             return null;
         }
 
-        return this.history.at(++this.pos) || null;
+        let v = this.history.at(++this.pos) || null
+
+        if ((this.history.length - 1) == this.pos && v && !this.last_is_committed) {
+            this.history.pop();
+        }
+
+        return v;
     }
 
     add(str: string): boolean {
@@ -38,50 +39,27 @@ class ShellHistory {
         }
 
         this.pos = this.history.push(str);
+        this.last_is_committed = true;
+        return true;
+    }
+    add_to_end(str: string): boolean {
+        if (this.history.length > 0 && this.history[this.history.length - 1] == str) {
+            return false;
+        }
+
+        if ((this.history.length - 1) != this.pos) {
+            return false;
+        }
+        this.last_is_committed = false;
+        this.history.push(str);
         return true;
     }
 }
 
 type ShellData = {
-    state: ShellState;
     history: ShellHistory;
-    cursorX: number;
-    promptXOffset: number;
-
-    promptBuffer: string;
-
     runningProc: Process | undefined;
 };
-
-function writePrompt(proc: Process<ShellData>) {
-    proc.data.state = ShellState.PROMPT;
-
-    let promptBuff = uint8_concat([
-        new Uint8Array([ASCIICodes.CarriageReturn, ASCIICodes.NewLine,]),// New Line
-        uint8_fromString("<"),
-        CSI(ASCIICodes.Three, ASCIICodes.Three, ASCIICodes.m),
-        uint8_fromString(proc.device.name),
-        CSI(ASCIICodes.Zero, ASCIICodes.m),
-        uint8_fromString(">"),
-    ]);
-
-    proc.data.promptXOffset = 2 + proc.device.name.length;
-    proc.data.cursorX = proc.data.promptXOffset + 1;
-
-    proc.io.write(promptBuff);
-}
-
-function replacePromptBuffer(proc: Process<ShellData>, text: string, cursorX?: number) {
-    proc.data.promptBuffer = text;
-    proc.data.cursorX = cursorX || proc.data.promptXOffset + proc.data.promptBuffer.length + 1;
-    proc.io.write(uint8_concat([
-        CSI(...uint8_fromString((proc.data.promptXOffset + 1).toString()), ASCIICodes.G), // move cursor to begin of prompt
-        CSI(ASCIICodes.Zero, ASCIICodes.K), // Clear Line
-        uint8_fromString(text), // write buffer to screen
-        CSI(...uint8_fromString(proc.data.cursorX.toString()), ASCIICodes.G) // move cursor to new position
-    ]))
-
-}
 
 function lazywriter_write_options(proc: Process<string>, options: string[], i: number, term_width: number) {
     let cursorX = 0;
@@ -291,79 +269,67 @@ const lazywriter: Program<string> = {
     }
 }
 
-function read(proc: Process<ShellData>, bytes: Uint8Array) {
-    if (proc.data.state === ShellState.UNITIALIZED) {
-        return; // do nothing
-    }
+function get_prompt_buf(device: Device) {
+    return uint8_concat([
+        uint8_fromString("<"),
+        CSI(ASCIICodes.Three, ASCIICodes.Three, ASCIICodes.m),
+        uint8_fromString(device.name),
+        CSI(ASCIICodes.Zero, ASCIICodes.m),
+        uint8_fromString(">"),
+    ]);
+}
 
+export const DAEMON_SHELL: Program<ShellData> = {
+    name: "daemon_shell",
+    async init(proc, _) {
+        // just because i know the internals, but this is not obvious
+        (<ShellData>proc.data) = {
+            history: new ShellHistory(),
+            runningProc: undefined
+        };
 
-    if (proc.data.state === ShellState.PROMPT) {
-        let i = 0; char_parse_loop: while (i < bytes.byteLength) {
-            let byte = bytes[i];
-            // handle writing characters to the screen
-            if (byte >= ASCIICodes.Space && byte < ASCIICodes.Delete) {
-                let char = String.fromCharCode(byte);
-                if ((proc.data.cursorX - proc.data.promptXOffset - 1) < proc.data.promptBuffer.length) { // issues with non ascii-char
-                    // special logic
-                    let p = (proc.data.cursorX - proc.data.promptXOffset - 1);
-                    replacePromptBuffer(
-                        proc,
-                        proc.data.promptBuffer.slice(0, p) + char + proc.data.promptBuffer.slice(p),
-                        proc.data.cursorX + 1
-                    )
-                } else {
-                    proc.data.promptBuffer += char
-                    proc.io.write(new Uint8Array([byte]));
-                    proc.data.cursorX += 1;
-                }
+        proc.device.io_terminal_attach(proc.io);
 
-                i++; continue char_parse_loop;
+        proc.io.reader_add(bytes => {
+            if (proc.data.runningProc) {
+                proc.data.runningProc.io.read(bytes)
             }
 
-            if (byte == ASCIICodes.Delete || byte == ASCIICodes.BackSpace) {
-                if (proc.data.promptBuffer.length <= 0 || proc.data.cursorX <= proc.data.promptXOffset + 1) {
-                    i++; continue char_parse_loop;
-                }
+            if (proc.data.runningProc && true /* Allow ctrl code checking to be toggled, default on */) {
+                // read bytes and check for ctrl + c
 
-                if ((proc.data.cursorX - proc.data.promptXOffset - 1) < proc.data.promptBuffer.length) {
-                    let p = (proc.data.cursorX - proc.data.promptXOffset - 1);
-                    replacePromptBuffer(proc,
-                        proc.data.promptBuffer.slice(0, p - 1) + proc.data.promptBuffer.slice(p),
-                        proc.data.cursorX - 1
-                    )
-                } else {
-                    proc.data.promptBuffer = proc.data.promptBuffer.substring(0, proc.data.promptBuffer.length - 1);
-                    proc.io.write(new Uint8Array([ASCIICodes.BackSpace]));
-                    proc.data.cursorX -= 1;
-                }
+                for (let i = 0; i < bytes.length; i++) {
+                    let byte = bytes[i];
 
-            } else if (byte == ASCIICodes.Tab) {
-                console.log("[TAB] Pressed")
-                proc.data.state = ShellState.LAZY_WRITING;
-                proc.data.runningProc = proc.spawn(lazywriter, undefined, proc.data.promptBuffer, {
-                    on_close(sproc) {
-                        proc.data.state = ShellState.PROMPT;
-                        delete proc.data.runningProc
-                        if (sproc.data === undefined)
-                            return;
-                        replacePromptBuffer(proc, sproc.data)
-                    },
-                    io_on_write(bytes) {
-                        proc.io.write(bytes)
-                    },
-                    io_on_flush() {
-                        proc.io.flush()
+                    if (byte == 3) {
+                        proc.data.runningProc.close(ProcessSignal.INTERRUPT);
                     }
-                });
+                }
+            }
+        })
 
-                // proc.data.runningProc?.io.read(bytes.subarray(i + 1))
+        let initial_bytes: undefined | Uint8Array = undefined;
+        proc.io.write(new Uint8Array([10])); // initially write new line
 
-                return; // early return
-            } else if (byte == ASCIICodes.CarriageReturn || byte == ASCIICodes.NewLine) {
-                console.log("[ENTER] Pressed")
-                // do stuff
+        while (!proc.abort_controller.signal.aborted) {
+            proc.io.write(get_prompt_buf(proc.device));
+            let [bytes, target] = await ioreadline(proc.io, {
+                targets: [
+                    [ASCIICodes.Tab],
+                    [ASCIICodes.Escape, ASCIICodes.OpenSquareBracket, ASCIICodes.A], // ArrowUp
+                    [ASCIICodes.Escape, ASCIICodes.OpenSquareBracket, ASCIICodes.B], // ArrowDown
+                    [3], // ctrl + C
+                    [ASCIICodes.Escape], // Escape
+                ],
+                intial_bytes: initial_bytes
+            });
 
-                let argv = args_parse(proc.data.promptBuffer);
+            initial_bytes = undefined;
+            let promptv = String.fromCharCode(...bytes);
+
+            // check target
+            if /* Enter pressed */ (target[0] == ASCIICodes.NewLine || target[0] == ASCIICodes.CarriageReturn) {
+                let argv = args_parse(promptv);
                 let name = argv.shift();
                 let program: Program | undefined = proc.device.programs.find(p => p.name == name);
                 while (argv.length > 0 && program) {
@@ -378,23 +344,37 @@ function read(proc: Process<ShellData>, bytes: Uint8Array) {
 
                 // TODO! read sub programs, this could maybe be something that isn't a shell thing
 
-                proc.data.history.add(proc.data.promptBuffer);
+                proc.data.history.add(promptv);
 
                 if (program) {
                     proc.io.write(new Uint8Array([ASCIICodes.NewLine]));
-                    proc.data.state = ShellState.RUNNING_PROGRAM;
-                    proc.data.runningProc = proc.spawn(program, args_parse(proc.data.promptBuffer), undefined, {
-                        on_close(_, status) {
-                            (<ShellData>proc.data).state = ShellState.RUNNING_PROGRAM;
-                            (<ShellData>proc.data).promptBuffer = "";
-
-                            // continue reading bytes from buf
-                            if (bytes.byteLength > i + 1) {
-                                read(proc, bytes.subarray(i));
-                            }
-
-                            delete (<ShellData>proc.data).runningProc;
-                            writePrompt(proc);
+                    // run program async
+                    await new Promise<void>((resolve, reject) => {
+                        try {
+                            proc.data.runningProc = proc.spawn(program, args_parse(promptv), undefined, {
+                                on_close(_, status) {
+                                    delete (<ShellData>proc.data).runningProc;
+                                    resolve();
+                                },
+                                io_on_write(bytes) {
+                                    proc.io.write(bytes)
+                                },
+                                io_on_flush() {
+                                    proc.io.flush()
+                                }
+                            });
+                        } catch (error) {
+                            reject(error);
+                            // !TODO: possibly do something better when spawned program errors
+                        }
+                    })
+                }
+            }  /* Tab pressed */ else if (target[0] == ASCIICodes.Tab) {
+                let v = await new Promise<string | undefined>(resolve => {
+                    proc.data.runningProc = proc.spawn(lazywriter, undefined, promptv, {
+                        on_close(sproc) {
+                            delete proc.data.runningProc
+                            resolve(sproc.data)
                         },
                         io_on_write(bytes) {
                             proc.io.write(bytes)
@@ -403,207 +383,46 @@ function read(proc: Process<ShellData>, bytes: Uint8Array) {
                             proc.io.flush()
                         }
                     });
+                });
 
-                    bytes = bytes.subarray(i +1)
-                    break char_parse_loop;
+
+
+                if (v) {
+                    initial_bytes = uint8_fromString(v);
+                } else {
+                    initial_bytes = bytes;
                 }
+                ioclearline(proc.io);
+                continue;
+            }  /* ctrl + c pressed or escape */ else if (target[0] == 3 || (target.length == 1 && target[0] == ASCIICodes.Escape)) {
+                ioclearline(proc.io);
+                continue;
+            } /* ArrowUp pressed  */ else if (target[0] == ASCIICodes.Escape && target.at(-1)! == ASCIICodes.A) {
+                let prev = proc.data.history.previous();
+                if (prev != null) {
+                    initial_bytes = uint8_fromString(prev);
 
-                proc.data.promptBuffer = "";
-                writePrompt(proc);
-            } else if (byte == ASCIICodes.Escape) {
-                if (i == bytes.byteLength - 1) {// last byte 
-                    i++;
-                    continue char_parse_loop;
+                    proc.data.history.add_to_end(promptv)
+                } else {
+                    initial_bytes = bytes;
                 }
-
-                byte = bytes[++i];
-
-                if (byte != ASCIICodes.OpenSquareBracket) {
-                    continue char_parse_loop;
+                ioclearline(proc.io);
+                continue;
+            } /* ArrowDown pressed  */ else if (target[0] == ASCIICodes.Escape && target.at(-1)! == ASCIICodes.B) {
+                let next = proc.data.history.next();
+                if (next != null) {
+                    initial_bytes = uint8_fromString(next);
+                } else {
+                    initial_bytes = bytes;
                 }
-
-                let rawParams: number[] = [];
-                while (++i < bytes.byteLength) {
-                    byte = bytes[i];
-
-                    if (
-                        byte >= 0x30 &&
-                        byte <= 0x3f
-                    ) {
-                        rawParams.push(byte);
-                    } else if (
-                        byte >= 0x40 &&
-                        byte <= 0x7E
-                    ) {
-                        rawParams.push(byte);
-                        break;
-                    }
-                }
-
-                if (rawParams.length == 0) {
-                    continue char_parse_loop; // error
-                }
-
-                let finalByte = rawParams[rawParams.length - 1]; rawParams.pop();
-
-                let interperetNavigationParams = (params: number[]): {
-                    ctrl: boolean;
-                    shift: boolean;
-                } => {
-                    params = readParams(rawParams, -1);
-                    let lastN = params[params.length - 1];
-                    return { ctrl: lastN >= 5, shift: lastN == 2 || lastN == 6 }
-                }
-
-                switch (finalByte) {
-                    case ASCIICodes.A: { // ArrowUp
-                        let previous = proc.data.history.previous();
-                        if (previous != null) {
-                            replacePromptBuffer(proc, previous)
-                        }
-                    }; break;
-                    case ASCIICodes.B: { // ArrowDown
-                        let next = proc.data.history.next();
-                        if (next != null) {
-                            replacePromptBuffer(proc, next)
-                        }
-                    }; break;
-                    case ASCIICodes.C: { // ArrowRight
-                        let { ctrl } = interperetNavigationParams(rawParams)
-
-                        // move cursor to right
-                        let isAtEnd = ((proc.data.cursorX - proc.data.promptXOffset) > proc.data.promptBuffer.length)
-                        if (isAtEnd) {
-                            break;
-                        }
-
-                        let step = 0;
-
-                        if (!ctrl) {
-                            // simple move
-                            step = 1;
-                        } else {
-                            let x = proc.data.cursorX - proc.data.promptXOffset - 1; // due to cursor being 1-based
-
-                            // find the position of the first char behind a whitespace
-
-                            let char = proc.data.promptBuffer[x];
-                            let prevc = char;
-
-                            while (char && !(char != " " && prevc == " ")) {
-                                step += 1;
-                                prevc = char;
-                                char = proc.data.promptBuffer[x + step];
-                            }
-                        }
-
-                        if (step > 0) {
-                            proc.data.cursorX += step;
-                            proc.io.write(CSI(...uint8_fromString(step.toString()), ASCIICodes.C));
-                        }
-
-                    }; break;
-                    case ASCIICodes.D: { // ArrowLeft
-                        let { ctrl } = interperetNavigationParams(rawParams)
-
-                        let isAtBegin = proc.data.cursorX <= (proc.data.promptXOffset + 1)
-                        if (isAtBegin) {
-                            break;
-                        }
-                        let step = 0;
-                        // move cursor to left
-                        if (!ctrl) {
-                            // simple move
-                            step = 1;
-                        } else {
-                            let x = proc.data.cursorX - proc.data.promptXOffset - 1; // due todsa dsa cursor being 1-based
-
-                            let char = proc.data.promptBuffer[x - 1];
-                            let prevc = char;
-
-                            while (char && !(prevc != " " && char == " ") || char == prevc) {
-                                step += 1;
-                                prevc = char;
-                                char = proc.data.promptBuffer[x - step];
-                            }
-                            step -= 1
-                        }
-
-                        if (step > 0) {
-                            proc.data.cursorX -= step;
-                            proc.io.write(CSI(...uint8_fromString(step.toString()), ASCIICodes.D));
-                        }
-                    }; break;
-                    case ASCIICodes.F: { // End
-                        // move cursor to end
-
-                        // Note There is a problem due to the terminal renederer auto wrapping text and then the states diverge
-
-                        proc.data.cursorX = proc.data.promptXOffset + proc.data.promptBuffer.length + 1;
-                        proc.io.write(CSI(...uint8_fromString((
-                            proc.data.cursorX
-                        ).toString()), ASCIICodes.G));
-                    }; break;
-                    case ASCIICodes.H: { // Home
-                        // move cursor to Begin
-                        proc.data.cursorX = proc.data.promptXOffset + 1;
-                        proc.io.write(CSI(...uint8_fromString((
-                            proc.data.cursorX
-                        ).toString()), ASCIICodes.G));
-                    }; break;
-                }
-            } else if (byte == 3) {
-                proc.data.promptBuffer = "";
-                writePrompt(proc);
+                ioclearline(proc.io);
+                continue;
             }
-            i++;
-        }
-    }
 
-    if (proc.data.state === ShellState.RUNNING_PROGRAM) {
-        /**
-         * IMPORTANT PLS READ
-         * The following logic is not thought through
-         */
-
-        if (!proc.data.runningProc) {
-            throw new Error(DAEMON_SHELL.name + ": this.runningProc is undefined, ", proc.data.runningProc);
+            // Finally write a new line
+            proc.io.write(new Uint8Array([10]));
         }
 
-        if (proc.data.runningProc.io.read && bytes.length) {
-            (proc.data.runningProc.io.read(bytes))
-        }
-
-        if (bytes.includes(3)) {
-            proc.data.runningProc.close(ProcessSignal.INTERRUPT);
-        }
-    }
-
-    if (proc.data.state === ShellState.LAZY_WRITING && proc.data.runningProc) {
-        proc.data.runningProc.io.read(bytes)
-    }
-}
-
-export const DAEMON_SHELL: Program = {
-    name: "daemon_shell",
-    init(proc, _) {
-        // just because i know the internals, but this is not obvious
-        (<ShellData>proc.data) = {
-            state: ShellState.UNITIALIZED,
-            history: new ShellHistory(),
-            cursorX: 1,
-            promptXOffset: 0,
-            promptBuffer: "",
-            runningProc: undefined
-        };
-
-        proc.device.io_terminal_attach(proc.io);
-        proc.io.reader_add((bytes) => {
-            read(proc, bytes)
-        })
-
-        writePrompt(proc);
-
-        return ProcessSignal.__EXPLICIT__;
+        return ProcessSignal.EXIT;
     }
 }
