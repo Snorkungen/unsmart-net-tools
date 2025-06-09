@@ -32,39 +32,6 @@ export const IPV4_HEADER = defineStruct({
 
 IPV4_HEADER.set("version", 4);
 
-export function createIPV4Header<V extends Parameters<typeof IPV4_HEADER["create"]>[0] & {
-    payload: Uint8Array;
-    proto: Protocol;
-    saddr: IPV4Address,
-    daddr: IPV4Address
-}>(values: V): typeof IPV4_HEADER {
-    let hdr = IPV4_HEADER.create({
-        version: 4,
-        ihl: 5,
-        tos: 0,
-        ttl: 64
-    }, {
-        packed: true,
-        bigEndian: true,
-        "setDefaultValues": false
-    });
-
-    for (let k in values) {
-        if (!hdr.order.includes(k as typeof hdr["order"][number])) continue;
-        // @ts-ignore
-        hdr.set(k, values[k])
-    }
-
-    // Set length
-    hdr.set("len", hdr.getMinSize() + values.payload.byteLength);
-
-    // set checksum 
-    // I do not know how this is actually done because I havn't bothered to read the spec
-    hdr.set("csum", calculateChecksum(hdr.getBuffer().subarray(0, 20)));
-
-    return hdr;
-}
-
 export const IPV4_PSEUDO_HEADER = defineStruct({
     saddr: IPV4_ADDRESS,
     daddr: IPV4_ADDRESS,

@@ -9,7 +9,7 @@ import { parseDHCPOptions } from "../../header/dhcp/parse-options";
 import { DHCPTag, DHCP_MESSGAGE_TYPES, DHCP_TAGS } from "../../header/dhcp/tags";
 import { createDHCPOptionsMap } from "../../header/dhcp/utils";
 import { ETHERNET_HEADER, ETHER_TYPES } from "../../header/ethernet";
-import { IPV4_HEADER, IPV4_PSEUDO_HEADER, PROTOCOLS, createIPV4Header } from "../../header/ip";
+import { IPV4_HEADER, IPV4_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
 import { UDP_HEADER } from "../../header/udp";
 import { NetworkData } from "../device";
 import { Contact, Process, ProcessSignal, Program } from "../device";

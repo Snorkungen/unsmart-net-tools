@@ -2,19 +2,16 @@ import { Component, createEffect } from "solid-js";
 import Terminal from "../lib/terminal/terminal";
 import { Device } from "../lib/device/device";
 import { DAEMON_SHELL } from "../lib/device/program/shell";
-import { DEVICE_PROGRAM_PING } from "../lib/device/program/ping";
+import { DEVICE_PROGRAM_PING, headless_ping_receive } from "../lib/device/program/ping";
 import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_HELP, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_ECHO } from "../lib/device/program/program";
 import { DEVICE_PROGRAM_IFINFO } from "../lib/device/program/ifinfo";
 import { DAEMON_ECHO_REPLIER } from "../lib/device/program/echo-replier";
 import { LoopbackInterface } from "../lib/device/interface";
 import { DEVICE_PROGRAM_ROUTEINFO } from "../lib/device/program/routeinfo";
-import { uint8_equals, uint8_fromString } from "../lib/binary/uint8-array";
+import { uint8_fromString } from "../lib/binary/uint8-array";
 import { OSInterface } from "../lib/device/osinterface";
 import { IPV4Address } from "../lib/address/ipv4";
 import { createMask } from "../lib/address/mask";
-import { calculateChecksum } from "../lib/binary/checksum";
-import { ICMP_ECHO_HEADER, ICMPV4_TYPES, ICMP_HEADER } from "../lib/header/icmp";
-import { IPV4_HEADER, PROTOCOLS, createIPV4Header } from "../lib/header/ip";
 import { DEVICE_PROGRAM_DAEMAN } from "../lib/device/program/daeman";
 import { ASCIICodes } from "../lib/terminal/shared";
 import { terminal_resize } from "../lib/terminal/renderer";
@@ -54,43 +51,36 @@ export const TestingComponent2: Component = () => {
 
 
     function send_ping() {
+        let destination = new IPV4Address(osif_destination)
+        let identifier = Math.floor(Math.random() * (0xffff));
+        let contact = newdevice.resources.create(newdevice.contact_create("IPv4", "RAW").data!);
+
+        let route = newdevice.route_resolve(destination);
+        if (!route) {
+            return;
+        }
+
+        let closed = false;
+        let t = window.setTimeout(() => {
+            if (closed) return;
+            contact && contact.close();
+        }, 5 * 1000); // close contact after 5-minutes
+
         function success() {
             console.log("%c ECHO Reply recieved: " + newdevice.name, ['background: green', 'color: white', 'display: block', 'text-align: center', 'font-size: 24px'].join(';'))
+            contact && contact.close()
+            closed = true;
+            window.clearTimeout(t);
         }
-        let identifier = Math.floor(Math.random() * 1_000), sequence = 1;
 
-        let echoHdr = ICMP_ECHO_HEADER.create({
-            id: identifier,
-            seq: sequence
-        })
-        let ip = osif_destination;
-        let destination = new IPV4Address(ip)
+        function error() {
+            console.log("%c ECHO error recieved: " + newdevice.name, ['background: red', 'color: white', 'display: block', 'text-align: center', 'font-size: 24px'].join(';'))
+            contact && contact.close()
+            closed = true;
+            window.clearTimeout(t);
+        }
 
-        let contact = newdevice.contact_create("IPv4", "RAW").data!;
-        contact.receive((_, data) => {
-            let iphdr = IPV4_HEADER.from(data.buffer);
-            if (!uint8_equals(iphdr.get("saddr").buffer, destination.buffer)) return;
-            if (iphdr.get("proto") != PROTOCOLS.ICMP) return;
-            if (iphdr.get("payload")[0] != ICMPV4_TYPES.ECHO_REPLY) return;
-            contact.close();
-            success()
-        })
-
-        let icmpHdr = ICMP_HEADER.create({
-            type: ICMPV4_TYPES.ECHO_REQUEST,
-            data: echoHdr.getBuffer()
-        });
-
-        icmpHdr.set("csum", calculateChecksum(icmpHdr.getBuffer()));
-
-        let ipHdr = createIPV4Header({
-            saddr: new IPV4Address("0.0.0.0"),
-            daddr: new IPV4Address(ip),
-            proto: PROTOCOLS.ICMP,
-            payload: icmpHdr.getBuffer()
-        })
-
-        contact.send({ buffer: ipHdr.getBuffer() }, ipHdr.get("daddr"));
+        contact.receive(headless_ping_receive(destination, route, identifier, success, error));
     }
 
     function send_udp() {
