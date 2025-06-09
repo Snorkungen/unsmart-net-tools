@@ -14,13 +14,15 @@ import { DAEMON_ROUTING, DEVICE_PROGRAM_ROUTINGMAN } from "../lib/device/program
 import { EthernetInterface, VlanInterface } from "../lib/device/interface";
 import { DEVICE_PROGRAM_ROUTEINFO } from "../lib/device/program/routeinfo";
 import { network_map_init_device_shape as network_map_init_device, network_map_init_state, network_map_remove_device_shape as network_map_remove_device, network_map_render } from "../lib/network-map/network-map";
-import { createSignal, For, Show, Switch } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import { DEVICE_PROGRAM_TRACEROUTE } from "../lib/device/program/traceroute";
 import { DEVICE_PROGRAM_HOSTSINFO, setaddress_by_host } from "../lib/device/program/hostsinfo";
+import { DEVICE_PROGRAM_DHCP_SERVER_MAN } from "../lib/device/program/dhcp-server-man";
+import { DEVICE_PROGRAM_DHCP_CLIENT } from "../lib/device/program/dhcp-client";
 
 function init_programs(device: Device) {
     device.process_start(DAEMON_ECHO_REPLIER);
-    device.programs = [
+    device.programs.push(
         DEVICE_PROGRAM_ECHO,
         DEVICE_PROGRAM_IFINFO,
         DEVICE_PROGRAM_ROUTEINFO,
@@ -32,7 +34,7 @@ function init_programs(device: Device) {
         DEVICE_PROGRAM_TRACEROUTE,
         DEVICE_PROGRAM_HOSTSINFO,
         DEVICE_PROGRAM_ROUTINGMAN
-    ]
+    );
 }
 
 let networkSwitch = new NetworkSwitch();
@@ -41,8 +43,9 @@ networkSwitch.name = "SW1"
 networkSwitch2.name = "SW2"
 
 let networkRouter = new NetworkSwitch(); networkRouter.name = "R1"
-
 networkRouter.process_start(DAEMON_ROUTING); // start routing daemon
+
+networkRouter.programs.push(DEVICE_PROGRAM_DHCP_SERVER_MAN)
 
 let rtr_iface = networkRouter.interface_add(new EthernetInterface(networkRouter)); rtr_iface.vlan_set("trunk", 1, 10, 20)
 let rtr_vlanif10 = networkRouter.interface_add(new VlanInterface(networkRouter, 10));
@@ -128,6 +131,9 @@ swIface_pc3.connect(iface_pc3);
 swIface2_pc4.connect(iface_pc4);
 
 swIface2_pc5.connect(iface_pc5)
+
+// DHCP test
+pc3.programs.push(DEVICE_PROGRAM_DHCP_CLIENT);
 
 init_programs(networkSwitch)
 init_programs(networkSwitch2)

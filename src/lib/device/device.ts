@@ -21,7 +21,7 @@ import { DeviceResource, DeviceResources } from "./internals/resources";
 // source <https://stackoverflow.com/a/63029283>
 export type DropFirst<T extends unknown[]> = T extends [any, ...infer U] ? U : never;
 
-const _UNSET_ADDRESS_IPV4 = new IPV4Address("0.0.0.0"),
+export const _UNSET_ADDRESS_IPV4 = new IPV4Address("0.0.0.0"),
     _UNSET_ADDRESS_IPV6 = new IPV6Address("::'");
 
 export type NeighborEntry<AddressT extends BaseAddress = BaseAddress> = {

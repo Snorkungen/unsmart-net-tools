@@ -1,6 +1,6 @@
 import { IPV4Address } from "../../address/ipv4";
 import { MACAddress } from "../../address/mac";
-import { AddressMask } from "../../address/mask";
+import { AddressMask, createMask } from "../../address/mask";
 import { and, mutateNot, mutateAnd, mutateOr } from "../../binary";
 import { calculateChecksum } from "../../binary/checksum";
 import { uint8_concat, uint8_equals, uint8_fromNumber, uint8_readUint32BE } from "../../binary/uint8-array";
@@ -11,7 +11,7 @@ import { createDHCPOptionsMap } from "../../header/dhcp/utils";
 import { ETHERNET_HEADER } from "../../header/ethernet";
 import { IPV4_HEADER, IPV4_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
 import { UDP_HEADER } from "../../header/udp";
-import { Program, ProcessSignal, Process, Contact, NetworkData, Device, address_is_unset, DeviceResult } from "../device";
+import { Program, ProcessSignal, Process, Contact, NetworkData, Device, address_is_unset, DeviceResult, _UNSET_ADDRESS_IPV4 } from "../device";
 import { BaseInterface } from "../interface";
 
 const BROADCAST_IPV4_ADDRESS = new IPV4Address("255.255.255.255");
@@ -139,10 +139,19 @@ function send_dhcp4(proc: Process<typeof DAEMON_DHCP_SERVER>, contact: Contact<"
         proto: PROTOCOLS.UDP
     });
 
-    contact.send({
+    let res = contact.send({
         buffer: iphdr.getBuffer(),
         broadcast: broadcast,
-    }, daddr);
+    }, daddr, {
+        destination: daddr,
+        gateway: _UNSET_ADDRESS_IPV4,
+        netmask: createMask(IPV4Address, 0),
+        iface: data.rcvif
+    });
+
+    if (!res.success) {
+        console.warn("send_dhcp4", "failed")
+    }
 }
 
 function createIPv4Address(config: DHCPServerConfig, probes_enabled: boolean = false): IPV4Address | undefined {
@@ -203,6 +212,8 @@ function handle_discover(proc: Process<typeof DAEMON_DHCP_SERVER>, contact: Cont
     if (!client.address4) {
         return; // there was no address give to the following client
     }
+
+    client.state = DHCPServerClientState.BINDING;
     client.gateways4 = config.gateways4;
     client.netmask4 = config.netmask4;
     client.transaction_id = dhcphdr.get("xid");
