@@ -7,7 +7,7 @@ import { DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_DOWNLOAD, DEVICE_PROGRAM_ECHO, DEV
 import { DAEMON_ECHO_REPLIER } from "../lib/device/program/echo-replier";
 import { NetworkSwitch } from "../lib/device/network-switch";
 import { DAEMON_ROUTING } from "../lib/device/program/routing";
-import { DAEMON_DHCP_SERVER, DAEMON_DHCP_SERVER_STORE_KEY, DEVICE_PROGRAM_DHCP_SERVER_MAN, DHCPServer_Store } from "../lib/device/program/dhcp-server";
+import { DAEMON_DHCP_SERVER, DAEMON_DHCP_SERVER_STORE_KEY, DHCPServer_Store } from "../lib/device/program/dhcp-server";
 import { DEVICE_PROGRAM_DHCP_CLIENT } from "../lib/device/program/dhcp-client";
 import Terminal from "../lib/terminal/terminal";
 import { DAEMON_SHELL } from "../lib/device/program/shell";
@@ -19,6 +19,7 @@ import { DeviceViewComponent } from "../components/device-view";
 import { DEVICE_PROGRAM_HOSTSINFO, setaddress_by_host } from "../lib/device/program/hostsinfo";
 import { DEVICE_PROGRAM_TRACEROUTE } from "../lib/device/program/traceroute";
 import { DEVICE_PROGRAM_MENU } from "../lib/device/program/menu";
+import { DEVICE_PROGRAM_DHCP_SERVER_MAN } from "../lib/device/program/dhcp-server-man";
 
 let terminal_device: Device | undefined;
 let terminal: Terminal;
