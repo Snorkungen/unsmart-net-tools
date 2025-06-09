@@ -1,4 +1,4 @@
-import { uint8_concat, uint8_fromString } from "../../binary/uint8-array";
+import { uint8_concat, uint8_equals, uint8_fromString } from "../../binary/uint8-array";
 import { ASCIICodes, CSI, numbertonumbers } from "../../terminal/shared";
 import { args_parse } from "../../utils/args-parse";
 import { Device, Process, ProcessSignal, Program } from "../device";
@@ -6,11 +6,11 @@ import { ioclearline, ioreadline } from "./helpers";
 import { termquery } from "./termquery";
 
 class ShellHistory {
-    private history: string[] = [];
+    private history: Uint8Array[] = [];
     private pos: number = -1;
     private last_is_committed = false;
 
-    previous(): string | null {
+    previous(): Uint8Array | null {
         if (this.pos <= 0) {
             return null;
         }
@@ -18,7 +18,7 @@ class ShellHistory {
         return this.history.at(--this.pos) || null;
     }
 
-    next(): string | null {
+    next(): Uint8Array | null {
         if (this.pos >= this.history.length - 1) {
             return null;
         }
@@ -32,18 +32,18 @@ class ShellHistory {
         return v;
     }
 
-    add(str: string): boolean {
-        if (this.history.length > 0 && this.history[this.history.length - 1] == str) {
+    add(bytes: Uint8Array): boolean {
+        if (this.history.length > 0 && uint8_equals(this.history[this.history.length - 1], bytes)) {
             this.pos = this.history.length;
             return false;
         }
 
-        this.pos = this.history.push(str);
+        this.pos = this.history.push(bytes);
         this.last_is_committed = true;
         return true;
     }
-    add_to_end(str: string): boolean {
-        if (this.history.length > 0 && this.history[this.history.length - 1] == str) {
+    add_to_end(bytes: Uint8Array): boolean {
+        if (this.history.length > 0 && uint8_equals(this.history[this.history.length - 1], bytes)) {
             return false;
         }
 
@@ -51,7 +51,7 @@ class ShellHistory {
             return false;
         }
         this.last_is_committed = false;
-        this.history.push(str);
+        this.history.push(bytes);
         return true;
     }
 }
@@ -344,7 +344,7 @@ export const DAEMON_SHELL: Program<ShellData> = {
 
                 // TODO! read sub programs, this could maybe be something that isn't a shell thing
 
-                proc.data.history.add(promptv);
+                proc.data.history.add(bytes);
 
                 if (program) {
                     proc.io.write(new Uint8Array([ASCIICodes.NewLine]));
@@ -400,9 +400,9 @@ export const DAEMON_SHELL: Program<ShellData> = {
             } /* ArrowUp pressed  */ else if (target[0] == ASCIICodes.Escape && target.at(-1)! == ASCIICodes.A) {
                 let prev = proc.data.history.previous();
                 if (prev != null) {
-                    initial_bytes = uint8_fromString(prev);
+                    initial_bytes = prev;
 
-                    proc.data.history.add_to_end(promptv)
+                    proc.data.history.add_to_end(bytes)
                 } else {
                     initial_bytes = bytes;
                 }
@@ -411,7 +411,7 @@ export const DAEMON_SHELL: Program<ShellData> = {
             } /* ArrowDown pressed  */ else if (target[0] == ASCIICodes.Escape && target.at(-1)! == ASCIICodes.B) {
                 let next = proc.data.history.next();
                 if (next != null) {
-                    initial_bytes = uint8_fromString(next);
+                    initial_bytes = next;
                 } else {
                     initial_bytes = bytes;
                 }
