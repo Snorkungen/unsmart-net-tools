@@ -1,4 +1,5 @@
 import { IPV4Address } from "../../address/ipv4";
+import { MACAddress } from "../../address/mac";
 import { AddressMask } from "../../address/mask";
 import { and, mutateNot, mutateAnd, mutateOr } from "../../binary";
 import { calculateChecksum } from "../../binary/checksum";
@@ -13,7 +14,7 @@ import { UDP_HEADER } from "../../header/udp";
 import { Program, ProcessSignal, Process, Contact, NetworkData, Device, address_is_unset, DeviceResult, DeviceIO } from "../device";
 import { BaseInterface } from "../interface";
 import { formatTable, ioclearline, ioprint, ioprintln, ioreadline } from "./helpers";
-import { run_menu } from "./menu";
+import { MenuFields, run_menu } from "./menu";
 
 const BROADCAST_IPV4_ADDRESS = new IPV4Address("255.255.255.255");
 
@@ -76,8 +77,16 @@ export type DHCPServer_Store = {
     probes_enabled?: boolean,
 };
 
-function serialize_clid(buffer: Uint8Array): string {
-    return buffer.reduce((res, v) => res + v.toString(16), "");
+function dhcp_server_serialize_clid(buffer: Uint8Array): string {
+    // reference <https://www.rfc-editor.org/rfc/rfc2132#section-9.14>
+
+    let type = buffer[0];
+    if (type != 0 && buffer.byteLength == 7) { // !NOTE: if assumptions change then this will throw
+        return new MACAddress(buffer.slice(1)).toString();
+    }
+
+    console.warn("as to what the client id should be is undetermined")
+    return buffer.subarray(1).reduce((res, v) => res + v.toString(16), "");
 }
 function get_store_data(device: Device): DHCPServer_Store {
     let data: DHCPServer_Store | null = device.store_get(DAEMON_DHCP_SERVER_STORE_KEY);
@@ -171,7 +180,7 @@ function createIPv4Address(config: DHCPServerConfig, probes_enabled: boolean = f
 }
 
 function handle_discover(proc: Process<typeof DAEMON_DHCP_SERVER>, contact: Contact<"IPv4", "RAW">, data: NetworkData, dhcphdr: typeof DHCP_HEADER, opts: ReturnType<typeof createDHCPOptionsMap>) {
-    let clid = serialize_clid(opts.get(DHCP_TAGS.CLIENT_IDENTIFIER) || dhcphdr.get("chaddr"));
+    let clid = dhcp_server_serialize_clid(opts.get(DHCP_TAGS.CLIENT_IDENTIFIER) || dhcphdr.get("chaddr"));
     let store_data = get_store_data(proc.device);
     let config = store_data.configs[data.rcvif!.id()]!;
     if (!config.netmask4) {
@@ -268,7 +277,7 @@ function handle_discover(proc: Process<typeof DAEMON_DHCP_SERVER>, contact: Cont
 }
 
 function handle_request(proc: Process<typeof DAEMON_DHCP_SERVER>, contact: Contact<"IPv4", "RAW">, data: NetworkData, dhcphdr: typeof DHCP_HEADER, opts: ReturnType<typeof createDHCPOptionsMap>) {
-    let clid = serialize_clid(opts.get(DHCP_TAGS.CLIENT_IDENTIFIER) || dhcphdr.get("chaddr"));
+    let clid = dhcp_server_serialize_clid(opts.get(DHCP_TAGS.CLIENT_IDENTIFIER) || dhcphdr.get("chaddr"));
     let store_data = get_store_data(proc.device);
     let config = store_data.configs[data.rcvif!.id()]!;
     let client = config.clients[clid];
@@ -495,6 +504,53 @@ export const DAEMON_DHCP_SERVER: Program = {
     }
 }
 
+export function dhcp_server_init_client(device: Device, iface: BaseInterface, clid: string, address4: IPV4Address): ReturnType<typeof dhcp_server_init_iface> {
+    let res = dhcp_server_init_iface(device, iface);
+    if (!res.success) {
+        return res;
+    }
+
+    let config = res.data;
+
+
+    if (config.clients[clid]) {
+        return {
+            success: false, error: "clients", message: "client already exists"
+        }
+    }
+
+    if (!config.netmask4.compare(address4, config.server_id4)) {
+        return {
+            success: false, error: "clients", message: "address must be in the correct subnet"
+        }
+    }
+
+    config.clients[clid] = {
+        lease_time: IPLEASE_TIME_IN_SECS,
+        state: DHCPServerClientState.EXPIRED,
+        transaction_id: -1,
+        address4: address4,
+        netmask4: config.netmask4
+    }
+
+    device.store_set(DAEMON_DHCP_SERVER_STORE_KEY, get_store_data(device));
+    return { success: true, data: config }
+}
+export function dhcp_server_delete_client(device: Device, iface: BaseInterface, clid: string): ReturnType<typeof dhcp_server_init_iface> {
+    let res = dhcp_server_init_iface(device, iface);
+    if (!res.success) {
+        return res;
+    }
+
+    let config = res.data;
+    if (config.clients[clid]) {
+        delete config.clients[clid];
+        device.store_set(DAEMON_DHCP_SERVER_STORE_KEY, get_store_data(device));
+    }
+
+    return { success: true, data: config }
+}
+
 export function dhcp_server_set_gateways4(device: Device, iface: BaseInterface, ...gateways: IPV4Address[]): ReturnType<typeof dhcp_server_init_iface> {
     let res = dhcp_server_init_iface(device, iface);
     if (!res.success) {
@@ -568,6 +624,23 @@ export function dhcp_server_add_address_range(device: Device, iface: BaseInterfa
     return { success: true, data: config };
 }
 
+export function dhcp_server_delete_iface(device: Device, iface: BaseInterface): DeviceResult<keyof DHCPServerConfig | "iface", undefined> {
+    if (iface.header != ETHERNET_HEADER) {
+        return {
+            success: false, error: "iface", message: "only ethernet interfaces supported"
+        }
+    }
+
+    let data = get_store_data(device);
+    if (!data.configs[iface.id()]) {
+        return { success: true, data: undefined }
+    }
+
+    delete data.configs[iface.id()];
+    device.store_set(DAEMON_DHCP_SERVER_STORE_KEY, get_store_data(device));
+    return { success: true, data: undefined }
+}
+
 export function dhcp_server_init_iface(device: Device, iface: BaseInterface): DeviceResult<keyof DHCPServerConfig | "iface", DHCPServerConfig> {
     if (iface.header != ETHERNET_HEADER) {
         return {
@@ -600,15 +673,15 @@ export function dhcp_server_init_iface(device: Device, iface: BaseInterface): De
 }
 
 const MAX_ATTEMPTS = 3;
-async function dhcp_server_conf_read_ipv4address(io: DeviceIO, message = "enter address: "): Promise<undefined | IPV4Address> {
+async function dhcp_server_conf_read_address<Address extends typeof IPV4Address>(io: DeviceIO, message: string, a: Address): Promise<undefined | InstanceType<Address>> {
     let i = 0;
     for (i = 0; i < MAX_ATTEMPTS; i++) {
         ioprint(io, message)
         let [bytes] = await ioreadline(io);
         let str = String.fromCharCode(...bytes).trim();
 
-        if (IPV4Address.validate(str)) {
-            return new IPV4Address(str);
+        if (a.validate(str)) {
+            return new a(str) as InstanceType<Address>;
         }
 
         // io.write(new Uint8Array([10]))
@@ -616,6 +689,12 @@ async function dhcp_server_conf_read_ipv4address(io: DeviceIO, message = "enter 
     }
 
     return undefined;
+}
+async function dhcp_server_conf_read_ipv4address(io: DeviceIO, message = "enter address: "): Promise<undefined | IPV4Address> {
+    return dhcp_server_conf_read_address(io, message, IPV4Address);
+}
+async function dhcp_server_conf_read_macaddress(io: DeviceIO, message = "enter address: "): Promise<undefined | MACAddress> {
+    return dhcp_server_conf_read_address(io, message, MACAddress);
 }
 
 function dhcp_server_man_print_config(io: DeviceIO, ifid: string, config: DHCPServerConfig) {
@@ -652,7 +731,7 @@ const DEVICE_PROGRAM_DHCP_SERVER_MAN_CONF: Program = {
     description: "edit dhcp server configurations",
     content: "<dhcpsman conf [ifid]>",
     init(proc, args) {
-        let [, , ifid] = args;
+        let [, , ifid, initial_op] = args;
 
         if (!ifid) {
             ioprintln(proc.io, "ifid: missing");
@@ -755,21 +834,110 @@ const DEVICE_PROGRAM_DHCP_SERVER_MAN_CONF: Program = {
                         (n) (formatted clid) (client ip conf) (state)
                         (1) fa-ff-0f-00-00-86 10.20.0.20/24 BOUND
                     */
-                    ioprintln(proc.io, "method not implemented")
-                    await ioreadline(proc.io);
+
+                    let clients = Object.entries(config.clients).filter(v => v[1]) as [string, DHCPServerClient][];
+
+
+                    let id_start = 200;
+
+                    let fields: MenuFields = {
+                        [0]: {
+                            description: "exit",
+                            async cb(proc, resolve) {
+                                resolve();
+                            }
+                        },
+                        [1]: {
+                            description: "add client",
+                            async cb(proc) {
+                                ioprintln(proc.io, this.description);
+                                ioprintln(proc.io, `server_id: ${config.server_id4.toString()}/${config.netmask4.length}`)
+
+                                let mac = await dhcp_server_conf_read_macaddress(proc.io, "Enter client Mac: ")
+                                if (!mac) {
+                                    ioprintln(proc.io, "invalid input")
+                                    ioprint(proc.io, "press enter to return to menu ...")
+                                    await ioreadline(proc.io);
+                                    return;
+                                }
+                                proc.io.write(new Uint8Array([10]))
+                                let clid = dhcp_server_serialize_clid(uint8_concat([new Uint8Array([0x1]), mac.buffer]));
+                                if (config.clients[clid]) {
+                                    ioprintln(proc.io, "client already exists\n")
+                                    ioprint(proc.io, "press enter to return to menu ...")
+                                    await ioreadline(proc.io);
+                                    return;
+                                }
+
+                                let address = await dhcp_server_conf_read_ipv4address(proc.io, "Enter address4: ");
+                                if (!address) {
+                                    ioprintln(proc.io, "invalid input")
+                                    ioprint(proc.io, "press enter to return to menu ...")
+                                    await ioreadline(proc.io);
+                                    return;
+                                }
+                                proc.io.write(new Uint8Array([10]))
+
+                                let res = dhcp_server_init_client(proc.device, iface, clid, address);
+                                if (!res.success && res.message) {
+                                    ioprintln(proc.io, res.message)
+
+                                    ioprint(proc.io, "press enter to return to menu ...")
+                                    await ioreadline(proc.io);
+                                }
+
+                                let client = config.clients[clid]!;
+                                fields[id_start] = {
+                                    description: `modify: ${clid} - ${client.address4}/${client.netmask4!.length}`,
+                                    cb: bind_cb(id_start++, clid, client),
+                                }
+                            }
+                        },
+                    };
+
+                    function bind_cb(idx: number, clid: string, client: DHCPServerClient) {
+                        return async function (proc: Process) {
+                            await run_menu(proc, {
+                                [0]: {
+                                    description: "exit",
+                                    async cb(proc, resolve) {
+                                        resolve()
+                                    },
+                                },
+                                [100]: {
+                                    description: "delete client",
+                                    async cb(proc, resolve) {
+                                        dhcp_server_delete_client(proc.device, iface!, clid)
+                                        delete fields[idx]
+                                        resolve()
+                                    },
+                                }
+                            })
+                            return;
+                        }
+                    }
+
+                    for (let [clid, client] of clients) {
+                        fields[id_start] = {
+                            description: `modify: ${clid} - ${client.address4}/${client.netmask4!.length}`,
+                            cb: bind_cb(id_start, clid, client),
+                        }
+                        id_start++;
+                    }
+
+                    await run_menu(proc, fields);
                 }
             },
             [100]: {
                 description: "delete configuration",
                 async cb(proc) {
-                    let data = get_store_data(proc.device);
-                    delete data.configs[iface.id()];
-                    ioprintln(proc.io, "configuration deleted")
+                    dhcp_server_delete_iface(proc.device, iface);
                     proc.close();
                 }
             }
-        })
-    }
+        }, parseInt(initial_op))
+    },
+    __NODATA__: true
 }
 export const DEVICE_PROGRAM_DHCP_SERVER_MAN: Program = {
     name: "dhcpsman",
@@ -804,7 +972,6 @@ export const DEVICE_PROGRAM_DHCP_SERVER_MAN: Program = {
                 if (!config) continue;
                 dhcp_server_man_print_config(proc.io, ifid, config);
             }
-
         }
 
         return ProcessSignal.EXIT;

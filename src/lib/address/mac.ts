@@ -23,6 +23,23 @@ export class MACAddress implements BaseAddress {
         return buffer;
     }
 
+    static validate(input: unknown): boolean {
+        if (typeof input == "string") {
+            // check that the value is xx-xx-xx-xx-xx-xx
+            return input.split(SEPARATOR_REGEX).reduce((res, v) => {
+                if (v.length !== 2) return res;
+                // validate hexadecimal
+                let v0 = v[0].toUpperCase(), v1 = v[1].toUpperCase();
+                if ((v0 < "0" && v0 > "9") && (v0 < "A" && v0 > "F")) return res;
+                if ((v1 < "0" && v1 > "9") && (v1 < "A" && v1 > "F")) return res;
+                
+                return res + 1;
+            }, 0) == 6;
+        }
+
+        return false;
+    }
+
     buffer: Uint8Array;
     constructor(input: string);
     constructor(input: Uint8Array);
