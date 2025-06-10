@@ -76,73 +76,59 @@ export type DeviceRoute<AddrType extends typeof BaseAddress = typeof BaseAddress
     iface: BaseInterface;
 }
 
-export type DeviceIO = {
+export class DeviceIO implements DeviceResource {
+    abort_controller = new AbortController();
+
     on_close?: () => void;
     on_flush?: () => void;
     on_write?: (bytes: Uint8Array) => void;
 
-    readers: ((bytes: Uint8Array) => void)[];
-    /** Returns the reader index */
-    reader_add(reader: DeviceIO["readers"][number]): DeviceIO["readers"][number];
-    reader_remove(reader: DeviceIO["readers"][number]): void
+    readers: ((bytes: Uint8Array) => void)[] = [];
 
-    /** call the readers */
-    read(...values: Parameters<DeviceIO["readers"][number]>): void
+    reader_add(reader: DeviceIO["readers"][number]) {
+        if (this.abort_controller.signal.aborted) return reader;
+        // !NOTE: this thing unshift to allow for a reader to create a reader that does not read the read bytes
+        this.readers.unshift(reader);
+        return reader;
+    }
 
-    flush(): void;
-    write(bytes: Uint8Array): void;
-    close(): void;
-} & DeviceResource;
+    reader_remove(reader: DeviceIO["readers"][number]) {
+        if (this.abort_controller.signal.aborted) return;
+        this.readers = this.readers.filter(v => v != reader);
+    }
 
-function device_io_create(): DeviceIO {
-    return {
-        abort_controller: new AbortController(),
-
-        on_close: undefined,
-        on_flush: undefined,
-        on_write: undefined,
-
-        readers: [],
-        reader_add(reader) {
-            if (this.abort_controller.signal.aborted) return reader;
-            // !NOTE: this thing unshift to allow for a reader to create a reader that does not read the read bytes
-            this.readers.unshift(reader);
-            return reader;
-        },
-        reader_remove(reader) {
-            if (this.abort_controller.signal.aborted) return;
-            this.readers = this.readers.filter(v => v != reader);
-        },
-        read(bytes) {
-            if (this.abort_controller.signal.aborted) return;
-            for (let reader of this.readers) {
-                reader(bytes);
-            }
-        },
-        flush() {
-            if (this.abort_controller.signal.aborted) return;
-            if (this.on_flush) {
-                this.on_flush();
-            }
-        },
-        write(bytes) {
-            if (this.abort_controller.signal.aborted) return;
-            if (this.on_write) {
-                this.on_write(bytes);
-            }
-        },
-        close() {
-            if (this.abort_controller.signal.aborted) return;
-            if (this.on_close) {
-                this.on_close();
-            }
-            this.abort_controller.abort();
-            this.readers.length = 0;
-
-            delete this.on_close;
-            delete this.on_flush;
-            delete this.on_write;
+    read(bytes: Uint8Array) {
+        if (this.abort_controller.signal.aborted) return;
+        for (let reader of this.readers) {
+            reader(bytes);
         }
+    }
+
+    flush() {
+        if (this.abort_controller.signal.aborted) return;
+        if (this.on_flush) {
+            this.on_flush();
+        }
+    }
+
+    write(bytes: Uint8Array) {
+        if (this.abort_controller.signal.aborted) return;
+        if (this.on_write) {
+            this.on_write(bytes);
+        }
+    }
+
+    close() {
+        if (this.abort_controller.signal.aborted) return;
+        if (this.on_close) {
+            this.on_close();
+        }
+        this.abort_controller.abort();
+        this.readers.length = 0;
+
+        delete this.on_close;
+        delete this.on_flush;
+        delete this.on_write;
     }
 }
 
@@ -406,7 +392,7 @@ export class Device {
             return;
         }
 
-        const io = device_io_create();
+        const io = new DeviceIO();
         if (handlers) {
             if (handlers.io_on_close)
                 io.on_close = handlers.io_on_close;
