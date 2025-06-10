@@ -120,7 +120,7 @@ let dhcp_server_config: DHCPServer_Store = {
             server_id4: new IPV4Address("10.10.0.100"),
             address_range4: [new IPV4Address("10.10.0.240"), new IPV4Address("10.10.0.250")],
             gateways4: [new IPV4Address("10.10.0.1")],
-            netmask4: createMask(IPV4Address, 24)   
+            netmask4: createMask(IPV4Address, 24)
         }
     }
 }
@@ -153,6 +153,6 @@ export const TestingComponent: Component = () => {
                 terminal = new Terminal(el);
                 // @ts-ignore
             }}></div>
-        </div>
+        </div >
     )
 }

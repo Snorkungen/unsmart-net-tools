@@ -1,49 +1,21 @@
-import { BaseAddress } from "../../address/base";
 import { IPV4Address } from "../../address/ipv4";
 import { MACAddress } from "../../address/mac";
 import { AddressMask, createMask } from "../../address/mask";
 import { calculateChecksum } from "../../binary/checksum";
-import { uint8_concat, uint8_equals, uint8_fromNumber, uint8_readUint32BE } from "../../binary/uint8-array";
+import { uint8_concat, uint8_equals, uint8_fromNumber, uint8_readUint32BE, uint8_set } from "../../binary/uint8-array";
 import { DHCP_OP, DHCP_PORT_CLIENT, DHCP_PORT_SERVER, DHCP_END_OPTION, DHCP_HEADER, DHCP_MAGIC_COOKIE, DHCP_OPTION } from "../../header/dhcp/dhcp";
 import { parseDHCPOptions } from "../../header/dhcp/parse-options";
 import { DHCPTag, DHCP_MESSGAGE_TYPES, DHCP_TAGS } from "../../header/dhcp/tags";
 import { createDHCPOptionsMap } from "../../header/dhcp/utils";
-import { ETHERNET_HEADER, ETHER_TYPES } from "../../header/ethernet";
 import { IPV4_HEADER, IPV4_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
 import { UDP_HEADER } from "../../header/udp";
-import { NetworkData } from "../device";
+import { getKeyByValue } from "../../misc";
+import { _UNSET_ADDRESS_IPV4, address_is_unset, NetworkData } from "../device";
 import { Contact, Process, ProcessSignal, Program } from "../device";
 import { EthernetInterface } from "../interface";
+import { ioprintln } from "./helpers";
 
-enum DHCPClientState {
-    DISCOVER,
-    REQUEST,
-
-    BOUND
-}
-
-type DHCPClientData = {
-    /** transaction id */
-    xid: number;
-    state: DHCPClientState;
-    contact: Contact;
-    iface: EthernetInterface;
-
-    parameterReqList: Uint8Array;
-
-    leaseTime?: number;
-    /** server id */
-    sid?: Uint8Array;
-
-    /** only support ipv4 for now */
-    address4?: IPV4Address;
-    netmask4?: AddressMask<typeof IPV4Address>;
-    gateways4?: IPV4Address[];
-}
-
-const UNSET_IPV4_ADDRESS = new IPV4Address("0.0.0.0");
 const BROADCAST_IPV4_ADDRESS = new IPV4Address("255.255.255.255");
-const BROADCAST_MAC_ADDRESS = new MACAddress("ff:ff:ff:ff:ff:ff");
 
 function createOptionBuffer(tag: DHCPTag, data: Uint8Array): Uint8Array {
     return DHCP_OPTION.create({
@@ -53,251 +25,328 @@ function createOptionBuffer(tag: DHCPTag, data: Uint8Array): Uint8Array {
     }).getBuffer();
 }
 
-function sendDHCPv4Hdr(proc: Process<DHCPClientData>, dhcpHdr: typeof DHCP_HEADER, daddr: IPV4Address = BROADCAST_IPV4_ADDRESS, saddr: IPV4Address = UNSET_IPV4_ADDRESS) {
+enum DHCPC_State {
+    DISCOVER,
+    REQUEST,
+
+    BOUND
+}
+type DHCPC_Offer = {
+    server_id: Uint8Array;
+    address4: IPV4Address;
+    netmask4: AddressMask<typeof IPV4Address>;
+
+    lease_time?: number;
+    gateways4?: IPV4Address[];
+}
+type DHCPC_Data = {
+    // only ethernet interfaces are supported, although there is nothin preventing this from blasting through all it's ports
+    // yet this can be solved to wait write more programs to wait for the multiple discovers to resolve something, and then decide
+    iface: EthernetInterface;
+    contact: Contact;
+    transaction_id: number;
+    state: DHCPC_State;
+
+    param_req_list: Uint8Array;
+
+    offer?: DHCPC_Offer;
+}
+
+const __clid_buf = new Uint8Array([0x1, 0, 0, 0, 0, 0, 0]);
+function clid_buf(input: MACAddress) {
+    return uint8_set(__clid_buf, input.buffer, 1);
+}
+
+function send_dhcpc4({ iface, contact, transaction_id }: DHCPC_Data, hdr: typeof DHCP_HEADER) {
+    // set the implied fields
+    hdr.set("htype", 1);
+    hdr.set("hlen", 6);
+    hdr.set("chaddr", iface.macAddress.buffer); // I think Struct.set behaves correctly
+    hdr.set("xid", transaction_id);
+
+    // !TODO: to support sending with more specificity
+    // meaning to use a better source and destination if their known ?
+    let saddr = _UNSET_ADDRESS_IPV4;
+    let daddr = BROADCAST_IPV4_ADDRESS;
+    let allow_unset_saddr = true;
+    let broadcast = true;
+    let route = {
+        destination: daddr,
+        gateway: _UNSET_ADDRESS_IPV4,
+        netmask: createMask(IPV4Address, IPV4Address.ADDRESS_LENGTH),
+        iface: iface
+    }
+
     let udphdr = UDP_HEADER.create({
         sport: DHCP_PORT_CLIENT,
         dport: DHCP_PORT_SERVER,
-        payload: dhcpHdr.getBuffer(),
+        payload: hdr.getBuffer()
     });
-    udphdr.set("length", udphdr.size)
+    udphdr.set("length", udphdr.size);
 
     let pseudohdr = IPV4_PSEUDO_HEADER.create({
-        saddr, daddr, proto: PROTOCOLS.UDP, len: udphdr.get("length"),
+        saddr: saddr,
+        daddr: daddr,
+        proto: PROTOCOLS.UDP,
+        len: udphdr.get("length"),
     });
-
-    udphdr.set("csum", calculateChecksum(uint8_concat([pseudohdr.getBuffer(), udphdr.getBuffer()])));
+    udphdr.set("csum", calculateChecksum(
+        uint8_concat([pseudohdr.getBuffer(), udphdr.getBuffer()])) || 0xFFFF
+    );
 
     let iphdr = IPV4_HEADER.create({
-        version: 4,
-        ihl: IPV4_HEADER.getMinSize() >> 2,
-        tos: 0,
-        ttl: 1,
-        len: IPV4_HEADER.size + udphdr.size,
+        daddr, saddr,
         payload: udphdr.getBuffer(),
-        csum: 0,
-        proto: PROTOCOLS.UDP,
-        saddr,
-        daddr
-    })
-
-    iphdr.set("csum", 0);
-    iphdr.set("csum", calculateChecksum(iphdr.getBuffer().slice(0, iphdr.get("ihl") << 2)));
-
-    let dmac = BROADCAST_MAC_ADDRESS;
-    let etherhdr = ETHERNET_HEADER.create({
-        smac: proc.data.iface.macAddress,
-        dmac: dmac,
-        ethertype: ETHER_TYPES.IPv4,
+        proto: PROTOCOLS.UDP
     });
-    proc.data.contact.send({
+
+    let res = contact.send({
         buffer: iphdr.getBuffer(),
-        broadcast: true,
-    }, new BaseAddress(etherhdr.getBuffer()), {
-        destination: iphdr.get("daddr"),
-        gateway: UNSET_IPV4_ADDRESS,
-        netmask: createMask(IPV4Address, UNSET_IPV4_ADDRESS.buffer),
-        iface: proc.data.iface
-    });
-}
+        broadcast: broadcast,
+        allow_unset_saddr: allow_unset_saddr
+    }, daddr, route);
 
-function receive(proc: Process<DHCPClientData>) {
-    return function (_: Contact, data: NetworkData) {
-        if (data.rcvif != proc.data.iface) {
-            return;
-        }
-
-        let etherhdr = ETHERNET_HEADER.from(data.buffer);
-        if (etherhdr.get("ethertype") != ETHER_TYPES.IPv4) {
-            // only support DHCP(4)
-            return;
-        }
-
-        let iphdr = IPV4_HEADER.from(etherhdr.get("payload"));
-        if (calculateChecksum(iphdr.getBuffer().slice(0, iphdr.get("ihl") << 2)) != 0) {
-            return;
-        }
-
-        // copied from previous implementation
-        if (!uint8_equals(iphdr.get("daddr").buffer, BROADCAST_IPV4_ADDRESS.buffer) &&
-            !proc.data.iface.addresses.find(a => uint8_equals(a.address.buffer, iphdr.get("daddr").buffer))) {
-            return;
-        }
-
-        if (iphdr.get("proto") != PROTOCOLS.UDP) {
-            return;
-        }
-
-        let udphdr = UDP_HEADER.from(iphdr.get("payload"));
-        // !TODO: validate checksum
-        if (udphdr.get("sport") != DHCP_PORT_SERVER || udphdr.get("dport") != DHCP_PORT_CLIENT) {
-            return;
-        }
-
-        let dhcphdr = DHCP_HEADER.from(udphdr.get("payload"));
-        if (dhcphdr.get("op") != DHCP_OP.BOOTREPLY || dhcphdr.get("xid") != proc.data.xid) {
-            return;
-        }
-
-        let parsedOpts = parseDHCPOptions(dhcphdr.get("options")),
-            opts = createDHCPOptionsMap(parsedOpts);
-
-        let messageType = opts.get(DHCP_TAGS.DHCP_MESSAGE_TYPE)?.at(0)
-        if (proc.data.state == DHCPClientState.DISCOVER && messageType == DHCP_MESSGAGE_TYPES.DHCPOFFER) {
-            if (uint8_readUint32BE(dhcphdr.get("yiaddr").buffer) === 0) {
-                return;
-            }
-
-            if (!opts.get(DHCP_TAGS.SERVER_IDENTIFIER)) {
-                return;
-            }
-            if (!opts.get(DHCP_TAGS.SUBNET_MASK)) {
-                return;
-            }
-
-            proc.data.address4 = dhcphdr.get("yiaddr");
-            proc.data.netmask4 = createMask(IPV4Address, opts.get(DHCP_TAGS.SUBNET_MASK)!.subarray(0, 4));
-            proc.data.sid = opts.get(DHCP_TAGS.SERVER_IDENTIFIER);
-
-
-            // handle offer
-            let replyDHCPHdrOptions: Uint8Array[] = [
-                DHCP_MAGIC_COOKIE,
-                createOptionBuffer(DHCP_TAGS.DHCP_MESSAGE_TYPE, uint8_fromNumber(DHCP_MESSGAGE_TYPES.DHCPREQUEST, 1)), // DHCP MESSAGE TYPE
-                createOptionBuffer(DHCP_TAGS.CLIENT_IDENTIFIER, uint8_concat([uint8_fromNumber(0x01, 1), proc.data.iface.macAddress.buffer])), // DHCP CLIENT IDENTIFIER
-                proc.data.parameterReqList,
-                createOptionBuffer(DHCP_TAGS.SERVER_IDENTIFIER, opts.get(DHCP_TAGS.SERVER_IDENTIFIER)!)
-            ];
-
-            // I haven't bothered to read the full spec so i'm just guessing as to what i am supposed to do
-
-            let leaseTimeBuf = opts.get(DHCP_TAGS.IP_ADDRESS_LEASE_TIME);
-            if (leaseTimeBuf) {
-                proc.data.leaseTime = uint8_readUint32BE(leaseTimeBuf);
-                replyDHCPHdrOptions.push(createOptionBuffer(DHCP_TAGS.IP_ADDRESS_LEASE_TIME, leaseTimeBuf))
-            }
-
-            let subnetBuf = opts.get(DHCP_TAGS.SUBNET_MASK);
-            if (subnetBuf) {
-                replyDHCPHdrOptions.push(createOptionBuffer(DHCP_TAGS.SUBNET_MASK, new Uint8Array(subnetBuf)));
-            }
-
-            let routerBuf = opts.get(DHCP_TAGS.ROUTER);
-            if (routerBuf) {
-                proc.data.gateways4 = [];
-                for (let i = 0; i < routerBuf.byteLength; i += 4) {
-                    proc.data.gateways4.push(new IPV4Address(routerBuf.subarray(i, i + 4)))
-                }
-                replyDHCPHdrOptions.push(createOptionBuffer(DHCP_TAGS.ROUTER, new Uint8Array(routerBuf)));
-            }
-
-            replyDHCPHdrOptions.push(createOptionBuffer(
-                DHCP_TAGS.REQUESTED_IP_ADDRESS,
-                new Uint8Array(dhcphdr.get("yiaddr").buffer)
-            ))
-
-
-            // LAST OPTION 
-            replyDHCPHdrOptions.push(DHCP_END_OPTION);
-
-            let replyDHCPHdr = DHCP_HEADER.create({
-                op: DHCP_OP.BOOTREQUEST,
-                htype: 1,
-                hlen: 6,
-                xid: proc.data.xid,
-                chaddr: uint8_concat([
-                    proc.data.iface.macAddress.buffer,
-                    new Uint8Array(10) // padding
-                ]), // total 16 bytes
-                options: uint8_concat(replyDHCPHdrOptions)
-            });
-
-            proc.data.state = DHCPClientState.REQUEST;
-            sendDHCPv4Hdr(proc, replyDHCPHdr)
-        } else if (proc.data.state == DHCPClientState.REQUEST) {
-            if (messageType == DHCP_MESSGAGE_TYPES.DHCPNAK) {
-                // !TODO: request again etc....
-                return;
-            } else if (messageType == DHCP_MESSGAGE_TYPES.DHCPACK) {
-                // commit configuration
-                console.info("COMMITTING DHCP " + proc.data.address4);
-
-                if (proc.data.address4 && proc.data.netmask4) {
-                    proc.device.interface_address_set(proc.data.iface, proc.data.address4, proc.data.netmask4);
-                }
-
-                if (proc.data.gateways4) {
-                    for (let gateway of proc.data.gateways4) {
-                        proc.device.routes.push({
-                            destination: UNSET_IPV4_ADDRESS,
-                            netmask: createMask(IPV4Address, 0),
-                            gateway: gateway,
-                            iface: proc.data.iface,
-                            f_gateway: true
-                        })
-                    }
-                }
-
-                proc.data.state = DHCPClientState.BOUND;
-                // !TODO: set timeout to revalidate with least time
-                // for now just exit
-                proc.close(ProcessSignal.INTERRUPT); // interrupt is to call the cleanup "handle" function
-            }
-        }
+    if (!res.success) {
+        console.warn("send_dhcp4", "failed", res.message)
     }
 }
 
-export const DEVICE_PROGRAM_DHCP_CLIENT: Program<DHCPClientData> = {
-    name: "dhcp_client",
-    init(proc, [, ifid], data) {
-        // second argument is the ifid
-        let iface = data?.iface || proc.device.interfaces.find(f => f.id() == ifid);
+function handle_offer(proc: Process<DHCPC_Data>, contact: Contact<"IPv4", "RAW">, netdata: NetworkData, hdr: typeof DHCP_HEADER, opts: ReturnType<typeof createDHCPOptionsMap>) {
+    const { data } = proc
+    if (data.state != DHCPC_State.DISCOVER) {
+        return; // not interested
+    }
+
+    // !NOTE: this picks the first offer, that arrives
+
+    let address = hdr.get("yiaddr")
+    if (address_is_unset(address)) {
+        return; // not interested
+    }
+
+    let server_id = opts.get(DHCP_TAGS.SERVER_IDENTIFIER)
+    if (!server_id) {
+        return; // missing information
+    }
+
+    let subnet_buf = opts.get(DHCP_TAGS.SUBNET_MASK)
+    if (!subnet_buf) {
+        return; // missing information
+    }
+
+    data.offer = {
+        server_id: server_id,
+        address4: address,
+        netmask4: createMask(IPV4Address, subnet_buf),
+    }
+
+    // !TODO: read param_req_list
+
+    // reply to offer
+    let reply_options: Uint8Array[] = [
+        DHCP_MAGIC_COOKIE,
+        createOptionBuffer(DHCP_TAGS.DHCP_MESSAGE_TYPE, uint8_fromNumber(DHCP_MESSGAGE_TYPES.DHCPREQUEST, 1)), // DHCP MESSAGE TYPE
+        createOptionBuffer(DHCP_TAGS.CLIENT_IDENTIFIER, clid_buf(data.iface.macAddress)), // DHCP CLIENT IDENTIFIER
+        data.param_req_list,
+        createOptionBuffer(DHCP_TAGS.SERVER_IDENTIFIER, opts.get(DHCP_TAGS.SERVER_IDENTIFIER)!)
+    ];
+
+    let lease_time_buf = opts.get(DHCP_TAGS.IP_ADDRESS_LEASE_TIME);
+    if (lease_time_buf) {
+        data.offer.lease_time = uint8_readUint32BE(lease_time_buf);
+        reply_options.push(createOptionBuffer(DHCP_TAGS.IP_ADDRESS_LEASE_TIME, lease_time_buf));
+    }
+
+    if (subnet_buf) {
+        reply_options.push(createOptionBuffer(DHCP_TAGS.SUBNET_MASK, subnet_buf))
+    }
+
+    let router_buf = opts.get(DHCP_TAGS.ROUTER);
+    if (router_buf) {
+        data.offer.gateways4 = [];
+        for (let i = 0; i < router_buf.byteLength; i += 4) {
+            data.offer.gateways4.push(new IPV4Address(router_buf.subarray(i, i + 4)))
+        }
+        reply_options.push(createOptionBuffer(DHCP_TAGS.ROUTER, router_buf));
+    }
+
+    reply_options.push(createOptionBuffer(
+        DHCP_TAGS.REQUESTED_IP_ADDRESS,
+        new Uint8Array(address.buffer)
+    ));
+
+    // LAST OPTION
+    reply_options.push(DHCP_END_OPTION)
+
+
+    let replyhdr = DHCP_HEADER.create({
+        op: DHCP_OP.BOOTREQUEST,
+        xid: data.transaction_id,
+        options: uint8_concat(reply_options),
+    });
+
+    data.state = DHCPC_State.REQUEST;
+    proc.journal(0, "sending request");
+    return send_dhcpc4(data, replyhdr);
+}
+
+function handle_ack(proc: Process<DHCPC_Data>, contact: Contact<"IPv4", "RAW">, netdata: NetworkData, hdr: typeof DHCP_HEADER, opts: ReturnType<typeof createDHCPOptionsMap>) {
+    const { data } = proc;
+    if (data.state != DHCPC_State.REQUEST) {
+        throw new Error("ack to request only supported")
+    }
+
+    if (!data.offer) {
+        throw new Error("something went wrong")
+    }
+
+    let sid = opts.get(DHCP_TAGS.SERVER_IDENTIFIER);
+    if (!sid || !uint8_equals(data.offer?.server_id, sid)) {
+        return; // not interested
+    }
+
+    let msg = "COMMITING DHCP " + data.offer.address4;
+    proc.journal(0, msg);
+    console.log(msg);
+
+    data.state = DHCPC_State.BOUND;
+    proc.device.interface_address_set(data.iface, data.offer.address4, data.offer.netmask4);
+
+    // set gateways
+    if (data.offer.gateways4) {
+        for (let gateway of data.offer.gateways4) {
+            proc.device.routes.push({
+                destination: new IPV4Address("0.0.0.0"),
+                netmask: createMask(IPV4Address, 0),
+                gateway: gateway,
+                iface: data.iface,
+                f_gateway: true
+            })
+        }
+    }
+
+    if (data.offer.lease_time) {
+        // potentially in the future schedule a timed event to fire ...
+        // i.e revalidate
+    }
+
+    // for now just quit
+    proc.journal(0, "quitting dhcp client nothing more to do")
+    return proc.close(ProcessSignal.INTERRUPT);
+}
+
+function receive_ipv4(this: Process<DHCPC_Data>, contact: Contact<"IPv4", "RAW">, data: NetworkData) {
+    if (!data.rcvif) throw new Error("unreachable");
+    if (data.rcvif !== this.data.iface) {
+        return; // 
+    }
+
+    if (!data.destination || data.loopback) {
+        return; // not interested
+    }
+
+    let iphdr = IPV4_HEADER.from(data.buffer);
+    if (calculateChecksum(iphdr.getBuffer().slice(0, iphdr.get("ihl") << 2)) != 0) {
+        return; // not interested
+    }
+
+    if (iphdr.get("proto") != PROTOCOLS.UDP) {
+        return;
+    }
+
+    let udphdr = UDP_HEADER.from(iphdr.get("payload"));
+    if (udphdr.get("csum") > 0) {
+        let pseudohdr = IPV4_PSEUDO_HEADER.create({
+            saddr: iphdr.get("saddr"),
+            daddr: iphdr.get("daddr"),
+            proto: PROTOCOLS.UDP,
+            len: udphdr.size
+        });
+
+        if (calculateChecksum(uint8_concat([pseudohdr.getBuffer(), udphdr.getBuffer()])) !== 0) {
+            return; // bad checksum
+        }
+    }
+
+    if (udphdr.get("sport") != DHCP_PORT_SERVER || udphdr.get("dport") != DHCP_PORT_CLIENT) {
+        return; // not interested
+    }
+
+    let dhcphdr = DHCP_HEADER.from(udphdr.get("payload"));
+    if (dhcphdr.get("op") != DHCP_OP.BOOTREPLY) {
+        return;
+    }
+
+    if (dhcphdr.get("xid") != this.data.transaction_id) {
+        return; // not interested
+    }
+
+    let opts = createDHCPOptionsMap(parseDHCPOptions(dhcphdr.get("options")));
+
+    let tbuf = opts.get(DHCP_TAGS.DHCP_MESSAGE_TYPE);
+    if (!tbuf) {
+        console.warn("DHCP Message type missing")
+        return;
+    }
+    this.journal(0, "received: " + getKeyByValue(DHCP_MESSGAGE_TYPES, tbuf[0]))
+    switch (tbuf[0]) {
+        case DHCP_MESSGAGE_TYPES.DHCPOFFER:
+            return handle_offer(this, contact, data, dhcphdr, opts);
+        case DHCP_MESSGAGE_TYPES.DHCPACK:
+            return handle_ack(this, contact, data, dhcphdr, opts);
+    }
+}
+
+export const DEVICE_PROGRAM_DHCP_CLIENT: Program<DHCPC_Data> = {
+    name: "dhcpc4",
+    init(proc, [, ifid]) {
+        let iface = proc.device.interfaces.find(f => f.id() == ifid);
         if (!iface || !(iface instanceof EthernetInterface)) {
-            // no iface found
+            ioprintln(proc.io, "no interface found")
             return ProcessSignal.ERROR;
         }
 
-        let contact = proc.resources.create(proc.device.contact_create("RAW", "RAW").data!);
+        let contact = proc.resources.create(
+            proc.device.contact_create("IPv4", "RAW").data!
+        );
 
-        (<DHCPClientData>proc.data) = {
-            xid: Math.floor(Math.random() * (2 ** 14)),
-            state: DHCPClientState.DISCOVER,
-            contact: contact,
+        // !TODO: check if interface is configured with an address 
+
+        // initialize something
+        proc.data = {
             iface: iface,
+            contact: contact,
 
-            // TODO: make this smart enough to take extenal paramReqList
-            parameterReqList: createOptionBuffer(DHCP_TAGS.PARAMETER_REQUEST_LIST, new Uint8Array([ // DHCP PARAMETER REQUEST LIST
+            transaction_id: Math.floor(Math.random() * (2 ** 14)),
+
+            state: DHCPC_State.DISCOVER,
+
+            param_req_list: createOptionBuffer(DHCP_TAGS.PARAMETER_REQUEST_LIST, new Uint8Array([
                 DHCP_TAGS.SUBNET_MASK,
                 DHCP_TAGS.ROUTER,
                 // DHCP_TAGS.DOMAIN_NAME_SERVER
             ]))
-        }
+        };
 
-        proc.handle(() => {
-            contact.close();
-        })
-
-        contact.receive(receive(proc));
-
-        let dhcpDiscoverHdr = DHCP_HEADER.create({
+        // now prepare to send
+        let discoverhdr = DHCP_HEADER.create({
             op: DHCP_OP.BOOTREQUEST,
-            htype: 1,
-            hlen: 6,
-            xid: proc.data.xid,
-            chaddr: uint8_concat([
-                iface.macAddress.buffer,
-                new Uint8Array(10) // padding
-            ]), // total 16 bytes
+            xid: proc.data.transaction_id,
             options: uint8_concat([
                 DHCP_MAGIC_COOKIE,
                 createOptionBuffer(DHCP_TAGS.DHCP_MESSAGE_TYPE, uint8_fromNumber(DHCP_MESSGAGE_TYPES.DHCPDISCOVER, 1)), // DHCP MESSAGE TYPE
-                createOptionBuffer(DHCP_TAGS.CLIENT_IDENTIFIER, uint8_concat([uint8_fromNumber(0x01, 1), iface.macAddress.buffer])), // DHCP CLIENT IDENTIFIER
-                proc.data.parameterReqList,
+                createOptionBuffer(DHCP_TAGS.CLIENT_IDENTIFIER, clid_buf(iface.macAddress)), // DHCP CLIENT IDENTIFIER
+                proc.data.param_req_list,
                 DHCP_END_OPTION
             ])
         })
 
-        // send discover
-        sendDHCPv4Hdr(proc, dhcpDiscoverHdr)
+        contact.receive(receive_ipv4.bind(proc))
+
+        // send header
+        send_dhcpc4(proc.data, discoverhdr);
+        proc.journal(0, "sending discover");
+
         return ProcessSignal.__EXPLICIT__;
-    },
-};
+    }
+}

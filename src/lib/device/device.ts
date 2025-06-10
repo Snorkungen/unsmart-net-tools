@@ -59,6 +59,7 @@ export type NetworkData = {
     /** configure the outgoing interfaces mode */
     /** if true interface is not allowed to modify data or destination */
     mode_raw?: true,
+    allow_unset_saddr?: true,
 }
 
 export type DeviceRoute<AddrType extends typeof BaseAddress = typeof BaseAddress> = {
@@ -1121,7 +1122,7 @@ export class Device {
                         return {
                             success: false,
                             error: "HOSTUNREACH",
-                            message: "no source address for intreface found"
+                            message: "no source address for interface found"
                         }
                     }
 
@@ -1141,7 +1142,7 @@ export class Device {
                         return {
                             success: false,
                             error: "HOSTUNREACH",
-                            message: "no source address for intreface found"
+                            message: "no source address for interface found"
                         }
                     }
 
@@ -1216,7 +1217,7 @@ export class Device {
             if (!source) return {
                 success: false,
                 error: "HOSTUNREACH",
-                message: "no source address for intreface found"
+                message: "no source address for interface found"
             }
 
             iphdr.set("saddr", source.address as IPV6Address);
@@ -1278,13 +1279,13 @@ export class Device {
             iphdr.set("daddr", destination);
         }
 
-        if (address_is_unset(iphdr.get("saddr"))) { // if there's no source set; use the outgoing interfaces ip addressping 
+        if (address_is_unset(iphdr.get("saddr")) && !data.allow_unset_saddr) { // if there's no source set; use the outgoing interfaces ip addressping 
             // select an address from the outgoing interface
             let source = route.iface.addresses.find(value => value.address.constructor == destination.constructor);
             if (!source) return {
                 success: false,
                 error: "HOSTUNREACH",
-                message: "no source address for intreface found"
+                message: "no source address for interface found"
             }
 
             iphdr.set("saddr", source.address);

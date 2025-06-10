@@ -131,7 +131,7 @@ function send_dhcp4(proc: Process<typeof DAEMON_DHCP_SERVER>, contact: Contact<"
     let pseudohdr = IPV4_PSEUDO_HEADER.create({
         saddr, daddr, proto: PROTOCOLS.UDP, len: udphdr.size,
     });
-    udphdr.set("csum", calculateChecksum(uint8_concat([pseudohdr.getBuffer(), udphdr.getBuffer()])));
+    udphdr.set("csum", calculateChecksum(uint8_concat([pseudohdr.getBuffer(), udphdr.getBuffer()])) || 0xFFFF);
 
     let iphdr = IPV4_HEADER.create({
         daddr, saddr,
@@ -145,7 +145,7 @@ function send_dhcp4(proc: Process<typeof DAEMON_DHCP_SERVER>, contact: Contact<"
     }, daddr, {
         destination: daddr,
         gateway: _UNSET_ADDRESS_IPV4,
-        netmask: createMask(IPV4Address, 0),
+        netmask: createMask(IPV4Address, IPV4Address.ADDRESS_LENGTH),
         iface: data.rcvif
     });
 
