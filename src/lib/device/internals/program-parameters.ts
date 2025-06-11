@@ -20,7 +20,10 @@ export class ProgramParameterError<V = unknown> extends Error {
     }
 }
 
-export type ProgramParameters = (string | ProgramParameter<unknown>)[];
+export type ProgramParameters = (string | ProgramParameter<unknown>)[] & Partial<{
+    // metadata
+    description?: string
+}>;
 
 type ConvertProgramParameters<F, T> = {
     [K in keyof F]: F[K] extends { parse: infer U } ? U extends ProgramParameter<T>["parse"] ? ReturnType<U> : never : F[K];
@@ -282,12 +285,13 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
         throw new Error("unreachable")
     }
 
-    content(): string[] {
-        let result = new Array<string>(this.definition.length);
+    content(): [string, string | undefined][] {
+        let result = new Array<[string, string | undefined]>(this.definition.length);
 
         for (let j = 0; j < this.definition.length; j++) {
             let parameters = this.definition[j];
-            result[j] = parameters.map((param) => {
+            result[j] = ["", undefined];
+            result[j][0] = parameters.map((param) => {
                 if (typeof param == "string") {
                     return param;
                 }
@@ -307,6 +311,8 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
 
                 return sb;
             }).join(" ");
+
+            result[j][1] = parameters.description;
         }
 
         return result;
@@ -428,4 +434,11 @@ class ProgramParameterFactory /** PPFactory 😂 */ {
         return ProgramParameterFactory.create(name, ProgramParameterFactory.parse_ipv4);
     }
 }
+
 export const PPFactory = ProgramParameterFactory;
+
+export function ppbind<const T extends ProgramParameters>(parameters: T, description?: string): T {
+    return Object.assign(parameters, {
+        description: description
+    })
+}

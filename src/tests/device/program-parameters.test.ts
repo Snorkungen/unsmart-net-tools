@@ -23,7 +23,7 @@ describe("ProgramParameterDefinition", () => {
     ])
 
     pdef.content().forEach(v => {
-        console.log("<", v, ">")
+        console.log("<", v[0], ">")
     })
 
     const device: any = ""

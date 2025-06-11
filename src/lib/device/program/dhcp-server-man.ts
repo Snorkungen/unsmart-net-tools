@@ -2,7 +2,7 @@ import { IPV4Address } from "../../address/ipv4";
 import { MACAddress } from "../../address/mac";
 import { uint8_concat } from "../../binary/uint8-array";
 import { DeviceIO, Program, ProcessSignal, Process } from "../device";
-import { PPFactory, ProgramParameterDefinition } from "../internals/program-parameters";
+import { ppbind, PPFactory, ProgramParameterDefinition, ProgramParameters } from "../internals/program-parameters";
 import { DAEMON_DHCP_SERVER, dhcp_server_client_delete, dhcp_server_client_init, dhcp_server_gateways4_set, dhcp_server_get_store_data, dhcp_server_iface_delete, dhcp_server_iface_init, dhcp_server_range4_add, dhcp_server_serialize_clid, DHCPServerClient, DHCPServerClientState, DHCPServerConfig } from "./dhcp-server";
 import { ioprint, ioreadline, ioclearline, formatTable, ioprintln } from "./helpers";
 import { run_menu, MenuFields } from "./menu";
@@ -279,23 +279,19 @@ const PPBaseInterface = PPFactory.create("IFID", PPFactory.parse_baseiface)
 const PPClid = PPFactory.value("client id");
 
 const dhcpsman_conf_pdef = new ProgramParameterDefinition([
-    ["dhcpsman", "conf", PPBaseInterface],
-    ["dhcpsman", "conf", PPBaseInterface, "delete"],
-    ["dhcpsman", "conf", PPBaseInterface, "gateway4", PPFactory.keywords("action", ["add", "remove"]), PPFactory.ipv4("gateway")],
-    ["dhcpsman", "conf", PPBaseInterface, "range4", PPFactory.keywords("action", ["add"]), PPFactory.ipv4("start"), PPFactory.ipv4("end")],
-    ["dhcpsman", "conf", PPBaseInterface, "client", "delete", PPClid],
-    ["dhcpsman", "conf", PPBaseInterface, "client", "init4", PPClid, PPFactory.ipv4("address")]
+    ppbind(["dhcpsman", "conf", PPBaseInterface], "display current configuration"),
+    ppbind(["dhcpsman", "conf", PPBaseInterface, "delete"], "delete configuration"),
+    ppbind(["dhcpsman", "conf", PPBaseInterface, "gateway4", PPFactory.keywords("action", ["add", "remove"]), PPFactory.ipv4("gateway")], "add or remove configured gateways"),
+    ppbind(["dhcpsman", "conf", PPBaseInterface, "range4", PPFactory.keywords("action", ["add"]), PPFactory.ipv4("start"), PPFactory.ipv4("end")], "set the address range"),
+    ppbind(["dhcpsman", "conf", PPBaseInterface, "client", "delete", PPClid], "delete a client"),
+    ppbind(["dhcpsman", "conf", PPBaseInterface, "client", "init4", PPClid, PPFactory.ipv4("address")], "initialize a client with an address")
 ])
 
 const DEVICE_PROGRAM_DHCP_SERVER_MAN_CONF: Program = {
     name: "conf",
     description: "edit dhcp server configurations",
-    content: `<dhcpsman conf [ifid] ...>
-<dhcpsman conf [ifid] delete> -- delete a configuration
-<dhcpsman conf [ifid] gateway4 (add | remove) [...address]> -- add or remove configured gateways
-<dhcpsman conf [ifid] range4 add start end> -- set an address range
-<dhcpsman conf [ifid] client delete [client id]> -- delete a client
-<dhcpsman conf [ifid] client init4 [client id] [address]> -- initialize a client with an address`,
+    content: dhcpsman_conf_pdef.content().map(([command, desc]) => `<${command}> -- ${desc}`).join("\n"),
+    
     init(proc, sargs) {
         let pdres = dhcpsman_conf_pdef.parse(proc.device, sargs);
         if (!pdres.success) {
