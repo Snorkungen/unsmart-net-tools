@@ -1,10 +1,12 @@
 import { IPV4Address } from "../../address/ipv4";
+import { AddressMask, createMask } from "../../address/mask";
 import type { Device } from "../device";
+import type { BaseInterface } from "../interface";
 
 export interface ProgramParameter<V extends unknown> {
     name: string;
     /** @throws ProgramParameterError */
-    parse(this: ProgramParameter<V>, val: string, dev: Device): V;
+    parse(this: ProgramParameter<unknown>, val: string, dev: Device): V;
 
     optional?: boolean;
 }
@@ -253,6 +255,36 @@ class ProgramParameterFactory /** PPFactory 😂 */ {
             throw new Error("")
         }
         return new IPV4Address(val)
+    }
+
+    static parse_amask_ip4: ProgramParameter<AddressMask<typeof IPV4Address>>["parse"] = function (val, dev) {
+        let mask: AddressMask<typeof IPV4Address> | undefined = undefined
+        try {
+            mask = createMask(IPV4Address, PPFactory.parse_ipv4.call(this, val, dev));
+        } catch (error) {
+
+        }
+
+        try {
+            mask = createMask(IPV4Address, PPFactory.parse_number.call(this, val, dev))
+        } catch (error) {
+
+        }
+
+        if (mask && mask.isValid()) {
+            return mask;
+        }
+
+        throw new ProgramParameterError(this);
+    }
+
+    static parse_baseiface: ProgramParameter<BaseInterface>["parse"] = function (ifid, device) {
+        let iface = device.interfaces.find(iface => iface.id() == ifid);
+        if (!iface) {
+            throw new ProgramParameterError(this);
+        }
+
+        return iface;
     }
 
     static number(name: string) {
