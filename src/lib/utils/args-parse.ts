@@ -43,8 +43,6 @@ export function args_parse(input: string): string[] {
                     input = input.substring(0, end - escape_level) + input.substring(end);
                     escape_level = 0;
                     end -= escape_level
-
-                    console.log(escape_level, input.substring(start, end))
                     continue
                 }
 
