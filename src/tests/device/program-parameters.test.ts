@@ -13,7 +13,7 @@ describe("ProgramParameterDefinition", () => {
         ["issue1", "keyword"],
         ["issue1", "keyword", "2"],
         ["issue1", "keyword", "1"],
-        ["issue1", PPFactory.optional(PPFactory.keywords("optional", ["optional"]))],
+        ["issue1", PPFactory.optional(PPFactory.keywords("optional", ["optional", "george"]))],
 
         ["issue2"],
         ["issue2", "keyword", PPFactory.number("value"), "test"],
@@ -21,6 +21,10 @@ describe("ProgramParameterDefinition", () => {
         ["issue2", "foo", "bar", PPFactory.number("Value")],
         ["issue2", "foo", "bar", PPFactory.ipv4("value")],
     ])
+
+    pdef.content().forEach(v => {
+        console.log("<", v, ">")
+    })
 
     const device: any = ""
 

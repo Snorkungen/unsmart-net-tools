@@ -40,7 +40,7 @@ export type ProgramParseResult<T> = (
         /** index of argument that caused the problem */
         idx: number;
         args: string[];
-        /** Paramaters that caused the problem */
+        /** Parameters that caused the problem */
         options: (string | ProgramParameter<unknown>)[];
     }
 );
@@ -107,7 +107,7 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
                     break; // special case there is nothing to roll-back
                 }
                 // roll-back and look at previous problems
-                options = this.definition.filter((params, j) => !prev_fail_matrix[j]);
+                options = this.definition.filter((_, j) => !prev_fail_matrix[j]);
                 if (options.length > 1) {
                     break; // later logic resolves this problem
                 }
@@ -145,7 +145,7 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
         }
 
         // there is this edge-case that I want to check
-        // find the paramater thats left and check it's length
+        // find the parameter thats left and check it's length
         const k = fail_matrix.reduce((best, v, j) => (
             v ? best : best > this.definition[j].length ? best : this.definition[j].length
         ), -1);
@@ -281,6 +281,37 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
 
         throw new Error("unreachable")
     }
+
+    content(): string[] {
+        let result = new Array<string>(this.definition.length);
+
+        for (let j = 0; j < this.definition.length; j++) {
+            let parameters = this.definition[j];
+            result[j] = parameters.map((param) => {
+                if (typeof param == "string") {
+                    return param;
+                }
+                let sb = "["
+                if (param.optional) {
+                    sb += "?";
+                }
+                if (param.keywords) {
+                    if (param.keywords.length > 1) sb += "("
+                    sb += `${param.keywords.map(v => '"' + v + '"').join(" | ")}`
+                    if (param.keywords.length > 1) sb += ")"
+                } else {
+                    sb += param.name
+                }
+
+                sb += "]"
+
+                return sb;
+            }).join(" ");
+        }
+
+        return result;
+    }
+
 }
 
 
