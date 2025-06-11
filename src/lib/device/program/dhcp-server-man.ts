@@ -279,7 +279,7 @@ const PPBaseInterface = PPFactory.create("IFID", PPFactory.parse_baseiface)
 const PPClid = PPFactory.value("client id");
 
 const dhcpsman_conf_pdef = new ProgramParameterDefinition([
-    // ["dhcpsman", "conf", PPBaseInterface],
+    ["dhcpsman", "conf", PPBaseInterface],
     ["dhcpsman", "conf", PPBaseInterface, "delete"],
     ["dhcpsman", "conf", PPBaseInterface, "gateway4", PPFactory.keywords("action", ["add", "remove"]), PPFactory.ipv4("gateway")],
     ["dhcpsman", "conf", PPBaseInterface, "range4", PPFactory.keywords("action", ["add"]), PPFactory.ipv4("start"), PPFactory.ipv4("end")],
