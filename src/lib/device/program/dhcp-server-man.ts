@@ -2,6 +2,7 @@ import { IPV4Address } from "../../address/ipv4";
 import { MACAddress } from "../../address/mac";
 import { uint8_concat } from "../../binary/uint8-array";
 import { DeviceIO, Program, ProcessSignal, Process } from "../device";
+import { PPFactory, ProgramParameterDefinition } from "../internals/program-parameters";
 import { DAEMON_DHCP_SERVER, dhcp_server_client_delete, dhcp_server_client_init, dhcp_server_gateways4_set, dhcp_server_get_store_data, dhcp_server_iface_delete, dhcp_server_iface_init, dhcp_server_range4_add, dhcp_server_serialize_clid, DHCPServerClient, DHCPServerClientState, DHCPServerConfig } from "./dhcp-server";
 import { ioprint, ioreadline, ioclearline, formatTable, ioprintln } from "./helpers";
 import { run_menu, MenuFields } from "./menu";
@@ -274,6 +275,18 @@ const DEVICE_PROGRAM_DHCP_SERVER_MAN_MCONF: Program = {
     __NODATA__: true
 }
 
+const PPBaseInterface = PPFactory.create("IFID", PPFactory.parse_baseiface)
+const PPClid = PPFactory.value("client id");
+
+const dhcpsman_conf_pdef = new ProgramParameterDefinition([
+    // ["dhcpsman", "conf", PPBaseInterface],
+    ["dhcpsman", "conf", PPBaseInterface, "delete"],
+    ["dhcpsman", "conf", PPBaseInterface, "gateway4", PPFactory.keywords("action", ["add", "remove"]), PPFactory.ipv4("gateway")],
+    ["dhcpsman", "conf", PPBaseInterface, "range4", PPFactory.keywords("action", ["add"]), PPFactory.ipv4("start"), PPFactory.ipv4("end")],
+    ["dhcpsman", "conf", PPBaseInterface, "client", "delete", PPClid],
+    ["dhcpsman", "conf", PPBaseInterface, "client", "init4", PPClid, PPFactory.ipv4("address")]
+])
+
 const DEVICE_PROGRAM_DHCP_SERVER_MAN_CONF: Program = {
     name: "conf",
     description: "edit dhcp server configurations",
@@ -283,19 +296,15 @@ const DEVICE_PROGRAM_DHCP_SERVER_MAN_CONF: Program = {
 <dhcpsman conf [ifid] range4 add start end> -- set an address range
 <dhcpsman conf [ifid] client delete [client id]> -- delete a client
 <dhcpsman conf [ifid] client init4 [client id] [address]> -- initialize a client with an address`,
-    init(proc, args) {
-        let [, , ifid, ...ops] = args;
-
-        if (!ifid) {
-            ioprintln(proc.io, "ifid: missing");
+    init(proc, sargs) {
+        let pdres = dhcpsman_conf_pdef.parse(proc.device, sargs);
+        if (!pdres.success) {
+            ioprintln(proc.io, dhcpsman_conf_pdef.message(pdres));
             return ProcessSignal.ERROR;
         }
 
-        let iface = proc.device.interfaces.find((iface) => iface.id() == ifid);
-        if (!iface) {
-            ioprintln(proc.io, "ifid: interface id is invalid")
-            return ProcessSignal.ERROR;
-        }
+        const args = pdres.arguments;
+        const iface = args[2]
 
         let res = dhcp_server_iface_init(proc.device, iface);
         if (!res.success) {
@@ -305,44 +314,25 @@ const DEVICE_PROGRAM_DHCP_SERVER_MAN_CONF: Program = {
 
         let config = res.data;
 
-        if (ops.length == 0) {
+        if (!args[3]) {
             dhcp_server_man_print_config(proc.io, iface.id(), config)
             return ProcessSignal.EXIT;
         }
 
-
-        let op = ops.shift();
-        if (op === "delete") {
+        if (args[3] === "delete") {
             dhcp_server_iface_delete(proc.device, iface);
             ioprintln(proc.io, "configuration deleted");
             return ProcessSignal.EXIT;
         }
 
-        if (op === "gateway4") {
-            if (ops.length == 0) {
-                ioprintln(proc.io, "action missing");
-                return ProcessSignal.ERROR;
-            }
-
-            let action = ops.shift();
+        if (args[3] === "gateway4") {
+            let [, , , , action, gateway] = args;
 
             if (action == "add") {
-                let gateways: IPV4Address[] = [];
-                for (let pa of ops) {
-                    if (!IPV4Address.validate(pa)) {
-                        gateways.push(new IPV4Address(pa))
-                    }
-                }
+                let res = dhcp_server_gateways4_set(proc.device, iface, gateway);
 
-                let fail_msg = "failed to add gateway"
-                if (gateways.length == 0) {
-                    ioprintln(proc.io, fail_msg)
-                    return ProcessSignal.ERROR;
-                }
-
-                let res = dhcp_server_gateways4_set(proc.device, iface, ...gateways);
                 if (!res.success) {
-                    ioprintln(proc.io, res.message || fail_msg)
+                    ioprintln(proc.io, res.message || "failed to add gateway")
                     return ProcessSignal.ERROR;
                 }
 
@@ -351,71 +341,25 @@ const DEVICE_PROGRAM_DHCP_SERVER_MAN_CONF: Program = {
                 // !TODO: add removal of gateways
                 ioprintln(proc.io, "removing not supported")
                 return ProcessSignal.ERROR;
-            } else {
-                ioprintln(proc.io, "unknown action");
-                return ProcessSignal.ERROR;
             }
-        } else if (op == "range4") {
-            if (ops.length == 0) {
-                ioprintln(proc.io, "action missing");
-                return ProcessSignal.ERROR;
-            }
+        } else if (args[3] == "range4") {
+            let [, , , , action, start, end] = args;
 
-            let action = ops.shift();
-
-            if (action != "add") {
-                ioprintln(proc.io, "unknown action");
-                return ProcessSignal.ERROR;
-            }
-
-            if (ops.length < 2) {
-                ioprintln(proc.io, "a range requires a start and end addresses")
-                return ProcessSignal.ERROR;
-            }
-
-            let addresses: IPV4Address[] = [];
-            for (let pa of ops) {
-                if (!IPV4Address.validate(pa)) {
-                    ioprintln(proc.io, "invalid input: " + pa);
-                    return ProcessSignal.ERROR;
-                }
-
-                addresses.push(new IPV4Address(pa));
-            }
-
-            let res = dhcp_server_range4_add(proc.device, iface, addresses[0], addresses[1]);
+            let res = dhcp_server_range4_add(proc.device, iface, start, end);
             if (!res.success) {
-                ioprintln(proc.io, res.message || "invalid input: " + ops.join(" "))
+                ioprintln(proc.io, res.message || "invalid input: " + start.toString() + "-" + end.toString())
                 return ProcessSignal.ERROR;
             }
 
             ioprintln(proc.io, `success: the following range is set ${res.data.address_range4!.join("-")}`);
-        } else if (op == "client") {
-            if (ops.length == 0) {
-                ioprintln(proc.io, "action missing");
-                return ProcessSignal.ERROR;
-            }
-
-            let action = ops.shift();
-
-            let clid = ops.shift();
-
-            if (!clid) {
-                ioprintln(proc.io, "client id missing");
-                return ProcessSignal.ERROR;
-            }
+        } else if (args[3] == "client") {
+            let [, , , , action, clid, address] = args;
 
             if (action == "delete") {
                 let res = dhcp_server_client_delete(proc.device, iface, clid); // ignore result
                 ioprintln(proc.io, "client deleted");
             } else if (action == "init4") {
-                let pa = ops.shift();
-                if (!IPV4Address.validate(pa)) {
-                    ioprintln(proc.io, "address missing or invalid")
-                    return ProcessSignal.ERROR;
-                }
-
-                let res = dhcp_server_client_init(proc.device, iface, clid, new IPV4Address(pa!));
+                let res = dhcp_server_client_init(proc.device, iface, clid, address!);
                 if (!res.success) {
                     ioprintln(proc.io, res.message || "failed to initialize client")
                     return ProcessSignal.ERROR;

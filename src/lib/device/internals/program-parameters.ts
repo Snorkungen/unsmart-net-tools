@@ -9,6 +9,7 @@ export interface ProgramParameter<V extends unknown> {
     parse(this: ProgramParameter<unknown>, val: string, dev: Device): V;
 
     optional?: boolean;
+    keywords?: string[];
 }
 
 /** does nothing for now just to leave a stub for future use */
@@ -206,10 +207,14 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
         }
 
         if (result.problem == "INVALID") {
-            let dt = result.options[0];
+            let param = result.options[0];
 
-            if (typeof dt == "string") {
-                return `keyword: expected "${dt}" received "${result.args[result.idx]}"`;
+            if (typeof param == "string") {
+                return `keyword: expected "${param}" received "${result.args[result.idx]}"`;
+            }
+
+            if (param.keywords) {
+                return `keyword: expeted (${param.keywords.join(" | ")}) received "${result.args[result.idx]}"`;
             }
 
             return `value: "${result.args[result.idx]}" is invalid`
@@ -262,10 +267,29 @@ class ProgramParameterFactory /** PPFactory 😂 */ {
         };
     }
 
+    static keywords<const T extends string>(name: string, words: T[]): ProgramParameter<T> {
+        return {
+            name: name,
+            parse(val) {
+                if (this.keywords && this.keywords.includes(val as T)) {
+                    return val as T;
+                }
+
+                throw new ProgramParameterError(this);
+            },
+            keywords: words
+        }
+    }
+
+    static parse_value: ProgramParameter<string>["parse"] = function (val) { return val; }
+    static value(name: string): ProgramParameter<string> {
+        return ProgramParameterFactory.create(name, ProgramParameterFactory.parse_value);
+    }
+
     static parse_number: ProgramParameter<number>["parse"] = function (val) {
         let n = parseFloat(val);
         if (isNaN(n)) {
-            throw new Error();
+            throw new ProgramParameterError(this);
         }
         return n;
     }
