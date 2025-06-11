@@ -35,7 +35,7 @@ export type ProgramParseResult<T> = (
     } |
     {
         success: false;
-        problem: "MISSING" | "INVALID" | "UNKNOWN";
+        problem: "MISSING" | "INVALID" | "UNKNOWN" | "MISSING_UNKNOWN";
         /** index of argument that caused the problem */
         idx: number;
         args: string[];
@@ -144,6 +144,22 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
         let params = options[0];
         let last_param = params[args.length];
         if (args.length < params.length && (typeof last_param == "string" || !last_param.optional)) {
+
+            if (options.length > 0) {
+                let possible_values = new Array(options.length).fill(0).map((_, j) => options[j][i]);
+                
+                // check that the posible values are all the same
+                if (!possible_values.every((v) => v === possible_values[0])) {
+                    return {
+                        success: false,
+                        problem: "MISSING_UNKNOWN",
+                        idx: i,
+                        args: args,
+                        options: possible_values,
+                    }
+                }
+            }
+
             return {
                 success: false,
                 problem: "MISSING",
@@ -176,13 +192,17 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
             return "All args parsed successfully";
         }
 
-        if (result.problem == "MISSING") {
-            let dt = result.options[0];
-            if (typeof dt == "string") {
-                return `keyword: "${dt}" missing`;
+        if (result.problem == "MISSING" || result.problem == "MISSING_UNKNOWN") {
+            if (result.options.length > 1) {
+                return "value: missing"
             }
 
-            return `value: "${dt.name}" missing`;
+            let param = result.options[0];
+            if (typeof param == "string") {
+                return `keyword: "${param}" missing`;
+            }
+
+            return `value: "${param.name}" missing`;
         }
 
         if (result.problem == "INVALID") {

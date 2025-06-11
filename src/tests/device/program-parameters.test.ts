@@ -26,6 +26,15 @@ describe("ProgramParameterDefinition", () => {
         if (!res.success) {
             expect(res.idx).eq(1)
         }
+
+        res = pdef.parse(proc, ["bada"]);
+        expect(res.success).be.false;
+        expect(res.problem).eq("MISSING_UNKNOWN")
+        if (!res.success) {
+            expect(res.idx).eq(1)
+        }
+
+
     })
 
     test("test #1", () => {
