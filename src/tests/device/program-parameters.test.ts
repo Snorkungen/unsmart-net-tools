@@ -8,11 +8,18 @@ describe("ProgramParameterDefinition", () => {
         ["echo"],
         ["bada", "dada"],
         ["bada", "cada"],
+
         ["issue1"],
         ["issue1", "keyword"],
         ["issue1", "keyword", "2"],
         ["issue1", "keyword", "1"],
         ["issue1", PPFactory.optional(PPFactory.keywords("optional", ["optional"]))],
+
+        ["issue2"],
+        ["issue2", "keyword", PPFactory.number("value"), "test"],
+        ["issue2", "keyword", PPFactory.keywords("action", ["action_word"])],
+        ["issue2", "foo", "bar", PPFactory.number("Value")],
+        ["issue2", "foo", "bar", PPFactory.ipv4("value")],
     ])
 
     const device: any = ""
@@ -91,6 +98,9 @@ describe("ProgramParameterDefinition", () => {
         var res = pdef.parse(device, ["issue1", "bad_keyword"]);
         expect(res.success).be.false;
         expect(res.problem).eq("INVALID")
+        if (!res.success) {
+            expect(res.idx).eq(1)
+        }
 
         var res = pdef.parse(device, ["issue1"])
         expect(res.success).be.true;
@@ -98,9 +108,42 @@ describe("ProgramParameterDefinition", () => {
         res = pdef.parse(device, ["issue1", "keyword"])
         expect(res.success).be.true;
 
-        res = pdef.parse(device, ["issue1", "keyword", "3"])
+        res = pdef.parse(device, ["issue1", "foo", "bar", "aaaaaaaaa"])
+        expect(res.success).be.false;
+        expect(res.problem).eq("INVALID")
+        if (!res.success) {
+            expect(res.idx).eq(2)
+        }
+    })
+
+    test("issue2 #5", () => {
+        var res = pdef.parse(device, ["issue2", "bad_keyword"]);
         expect(res.success).be.false;
         expect(res.problem).eq("UNKNOWN")
-        console.log(res)
+        if (!res.success) {
+            expect(res.idx).eq(1)
+        }
+
+
+        var res = pdef.parse(device, ["issue2", "keyword"]);
+        expect(res.success).be.false;
+        expect(res.problem).eq("MISSING_UNKNOWN")
+        if (!res.success) {
+            expect(res.idx).eq(2)
+        }
+
+        var res = pdef.parse(device, ["issue2", "keyword"]);
+        expect(res.success).be.false;
+        expect(res.problem).eq("MISSING_UNKNOWN")
+        if (!res.success) {
+            expect(res.idx).eq(2)
+        }
+
+        var res = pdef.parse(device, ["issue2", "foo", "bar", "aaaaaaaaa"])
+        expect(res.success).be.false;
+        expect(res.problem).eq("UNKNOWN")
+        if (!res.success) {
+            expect(res.idx).eq(3)
+        }
     })
 })

@@ -90,9 +90,11 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
         for (; i < args.length; i++) {
             for (let j = 0; j < this.definition.length; j++) {
                 let params = this.definition[j];
-
-                if (i >= params.length || prev_fail_matrix[j]) {
+                if (i == params.length || prev_fail_matrix[j]) {
                     continue
+                }
+                if (i > params.length) {
+                    fail_matrix[j] = true
                 }
 
                 fail_matrix[j] = this.parse_test(device, args[i], params[i]);
@@ -104,13 +106,11 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
                     options = this.definition;
                     break; // special case there is nothing to roll-back
                 }
-
                 // roll-back and look at previous problems
-                options = this.definition.filter((_, j) => !prev_fail_matrix[j]);
+                options = this.definition.filter((params, j) => !prev_fail_matrix[j]);
                 if (options.length > 1) {
                     break; // later logic resolves this problem
                 }
-
                 return {
                     success: false,
                     problem: "INVALID",
@@ -127,7 +127,21 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
 
             fail_matrices.push([...fail_matrix]);
             fail_matrix = fail_matrices.at(-1)!
+        }
 
+        // if there are longer matches remove the shorter ones
+        let filter_shorter = false;
+        for (let j = 0; j < this.definition.length; j++) {
+            if (fail_matrix[j]) continue;
+            if (this.definition[j].length <= i) continue;
+            filter_shorter = true
+            break;
+        }
+        if (filter_shorter) {
+            for (let j = 0; j < this.definition.length; j++) {
+                if (fail_matrix[j] || this.definition[j].length >= i) continue;
+                fail_matrix[j] = true;
+            }
         }
 
         // there is this edge-case that I want to check
@@ -141,10 +155,10 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
                 if (parameters.length <= k) return false;
                 if (fail_matrices[k - 1][j]) return false;
                 if (typeof parameters[k] != "string" && parameters[k].optional) return false;
-
                 // set an uniqueness filter, and avoid copies
                 let found = false;
-                for (let l = 0; !found && l < j; l++) {
+                for (let l = j - 1; !found && l >= 0; l--) {
+                    if (fail_matrices[k - 1][l]) continue;
                     found = this.definition[l][k] === parameters[k]
                 }
                 if (found) return false;
@@ -167,11 +181,7 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
         }
 
         if ((args.length > 0 && i === 0) || options.length > 1) {
-            let possible_values = new Array(options.length);
-            for (let j = 0; j < options.length; j++) {
-                possible_values[j] = options[j][i];
-            }
-
+            let possible_values = new Array(options.length).fill(0).map((_, j) => options[j][i]);
             return {
                 success: false,
                 problem: "UNKNOWN",
@@ -191,7 +201,6 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
         let params = options[0];
         let last_param = params[args.length];
         if (args.length < params.length && (typeof last_param == "string" || !last_param.optional)) {
-
             if (options.length > 0) {
                 let possible_values = new Array(options.length).fill(0).map((_, j) => options[j][i]);
 
