@@ -318,11 +318,11 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
                     return param;
                 }
                 let sb = "["
-                if (param.optional) {
-                    sb += "?";
-                }
                 if (param.multiple) {
                     sb += "..."
+                }
+                if (param.optional) {
+                    sb += "?";
                 }
                 if (param.keywords) {
                     if (param.keywords.length > 1) sb += "("

@@ -2,7 +2,7 @@ import { BaseAddress } from "../../address/base";
 import { IPV4Address } from "../../address/ipv4";
 import { address_is_unset, ProcessSignal, Program } from "../device";
 import { EthernetInterface, VlanInterface } from "../interface";
-import { PPFactory, ProgramParameterDefinition } from "../internals/program-parameters";
+import { ppbind, PPFactory, ProgramParameterDefinition } from "../internals/program-parameters";
 import { formatTable, ioprintln } from "./helpers";
 
 function cidrNotate(addr?: BaseAddress, len?: number): string {
@@ -14,16 +14,14 @@ function cidrNotate(addr?: BaseAddress, len?: number): string {
     return str;
 }
 
-// !TODO: look into like a capturing parmeter
-// something like, PPFactory.rest(...)
-
 const ifinfo_pdef = new ProgramParameterDefinition([
-    ["ifinfo", PPFactory.optional(PPFactory.create("IFID", PPFactory.parse_baseiface))],
-    ["ifinfo", "set4", PPFactory.create("IFID", PPFactory.parse_baseiface), PPFactory.ipv4("address"), PPFactory.create("mask", PPFactory.parse_amask_ip4)],
+    ppbind(["ifinfo", PPFactory.optional(PPFactory.multiple(PPFactory.create("IFID", PPFactory.parse_baseiface)))], "display interface configuration"),
+    ppbind(["ifinfo", "set4", PPFactory.create("IFID", PPFactory.parse_baseiface), PPFactory.ipv4("address"), PPFactory.create("mask", PPFactory.parse_amask_ip4)], "set ipv4 address"),
 ])
 
 export const DEVICE_PROGRAM_IFINFO: Program = {
     name: "ifinfo",
+    content: ifinfo_pdef.content().map(([command, desc]) => `<${command}> -- ${desc}`).join("\n"),
     init(proc, sargs) {
         sargs[0] = "ifinfo"
         let res = ifinfo_pdef.parse(proc.device, sargs);
@@ -72,7 +70,7 @@ export const DEVICE_PROGRAM_IFINFO: Program = {
         let interfaces = proc.device.interfaces;
 
         if (args[1]) {
-            interfaces = interfaces.filter(f => f == args[1]);
+            interfaces = interfaces.filter(f => args[1]?.find(v => v == f));
         }
 
         let table: (string | undefined)[][] = []
