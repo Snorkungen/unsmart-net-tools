@@ -8,6 +8,7 @@ export interface ProgramParameter<V extends unknown> {
     /** @throws ProgramParameterError */
     parse(this: ProgramParameter<unknown>, val: string, dev: Device): V;
 
+    multiple?: boolean;
     optional?: boolean;
     keywords?: string[];
 }
@@ -103,6 +104,7 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
                 fail_matrix[j] = this.parse_test(device, args[i], params[i]);
             }
 
+            // add a check everywher we fail if the issue is we got's to many params
             let options_left = this.definition.length - fail_matrix.filter(Boolean).length;
             if (options_left == 0) {
                 if (i == 0) {
@@ -110,16 +112,17 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
                     break; // special case there is nothing to roll-back
                 }
                 // roll-back and look at previous problems
-                options = this.definition.filter((_, j) => !prev_fail_matrix[j]);
+                options = this.definition.filter((params, j) => !prev_fail_matrix[j] && params.length >= i);
                 if (options.length > 1) {
                     break; // later logic resolves this problem
-                }
-                return {
-                    success: false,
-                    problem: "INVALID",
-                    idx: i,
-                    args: args,
-                    options: [options[0][i]],
+                } else if (options.length == 1) {
+                    return {
+                        success: false,
+                        problem: "INVALID",
+                        idx: i,
+                        args: args,
+                        options: [options[0][i]],
+                    }
                 }
             }
 
@@ -147,39 +150,46 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
             }
         }
 
+
+        // walk back fail matrixes until something is found, until a matrix with values is found
+        while (i > 1 && !fail_matrices[i - 1].includes(undefined)) { i--; }
+        fail_matrix = fail_matrices[i - 1]
+
         // there is this edge-case that I want to check
-        // find the parameter thats left and check it's length
-        const k = fail_matrix.reduce((best, v, j) => (
-            v ? best : best > this.definition[j].length ? best : this.definition[j].length
-        ), -1);
+        // find the parameter thats left and check it's length 
+        if (i > 0) {
+            const k = fail_matrix.reduce((best, v, j) => (
+                v ? best : best > this.definition[j].length ? best : this.definition[j].length
+            ), -1);
 
-        if (k > 0 && k < i) {
-            let test_options = this.definition.filter((parameters, j) => {
-                if (parameters.length <= k) return false;
-                if (fail_matrices[k - 1][j]) return false;
-                if (typeof parameters[k] != "string" && parameters[k].optional) return false;
-                // set an uniqueness filter, and avoid copies
-                let found = false;
-                for (let l = j - 1; !found && l >= 0; l--) {
-                    if (fail_matrices[k - 1][l]) continue;
-                    found = this.definition[l][k] === parameters[k]
+            if (k > 0 && k < i) {
+                let test_options = this.definition.filter((parameters, j) => {
+                    if (parameters.length <= k) return false;
+                    if (fail_matrices[k - 1][j]) return false;
+                    if (typeof parameters[k] != "string" && parameters[k].optional) return false;
+                    // set an uniqueness filter, and avoid copies
+                    let found = false;
+                    for (let l = j - 1; !found && l >= 0; l--) {
+                        if (fail_matrices[k - 1][l]) continue;
+                        found = this.definition[l][k] === parameters[k]
+                    }
+                    if (found) return false;
+
+                    return true
+                });
+
+                if (test_options.length === 1) {
+                    return {
+                        success: false,
+                        problem: "INVALID",
+                        idx: k,
+                        args: args,
+                        options: [test_options[0][i]],
+                    }
+                } else if (test_options.length > 1) {
+                    i = k;
+                    options = test_options;
                 }
-                if (found) return false;
-
-                return true
-            });
-
-            if (test_options.length === 1) {
-                return {
-                    success: false,
-                    problem: "INVALID",
-                    idx: k,
-                    args: args,
-                    options: [test_options[0][i]],
-                }
-            } else if (test_options.length > 1) {
-                i = k;
-                options = test_options;
             }
         }
 
@@ -194,7 +204,7 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
             }
         }
 
-        options = this.definition.filter((_, j) => !prev_fail_matrix[j])
+        options = this.definition.filter((_, j) => !fail_matrix[j])
             .sort((a, b) => a.length - b.length); // sort ascending
 
         if (options.length == 0) {
@@ -235,6 +245,18 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
 
             if (typeof param == "string") {
                 result[i] = param;
+            } else if (param.multiple) {
+                let vals = [];
+                for (let j = i; j < args.length; j++) {
+                    try {
+                        let v = param.parse(args[j], device);
+                        vals.push(v)
+                    } catch (error) {
+                        // !TODO: Consider returning an error, if failed to parse a value
+                    }
+                }
+                result[i] = vals;
+                break;
             } else {
                 result[i] = param.parse(args[i], device);
             }
@@ -298,6 +320,9 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
                 let sb = "["
                 if (param.optional) {
                     sb += "?";
+                }
+                if (param.multiple) {
+                    sb += "..."
                 }
                 if (param.keywords) {
                     if (param.keywords.length > 1) sb += "("
@@ -376,6 +401,15 @@ class ProgramParameterFactory /** PPFactory 😂 */ {
     static parse_value: ProgramParameter<string>["parse"] = function (val) { return val; }
     static value(name: string): ProgramParameter<string> {
         return ProgramParameterFactory.create(name, ProgramParameterFactory.parse_value);
+    }
+
+    static multiple<T>(param: ProgramParameter<T>): ProgramParameter<T[]> {
+        return {
+            ...param,
+            multiple: true,
+            // how does this work
+            parse: param.parse as unknown as ProgramParameter<T[]>["parse"]
+        }
     }
 
     static parse_number: ProgramParameter<number>["parse"] = function (val) {

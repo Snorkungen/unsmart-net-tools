@@ -4,7 +4,7 @@ import { ProgramParameterDefinition, PPFactory } from "../../lib/device/internal
 describe("ProgramParameterDefinition", () => {
     const pdef = new ProgramParameterDefinition([
         ["test", PPFactory.ipv4("test address"), PPFactory.number("value"), PPFactory.optional(PPFactory.union("name", [PPFactory.parse_ipv4, PPFactory.parse_number]))],
-        ["help", PPFactory.number("value")],
+        ["help", PPFactory.multiple(PPFactory.number("value"))],
         ["echo"],
         ["bada", "dada"],
         ["bada", "cada"],
@@ -112,11 +112,11 @@ describe("ProgramParameterDefinition", () => {
         res = pdef.parse(device, ["issue1", "keyword"])
         expect(res.success).be.true;
 
-        res = pdef.parse(device, ["issue1", "foo", "bar", "aaaaaaaaa"])
+        var res = pdef.parse(device, ["issue1", "foo", "bar", "aaaaaaaaa"])
         expect(res.success).be.false;
         expect(res.problem).eq("INVALID")
         if (!res.success) {
-            expect(res.idx).eq(2)
+            expect(res.idx).eq(1)
         }
     })
 
@@ -148,6 +148,21 @@ describe("ProgramParameterDefinition", () => {
         expect(res.problem).eq("UNKNOWN")
         if (!res.success) {
             expect(res.idx).eq(3)
+        }
+    })
+
+    test("multiple parameter #6", () => {
+        var res = pdef.parse(device, ["help", "2", "4", "5"])
+        console.log(res)
+        expect(res.success).be.true;
+        if (res.success) {
+            let args = res.arguments;
+            if (args[0] == "help") {
+                expect(Array.isArray(args[1])).be.true
+                expect((args[1].length)).eq(3)
+                expect((args[1])).deep.eq([2, 4, 5])
+
+            }
         }
     })
 })

@@ -281,7 +281,7 @@ const PPClid = PPFactory.value("client id");
 const dhcpsman_conf_pdef = new ProgramParameterDefinition([
     ppbind(["dhcpsman", "conf", PPBaseInterface], "display current configuration"),
     ppbind(["dhcpsman", "conf", PPBaseInterface, "delete"], "delete configuration"),
-    ppbind(["dhcpsman", "conf", PPBaseInterface, "gateway4", PPFactory.keywords("action", ["add", "remove"]), PPFactory.ipv4("gateway")], "add or remove configured gateways"),
+    ppbind(["dhcpsman", "conf", PPBaseInterface, "gateway4", PPFactory.keywords("action", ["add", "remove"]), PPFactory.multiple(PPFactory.ipv4("gateway"))], "add or remove configured gateways"),
     ppbind(["dhcpsman", "conf", PPBaseInterface, "range4", PPFactory.keywords("action", ["add"]), PPFactory.ipv4("start"), PPFactory.ipv4("end")], "set the address range"),
     ppbind(["dhcpsman", "conf", PPBaseInterface, "client", "delete", PPClid], "delete a client"),
     ppbind(["dhcpsman", "conf", PPBaseInterface, "client", "init4", PPClid, PPFactory.ipv4("address")], "initialize a client with an address")
@@ -291,7 +291,6 @@ const DEVICE_PROGRAM_DHCP_SERVER_MAN_CONF: Program = {
     name: "conf",
     description: "edit dhcp server configurations",
     content: dhcpsman_conf_pdef.content().map(([command, desc]) => `<${command}> -- ${desc}`).join("\n"),
-    
     init(proc, sargs) {
         let pdres = dhcpsman_conf_pdef.parse(proc.device, sargs);
         if (!pdres.success) {
@@ -322,10 +321,10 @@ const DEVICE_PROGRAM_DHCP_SERVER_MAN_CONF: Program = {
         }
 
         if (args[3] === "gateway4") {
-            let [, , , , action, gateway] = args;
+            let [, , , , action, gateways] = args;
 
             if (action == "add") {
-                let res = dhcp_server_gateways4_set(proc.device, iface, gateway);
+                let res = dhcp_server_gateways4_set(proc.device, iface, ...gateways);
 
                 if (!res.success) {
                     ioprintln(proc.io, res.message || "failed to add gateway")
