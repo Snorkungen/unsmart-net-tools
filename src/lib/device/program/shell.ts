@@ -161,34 +161,7 @@ function lazywriter_get_options(device: Device, args: string[]): string[] {
     }
 
     let add_new_arg = false;
-    let options: string[] = [];
-    if (program.sub) {
-        // still use this garbage
-        console.warn("program.sub is being deprecated")
-
-        let i = 0;
-        let subp: Program | undefined;
-        while (++i < args.length && program && program.sub) {
-            subp = program.sub.find(({ name }) => name == args[i]);
-
-            if (!subp) {
-                break
-            }
-
-            program = subp;
-        }
-
-        if (!program.sub) {
-            return [];
-        }
-
-        options = program.sub.map(({ name }) => name)
-        if (args[i]) {
-            options = options.filter((name) => name.startsWith(args[i]));
-        } else {
-            add_new_arg = true;
-        }
-    }
+    let options = new Set<string>();
 
     if (program.parameters) {
         for (let params of program.parameters.definition) {
@@ -206,7 +179,7 @@ function lazywriter_get_options(device: Device, args: string[]): string[] {
 
             let arg = args[i];
             if (!arg || param.startsWith(arg)) {
-                options.push(param);
+                options.add(param);
                 if (!arg) {
                     add_new_arg = true;
                 }
@@ -218,7 +191,7 @@ function lazywriter_get_options(device: Device, args: string[]): string[] {
         args.push("")
     }
 
-    return [...(new Set(options))];
+    return Array.from(options);
 }
 
 /**
@@ -369,17 +342,6 @@ export const DAEMON_SHELL: Program<ShellData> = {
                 let argv = args_parse(promptv);
                 let name = argv.shift();
                 let program: Program | undefined = proc.device.programs.find(p => p.name == name);
-                while (argv.length > 0 && program) {
-                    name = argv.shift();
-                    let tmp = program;
-                    program = program?.sub?.find((p) => name == p.name)
-                    if (!program) {
-                        program = tmp;
-                        break;
-                    }
-
-                    console.warn("sub program is being deprecated")
-                }
 
                 if (program) {
                     proc.io.write(new Uint8Array([ASCIICodes.NewLine]));

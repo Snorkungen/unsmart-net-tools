@@ -178,16 +178,11 @@ export interface Contact<AF extends ContactAF = ContactAF, Proto extends Contact
 
 export type Program<DT = any> = {
     name: string;
+    init(proc: Process<DT>, args: string[], data?: Partial<DT>): ProcessSignal | Promise<ProcessSignal>;
+    
     description?: string;
     content?: string;
-
-    init(proc: Process<DT>, args: string[], data?: Partial<DT>): ProcessSignal | Promise<ProcessSignal>;
-
-    /** this is just extra complexity for no specific reason */
-    sub?: Program[];
-    // TODO: make this a primary thing and remove sub
     parameters?: ProgramParameterDefinition<any>
-
     __NODATA__?: true;
 }
 

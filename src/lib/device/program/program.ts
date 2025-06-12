@@ -64,17 +64,6 @@ Example 2: help help`,
         let name = argv.shift();
         let prog: Program | undefined = proc.device.programs.find(p => p.name == name);
         let parents: string[] = [];
-        while (argv.length > 0 && prog) {
-            name = argv.shift();
-            let tmp = prog;
-            prog = prog.sub?.find(p => p.name == name);
-            if (!prog) {
-                prog = tmp;
-                break;
-            } else {
-                parents.push(tmp.name)
-            }
-        }
 
         if (!prog) {
             proc.io.write(uint8_fromString("No program found with the name \"" + name + "\"\n"));
@@ -90,9 +79,6 @@ Example 2: help help`,
             ((prog.content && chunkString(prog.content, columns).join("\n") + "\n") || "")
         ));
 
-        if (prog.sub) {
-            displayPrograms(proc, prog.sub, columns);
-        }
 
         return ProcessSignal.EXIT;
     },
