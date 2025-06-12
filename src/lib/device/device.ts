@@ -486,10 +486,8 @@ export class Device {
             return;
         }
 
-        if (typeof proc.data === "undefined" && !proc.program.__NODATA__) {
-            // check that data is defined but there needs to be away to silence the message if program does not use data.
-            console.warn(proc.program.name, "data not defined! to silence warning set __NODATA__ ")
-        }
+        // just to get a consistent warning
+        this.process_should_close(proc, signal);
 
         // First remove handlers created by the process
         for (let idx in this.process_handlers) {
