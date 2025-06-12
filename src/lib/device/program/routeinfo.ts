@@ -1,182 +1,146 @@
-import { BaseAddress } from "../../address/base";
 import { IPV4Address } from "../../address/ipv4";
 import { IPV6Address } from "../../address/ipv6";
-import { AddressMask, createMask } from "../../address/mask";
-import { uint8_equals, uint8_fromString, uint8_readUint32BE } from "../../binary/uint8-array";
-import { Program, ProcessSignal, Process, DeviceRoute } from "../device";
+import { uint8_equals, } from "../../binary/uint8-array";
+import { Program, ProcessSignal, Process, DeviceRoute, Device } from "../device";
+import { PPFactory, ProgramParameter, ProgramParameterDefinition } from "../internals/program-parameters";
 import { NETWORK_SWITCH_STORE_KEY, NetworkSwitchData } from "../network-switch";
-import { formatTable } from "./helpers";
+import { formatTable, ioprintln } from "./helpers";
 
-
-export const DEVICE_PROGRAM_ROUTEINFO_ARP: Program = {
-    name: "arp",
-    description: "displays information about the device's arp cache",
-    content: `<routeinfo arp>  Lists arp information`,
-    init(proc, argv) {
-        let table: (string | undefined)[][] = [["Destination", "MACaddress", "Iface"]]
-
-        for (let [key, entry] of proc.device.arp_cache.entries()) {
-            table.push([key, entry.macAddress.toString(), entry.iface.id()])
-        }
-
-        proc.io.write(formatTable(table))
-
-        if (!proc.device.store_get(NETWORK_SWITCH_STORE_KEY)) {
-            return ProcessSignal.EXIT;
-        }
-
-        // Print information about mac address table;
-        let data = proc.device.store_get(NETWORK_SWITCH_STORE_KEY) as NetworkSwitchData;
-
-        table = [["Destination", "Iface"]]; // reset table
-        for (let { destination, outgoing_port } of data.macaddresses) {
-            table.push([destination.toString(), data.ports[outgoing_port].iface.id()])
-        }
-
-        proc.io.write(uint8_fromString("\nMac Adresses\n"));
-        proc.io.write(formatTable(table))
-
-        return ProcessSignal.EXIT;
-    },
-    __NODATA__: true
+function custom_destination4_parser(this: ProgramParameter<IPV4Address>, val: string, dev: Device): IPV4Address {
+    if (val == "0") {
+        return new IPV4Address("0.0.0.0");
+    }
+    return PPFactory.parse_ipv4.call(this, val, dev);
 }
 
-const DEVICE_PROGRAM_ROUTEINFO_REMOVE: Program = {
-    name: "remove",
-    description: "remove a entry from routes",
-    content: "!TODO: write usage instructions",
-    init(proc, args) {
-        let [, , arg_destination, ifid,] = args;
+const PPBaseInterface = PPFactory.create("IFID", PPFactory.parse_baseiface)
+const PPDestination4 = PPFactory.create("DESTINATION", custom_destination4_parser);
+const PPGateway4 = PPFactory.ipv4("GATEWAY")
+const PPNetmask4 = PPFactory.create("NETMASK", PPFactory.parse_amask_ip4);
 
-        if (!arg_destination) {
-            proc.io.write(uint8_fromString(`Destination: missing\n${this.content}`));
-            return ProcessSignal.ERROR;
-        }
+const pdef = new ProgramParameterDefinition([
+    ["routeinfo", PPFactory.optional(PPFactory.keywords("action", ["4", "ipv4", "6", "ipv6"])), PPFactory.optional(PPFactory.multiple(PPBaseInterface))],
+    ["routeinfo", "arp", PPFactory.optional(PPFactory.multiple(PPBaseInterface))],
+    ["routeinfo", "add4", PPBaseInterface, PPDestination4, PPNetmask4, PPFactory.optional(PPGateway4)],
+    ["routeinfo", "remove", PPBaseInterface, PPDestination4, PPFactory.optional(PPNetmask4), PPFactory.optional(PPGateway4)],
+]);
 
-        let destination: BaseAddress;
-        if (IPV4Address.validate(arg_destination)) {
-            destination = new IPV4Address(arg_destination);
-        } else if (true /* should validate ipv6 addresses, but not implemented yet */) {
-            destination = new IPV6Address(arg_destination);
-        }
+function routeinfo_arp(proc: Process, pdres: ReturnType<(typeof pdef)["parse"]>): ReturnType<Program["init"]> {
+    let table: (string | undefined)[][] = [["Destination", "MACaddress", "Iface"]]
 
+    for (let [key, entry] of proc.device.arp_cache.entries()) {
+        table.push([key, entry.macAddress.toString(), entry.iface.id()])
+    }
 
-        let predicate = (route: DeviceRoute) => {
-            return uint8_equals(route.destination.buffer, destination.buffer);
-        }
+    proc.io.write(formatTable(table))
 
-        // take destination and find the destination and the disambiguate the route
-        // !TODO: ensure that only one route gets removed at a time
-        let removed_routes = proc.device.routes.filter(predicate);
-        proc.io.write(uint8_fromString(`removed ${removed_routes.length} routes\n`))
-        proc.device.routes = proc.device.routes.filter(r => !predicate(r)); // just remove all destinations matching the specified destination
-
-
+    if (!proc.device.store_get(NETWORK_SWITCH_STORE_KEY)) {
         return ProcessSignal.EXIT;
-    },
-    __NODATA__: true
+    }
+
+    // Print information about mac address table;
+    let data = proc.device.store_get(NETWORK_SWITCH_STORE_KEY) as NetworkSwitchData;
+
+    table = [["Destination", "Iface"]]; // reset table
+    for (let { destination, outgoing_port } of data.macaddresses) {
+        table.push([destination.toString(), data.ports[outgoing_port].iface.id()])
+    }
+
+    ioprintln(proc.io, "");
+    ioprintln(proc.io, "Network Switch: MAC adresses");
+    proc.io.write(formatTable(table))
+
+    return ProcessSignal.EXIT;
 }
 
-const DEVICE_PROGRAM_ROUTEINFO_ADD4: Program = {
-    name: "add4",
-    description: "add ipv4 address to route entries",
-    content: "USAGE:\n<routeinfo add4 [IF_ID] [destination] [netmask] [gateway]>\nEXAMPLE:\n<routeinfo add4 eth0 192.168.1.100 32 192.168.1.10>",
-    init(proc, args, data) {
-        // <routeinfo add4 [IF_ID] [destination] [netmask] [gateway] [...flags]
-        let [, , ifid, arg_destination, arg_netmask, arg_gateway] = args
+function routeinfo_add4(proc: Process, pdres: ReturnType<(typeof pdef)["parse"]>): ReturnType<Program["init"]> {
+    if (!pdres.success || pdres.arguments[1] != "add4") return ProcessSignal.ERROR;
+    let [, , iface, destination, netmask, gateway] = pdres.arguments;
 
-        if (!ifid) {
-            proc.io.write(uint8_fromString(`IF_ID: missing\n${this.content}`));
-            return ProcessSignal.ERROR;
-        } else if (!arg_destination) {
-            proc.io.write(uint8_fromString(`Destination: missing\n${this.content}`));
-            return ProcessSignal.ERROR;
-        } else if (!arg_destination) {
-            proc.io.write(uint8_fromString(`Mask: missing\n${this.content}`));
-            return ProcessSignal.ERROR;
-        }
+    let f_gateway: true | undefined = undefined,
+        f_dynamic: true | undefined = undefined,
+        f_host: true | undefined = undefined,
+        f_static = true
 
-        let iface = proc.device.interfaces.find(iface => iface.id() == ifid);
-        if (!iface) {
-            proc.io.write(uint8_fromString(`IF_ID: (${ifid}) is invalid`))
-            return ProcessSignal.ERROR
-        }
+    if (netmask.length === IPV4Address.ADDRESS_LENGTH) {
+        f_host = true; // if netmask covers all bits, the destination is a host
+    }
 
-        let destination: IPV4Address
-        if (arg_destination.length == 1 && arg_destination[0] == "0") {
-            destination = new IPV4Address("0.0.0.0");
-        } else if (IPV4Address.validate(arg_destination)) {
-            destination = new IPV4Address(arg_destination)
-        } else {
-            proc.io.write(uint8_fromString(`invalid address [${arg_destination}]`))
-            return ProcessSignal.ERROR
-        }
+    if (gateway) {
+        f_gateway = true
+    } else {
+        gateway = new IPV4Address("0.0.0.0");
+    }
 
-        let netmask: AddressMask<typeof IPV4Address> | undefined
-        if (IPV4Address.validate(arg_netmask)) {
-            netmask = createMask(IPV4Address, arg_netmask);
-        } else {
-            let n = parseInt(arg_netmask);
-            if (!isNaN(n)) {
-                netmask = createMask(IPV4Address, n);
-            }
-        }
+    proc.device.routes.push({
+        destination: destination,
+        netmask: netmask,
+        gateway: gateway,
+        iface: iface,
+        f_gateway,
+        f_dynamic,
+        f_host,
+        f_static
+    })
 
-        if (!netmask || !netmask.isValid()) {
-            proc.io.write(uint8_fromString(`mask: (${arg_netmask}) is invalid`));
-            return ProcessSignal.ERROR;
-        }
+    ioprintln(proc.io, "Added route.");
 
-        let f_gateway: true | undefined = undefined,
-            f_dynamic: true | undefined = undefined,
-            f_host: true | undefined = undefined,
-            f_static = true
+    return ProcessSignal.EXIT;
+}
 
-        let gateway: IPV4Address;
-        if (IPV4Address.validate(arg_gateway)) {
-            f_gateway = true
-            gateway = new IPV4Address(arg_gateway)
-        } else {
-            gateway = new IPV4Address("0.0.0.0");
-        }
+function routeinfo_remove4(proc: Process, pdres: ReturnType<(typeof pdef)["parse"]>): ReturnType<Program["init"]> {
+    if (!pdres.success || pdres.arguments[1] != "remove") return ProcessSignal.ERROR;
+    const [, , iface, destination, netmask, gateway] = pdres.arguments;
 
-        if (netmask.length === IPV4Address.ADDRESS_LENGTH) {
-            f_host = true; // if netmask covers all bits, the destination is a host
-        }
+    let predicate = (route: DeviceRoute) => {
+        return uint8_equals(route.destination.buffer, destination.buffer);
+    }
 
-        proc.device.routes.push({
-            destination: destination,
-            netmask: netmask,
-            gateway: gateway,
-            iface: iface,
-            f_gateway,
-            f_dynamic,
-            f_host,
-            f_static
-        })
+    // take destination and find the destination and the disambiguate the route
+    // !TODO: ensure that only one route gets removed at a time
+    let removed_routes = proc.device.routes.filter(predicate);
+    proc.device.routes = proc.device.routes.filter(r => !predicate(r)); // just remove all destinations matching the specified destination
 
-        proc.io.write(uint8_fromString("Added route.\n"))
+    ioprintln(proc.io, `removed ${removed_routes.length} routes`);
 
-        proc.device.process_spawn(proc, DEVICE_PROGRAM_ROUTEINFO, ["routeinfo", "ipv4"])
-
-        return ProcessSignal.EXIT;
-    },
-    __NODATA__: true
+    return ProcessSignal.EXIT;
 }
 
 export const DEVICE_PROGRAM_ROUTEINFO: Program = {
     name: "routeinfo",
     description: "displays information about the device's routing information",
     content: `<routeinfo [address_family]>  Lists all routes`,
-    init(proc, argv) {
-        let [, af] = argv;
-        let routes = proc.device.routes;
+    parameters: pdef,
+    init(proc, args) {
+        const pdres = pdef.parse(proc.device, args);
 
-        if (typeof af == "string") {
+        if (!pdres.success) {
+            ioprintln(proc.io, pdef.message(pdres));
+            return ProcessSignal.ERROR;
+        }
+
+        const [, action] = pdres.arguments;
+
+        if (action == "arp") {
+            return routeinfo_arp(proc, pdres);
+        } else if (action == "add4") {
+            let signal = routeinfo_add4(proc, pdres);
+            if (signal != ProcessSignal.EXIT) {
+                return signal;
+            }
+        } else if (action == "remove") {
+            let signal = routeinfo_remove4(proc, pdres);
+            if (signal != ProcessSignal.EXIT) {
+                return signal;
+            }
+        }
+
+        let routes = proc.device.routes;
+        if (typeof action == "string") {
             // the below checks are cursed
-            if (af.includes("4")) {
+            if (action.includes("4")) {
                 routes = routes.filter((r) => r.destination instanceof IPV4Address);
-            } else if (af.includes("6")) {
+            } else if (action.includes("6")) {
                 routes = routes.filter((r) => r.destination instanceof IPV6Address);
             }
         }
@@ -202,6 +166,5 @@ export const DEVICE_PROGRAM_ROUTEINFO: Program = {
 
         return ProcessSignal.EXIT;
     },
-    sub: [DEVICE_PROGRAM_ROUTEINFO_ARP, DEVICE_PROGRAM_ROUTEINFO_REMOVE, DEVICE_PROGRAM_ROUTEINFO_ADD4],
     __NODATA__: true
 }
