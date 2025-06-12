@@ -175,9 +175,9 @@ function lazywriter_get_options(device: Device, args: string[]): string[] {
             let names: string[];
             let param = params[i];
             if (typeof param != "string") {
-                if (param.keyword) {
+                if (param?.keyword) {
                     names = [param.name];
-                } else if (param.keywords) {
+                } else if (param?.keywords) {
                     names = param.keywords
                 } else {
                     continue;
