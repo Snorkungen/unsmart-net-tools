@@ -10,13 +10,13 @@ export interface ProgramParameter<V extends unknown> {
 
     multiple?: boolean;
     optional?: boolean;
+    keyword?: boolean;
     keywords?: string[];
 }
 
 /** does nothing for now just to leave a stub for future use */
 export class ProgramParameterError<V = unknown> extends Error {
     constructor(param: ProgramParameter<V>) {
-
         super(param.name);
     }
 }
@@ -280,6 +280,8 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
             let param = result.options[0];
             if (typeof param == "string") {
                 return `keyword: "${param}" missing`;
+            } else if (param.keyword) {
+                return `keyword: "${param.name}" missing`;
             }
 
             return `value: "${param.name}" missing`;
@@ -294,6 +296,8 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
 
             if (param.keywords) {
                 return `keyword: expeted (${param.keywords.join(" | ")}) received "${result.args[result.idx]}"`;
+            } else if (param.keyword) {
+                return `keyword: expeted "${param.name}" received "${result.args[result.idx]}"`;
             }
 
             return `value: "${result.args[result.idx]}" is invalid`
@@ -383,17 +387,32 @@ class ProgramParameterFactory /** PPFactory 😂 */ {
         };
     }
 
+    static parse_keywords<T extends string>(this: ProgramParameter<T>, val: string): T {
+        if (this.keywords && this.keywords.includes(val as T)) {
+            return val as T;
+        }
+
+        throw new ProgramParameterError(this);
+    }
     static keywords<const T extends string>(name: string, words: T[]): ProgramParameter<T> {
         return {
             name: name,
-            parse(val) {
-                if (this.keywords && this.keywords.includes(val as T)) {
-                    return val as T;
-                }
-
-                throw new ProgramParameterError(this);
-            },
+            parse: ProgramParameterFactory.parse_keywords<T>,
             keywords: words
+        }
+    }
+
+    static parse_keyword<T extends string>(this: ProgramParameter<T>, val: string): T {
+        if (val != this.name) {
+            throw new ProgramParameterError(this);
+        }
+        return this.name as T;
+    }
+    static keyword<const T extends string>(word: T): ProgramParameter<T> {
+        return {
+            name: word,
+            parse: ProgramParameterFactory.parse_keyword<T>,
+            keyword: true,
         }
     }
 
