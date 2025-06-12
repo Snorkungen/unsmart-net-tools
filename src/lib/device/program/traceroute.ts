@@ -6,6 +6,7 @@ import { ICMP_HEADER, ICMPV4_CODES, ICMPV4_TYPES, ICMPV6_CODES, ICMPV6_TYPES } f
 import { IPV4_HEADER, IPV4_PSEUDO_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
 import { UDP_HEADER } from "../../header/udp";
 import { Contact, DeviceResult, DeviceRoute, NetworkData, ProcessSignal, Program } from "../device";
+import { PPFactory, ProgramParameterDefinition } from "../internals/program-parameters";
 import { ioprint, ioprintln } from "./helpers";
 import { headless_ping_resolve_destination } from "./ping";
 
@@ -145,11 +146,16 @@ function receive6(this: TracerouteData<IPV6Address>, _: unknown, data: NetworkDa
     this.log(iphdr.get("saddr"));
 }
 
+
+const pdef = new ProgramParameterDefinition([
+    ["traceroute", PPFactory.value("DESTINATION")]
+])
+
+
 export const DEVICE_PROGRAM_TRACEROUTE: Program<TracerouteData> = {
     name: "traceroute",
     description: "Tries to detect in the route to the destination",
-    content: `<traceroute [destination]>`,
-
+    parameters: pdef,
     async init(proc, args, data) {
         let [, target] = args;
 

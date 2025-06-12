@@ -352,7 +352,6 @@ function dhcpsman_conf(proc: Process, pdres: ReturnType<(typeof pdef)["parse"]>)
 export const DEVICE_PROGRAM_DHCP_SERVER_MAN: Program = {
     name: "dhcpsman",
     description: "manage the status of the dhcp-server daemon",
-    content: `<dhcpsman (start | stop)>`,
     parameters: pdef,
     init(proc: Process, args) {
         const pdres = pdef.parse(proc.device, args);

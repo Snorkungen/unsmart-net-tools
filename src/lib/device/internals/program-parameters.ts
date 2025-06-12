@@ -320,17 +320,19 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
                 if (typeof param == "string") {
                     return param;
                 }
-                let sb = "["
+                let sb = "";
                 if (param.multiple) {
                     sb += "..."
                 }
+                sb += "["
+
                 if (param.optional) {
                     sb += "?";
                 }
                 if (param.keywords) {
-                    if (param.keywords.length > 1) sb += "("
+                    if (param.optional && param.keywords.length > 1) sb += "("
                     sb += `${param.keywords.map(v => '"' + v + '"').join(" | ")}`
-                    if (param.keywords.length > 1) sb += ")"
+                    if (param.optional && param.keywords.length > 1) sb += ")"
                 } else {
                     sb += param.name
                 }

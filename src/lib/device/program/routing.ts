@@ -4,6 +4,7 @@ import { uint8_concat } from "../../binary/uint8-array";
 import { ICMPV4_CODES, ICMPV4_TYPES, ICMPV6_CODES, ICMPV6_TYPES, ICMP_HEADER, ICMP_UNUSED_HEADER } from "../../header/icmp";
 import { IPV4_HEADER, IPV4_PSEUDO_HEADER, IPV6_HEADER, PROTOCOLS } from "../../header/ip";
 import { Program, ProcessSignal, ContactReceiveOptions, Process, address_is_unset } from "../device";
+import { PPFactory, ProgramParameterDefinition } from "../internals/program-parameters";
 import { ioprintln } from "./helpers";
 
 const RECEIVE_OPTIONS: ContactReceiveOptions = { promiscuous: true };
@@ -170,7 +171,7 @@ export const DAEMON_ROUTING: Program = {
 export const DEVICE_PROGRAM_ROUTINGMAN: Program = {
     name: "routingman",
     description: "manage the status of the routing daemon",
-    content: `<routingman (start | stop)>`,
+    parameters: new ProgramParameterDefinition([["routingman", PPFactory.optional(PPFactory.keywords("ACTION", ["start", "stop"]))]]),
     init: function (proc: Process<any>, args: string[]): ProcessSignal {
         let [, action] = args
 

@@ -109,7 +109,6 @@ function routeinfo_remove4(proc: Process, pdres: ReturnType<(typeof pdef)["parse
 export const DEVICE_PROGRAM_ROUTEINFO: Program = {
     name: "routeinfo",
     description: "displays information about the device's routing information",
-    content: `<routeinfo [address_family]>  Lists all routes`,
     parameters: pdef,
     init(proc, args) {
         const pdres = pdef.parse(proc.device, args);

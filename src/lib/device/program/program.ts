@@ -9,7 +9,7 @@ import { termquery } from "./termquery";
 export const DEVICE_PROGRAM_CLEAR: Program = {
     name: "clear",
     description: "This program clears the terminal",
-    content: "Example: clear",
+    parameters: new ProgramParameterDefinition([["clear"]]),
     init(proc, args) {
         proc.io.write(CSI(ASCIICodes.Two, 74)); // clear display
         return ProcessSignal.EXIT;
@@ -20,12 +20,12 @@ export const DEVICE_PROGRAM_CLEAR: Program = {
 export const DEVICE_PROGRAM_ECHO: Program = {
     name: "echo",
     description: "This program writes to the terminal the inputed text.",
-    content: `echo [...input]
-Example: echo "Hello, World"
-> Hello World`,
+    parameters: new ProgramParameterDefinition([["echo", PPFactory.optional(PPFactory.multiple(PPFactory.value("input")))]]),
     init(proc, args) {
-        let input = args.slice(1);
-        proc.io.write(uint8_fromString(input.join("\n"))); // echo
+        args.shift()
+        for (let arg of args) {
+            ioprintln(proc.io, arg)
+        }
         return ProcessSignal.EXIT;
     },
     __NODATA__: true
@@ -34,7 +34,7 @@ Example: echo "Hello, World"
 const help_pdef = new ProgramParameterDefinition([
     ppbind(["help"],
         "List all available programs."),
-    ppbind(["help", PPFactory.optional(PPFactory.value("PROGRAM")), PPFactory.optional(PPFactory.multiple(PPFactory.value("PARAMETER")))],
+    ppbind(["help", PPFactory.value("PROGRAM"), PPFactory.optional(PPFactory.multiple(PPFactory.value("PARAMETER")))],
         "Display information about the specified program.")
 ]);
 
@@ -77,8 +77,6 @@ export const DEVICE_PROGRAM_HELP: Program = {
                 return res;
             }).join("\n");
             ioprint(proc.io, content);
-        } else if (program.content) {
-            ioprint(proc.io, program.content)
         } else {
             ioprint(proc.io, program.name);
         }
@@ -88,11 +86,15 @@ export const DEVICE_PROGRAM_HELP: Program = {
     __NODATA__: true
 }
 
+const download_pdef = new ProgramParameterDefinition([
+    ["download", PPFactory.optional(PPFactory.create("IFID", PPFactory.parse_baseiface))]
+]);
+
 const PCAP_FILE_EXTENSION = ".cap";
 export const DEVICE_PROGRAM_DOWNLOAD: Program = {
     name: "download",
     description: "Download the devices packet-capture.",
-    content: "<download>\n<download> [ifid]",
+    parameters: download_pdef,
     init(proc, args) {
         let [, ifid] = args;
         let name = proc.device.name;

@@ -6,6 +6,7 @@ import { uint8_concat, uint8_equals, uint8_fromString } from "../../binary/uint8
 import { ICMP_ECHO_HEADER, ICMP_HEADER, ICMP_UNUSED_HEADER, ICMPV4_TYPES, ICMPV6_TYPES } from "../../header/icmp";
 import { IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
 import { Contact, DeviceResult, DeviceRoute, NetworkData, Process, ProcessSignal, Program } from "../device";
+import { PPFactory, ProgramParameterDefinition } from "../internals/program-parameters";
 import { ioprint, ioprintln } from "./helpers";
 import { getaddress_by_host } from "./hostsinfo";
 
@@ -299,26 +300,29 @@ function handlereply(proc: Process<PingData>, source: BaseAddress, bytes: number
     send(proc);
 }
 
+const pdef = new ProgramParameterDefinition([
+    ["ping", PPFactory.value("DESTINATION"), PPFactory.optional(PPFactory.number("SEND_COUNT"))]
+])
+
 const DEFAULT_MAX_SENDCOUNT = 10;
 export const DEVICE_PROGRAM_PING: Program = {
     name: "ping",
     description: "Sends icmp echo requests to target",
-    content: `<ping [destination] ?[sendCount]>
-<ping 192.168.1.1>
-<ping ::1 4>`,
-    async init(proc, argv) {
-        let [, target, sendCount] = argv
+    parameters: pdef,
+    async init(proc, args) {
+        const res = pdef.parse(proc.device, args)
+        if (!res.success) {
+            ioprintln(proc.io, pdef.message(res));
+            return ProcessSignal.ERROR;
+        }
+
+        let [, target, max_send_count] = res.arguments;
         let contact: Contact | undefined;
         let identifier = Math.floor(Math.random() * (0xffff));
 
         if (!target) {
             ioprint(proc.io, "destination mising");
             return ProcessSignal.ERROR;
-        }
-
-        let maxSendCount = parseInt(sendCount);
-        if (isNaN(maxSendCount)) {
-            maxSendCount = DEFAULT_MAX_SENDCOUNT;
         }
 
         const on_error: HeadlessPingReceiveErrorHandler = (e) => {
@@ -355,7 +359,7 @@ export const DEVICE_PROGRAM_PING: Program = {
             sequence: 0,
             destination: destination,
             route: route,
-            maxSendCount: maxSendCount,
+            maxSendCount: max_send_count ?? DEFAULT_MAX_SENDCOUNT,
             timestamps: new Map(),
             stats: new Map(),
         }
