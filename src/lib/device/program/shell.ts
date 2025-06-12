@@ -160,6 +160,7 @@ function lazywriter_get_options(device: Device, args: string[]): string[] {
         return device.programs.map(({ name }) => name).filter(name => name.startsWith(args[0]));
     }
 
+    let add_new_arg = false;
     let options: string[] = [];
     if (program.sub) {
         // still use this garbage
@@ -180,11 +181,13 @@ function lazywriter_get_options(device: Device, args: string[]): string[] {
         if (!program.sub) {
             return [];
         }
+
         options = program.sub.map(({ name }) => name)
         if (args[i]) {
             options = options.filter((name) => name.startsWith(args[i]));
+        } else {
+            add_new_arg = true;
         }
-        args[i] = ""; // undefined   
     }
 
     if (program.parameters) {
@@ -204,15 +207,18 @@ function lazywriter_get_options(device: Device, args: string[]): string[] {
             let arg = args[i];
             if (!arg || param.startsWith(arg)) {
                 options.push(param);
+                if (!arg) {
+                    add_new_arg = true;
+                }
             }
-        }
-
-        if (options.length && !args.at(-1)) {
-            args.push("")
         }
     }
 
-    return options;
+    if (add_new_arg) {
+        args.push("")
+    }
+
+    return [...(new Set(options))];
 }
 
 /**
