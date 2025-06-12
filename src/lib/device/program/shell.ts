@@ -172,16 +172,27 @@ function lazywriter_get_options(device: Device, args: string[]): string[] {
                 }
             }
 
+            let names: string[];
             let param = params[i];
             if (typeof param != "string") {
-                continue;
+                if (param.keyword) {
+                    names = [param.name];
+                } else if (param.keywords) {
+                    names = param.keywords
+                } else {
+                    continue;
+                }
+            } else {
+                names = [param]
             }
 
             let arg = args[i];
-            if (!arg || param.startsWith(arg)) {
-                options.add(param);
-                if (!arg) {
-                    add_new_arg = true;
+            for (let name of names) {
+                if (!arg || name.startsWith(arg)) {
+                    options.add(name);
+                    if (!arg) {
+                        add_new_arg = true;
+                    }
                 }
             }
         }
