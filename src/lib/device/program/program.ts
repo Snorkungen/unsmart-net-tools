@@ -1,8 +1,9 @@
 import { uint8_fromString } from "../../binary/uint8-array";
 import { PCAP_GLOBAL_HEADER, PCAP_MAGIC_NUMBER, PCAP_RECORD_HEADER } from "../../header/pcap";
 import { ASCIICodes, CSI, TERMINAL_DEFAULT_COLUMNS } from "../../terminal/shared";
-import { Process, ProcessSignal, Program } from "../device";
-import { chunkString, formatTable, spawn_program_promisify } from "./helpers";
+import { ProcessSignal, Program } from "../device";
+import { ppbind, PPFactory, ProgramParameterDefinition } from "../internals/program-parameters";
+import { formatTable, ioprint, ioprintln } from "./helpers";
 import { termquery } from "./termquery";
 
 export const DEVICE_PROGRAM_CLEAR: Program = {
@@ -30,55 +31,57 @@ Example: echo "Hello, World"
     __NODATA__: true
 }
 
-function displayPrograms(proc: Process, programs: Program[], columns: number) {
-    let table: (string | undefined)[][] = [
-        ["Program Name", "Description"]
-    ];
-
-    for (let p of programs) {
-        table.push([p.name, p.description]);
-    }
-    return proc.io.write(formatTable(table, columns));
-}
-
+const help_pdef = new ProgramParameterDefinition([
+    ppbind(["help"],
+        "List all available programs."),
+    ppbind(["help", PPFactory.optional(PPFactory.value("PROGRAM")), PPFactory.optional(PPFactory.multiple(PPFactory.value("PARAMETER")))],
+        "Display information about the specified program.")
+]);
 
 export const DEVICE_PROGRAM_HELP: Program = {
     name: "help",
     description: "This program displays information about the programs, on the device.",
-    content: `<help> Lists all available programs.
-<help [program_name]> Displays information about the specified program.
-Example 1: help
-Example 2: help help`,
-
-    async init(proc, argv) {
+    parameters: help_pdef,
+    async init(proc, args) {
         let columns = (await termquery(proc)).width || TERMINAL_DEFAULT_COLUMNS;
 
-        argv.shift(); // remove help name;
+        const res = help_pdef.parse(proc.device, args);
+        if (!res.success) return ProcessSignal.ERROR;
 
-        if (argv.length < 1) {
-            // list all programs
-            displayPrograms(proc, proc.device.programs, columns);
+        const [, program_name, parameters] = res.arguments;
+        const program = proc.device.programs.find(({ name }) => name == program_name);
+
+        if (program_name && !program) {
+            ioprintln(proc.io, `No program with the name "${program_name}"`);
+        }
+
+        if (!program) { // list all programs
+            let table: (string | undefined)[][] = [
+                ["Program Name", "Description"]
+            ];
+
+            for (let p of proc.device.programs) {
+                table.push([p.name, p.description]);
+            }
+            proc.io.write(formatTable(table, columns));
             return ProcessSignal.EXIT;
         }
 
-        let name = argv.shift();
-        let prog: Program | undefined = proc.device.programs.find(p => p.name == name);
-        let parents: string[] = [];
-
-        if (!prog) {
-            proc.io.write(uint8_fromString("No program found with the name \"" + name + "\"\n"));
-            displayPrograms(proc, proc.device.programs, columns);
-            return ProcessSignal.EXIT;
+        if (program.parameters) {
+            // !TODO: do better
+            let content = program.parameters.content().map(([command, desc]) => {
+                let res = `<${command}>`
+                if (desc) {
+                    res += " -- " + desc
+                }
+                return res;
+            }).join("\n");
+            ioprint(proc.io, content);
+        } else if (program.content) {
+            ioprint(proc.io, program.content)
+        } else {
+            ioprint(proc.io, program.name);
         }
-
-        let shownName = parents.length == 0 ? prog.name : parents.join(" ") + " " + prog.name;
-
-        proc.io.write(uint8_fromString(
-            shownName + "\n" +
-            ((prog.description && chunkString(prog.description, columns).join("\n") + "\n") || "") + "\n" +
-            ((prog.content && chunkString(prog.content, columns).join("\n") + "\n") || "")
-        ));
-
 
         return ProcessSignal.EXIT;
     },
