@@ -186,7 +186,7 @@ function handle_offer(proc: Process<DHCPC_Data>, contact: Contact<"IPv4", "RAW">
     });
 
     data.state = DHCPC_State.REQUEST;
-    proc.journal(0, "sending request");
+    ioprintln(proc.io, "[INFO] sending request")
     return send_dhcpc4(data, replyhdr);
 }
 
@@ -205,9 +205,8 @@ function handle_ack(proc: Process<DHCPC_Data>, contact: Contact<"IPv4", "RAW">, 
         return; // not interested
     }
 
-    let msg = "COMMITING DHCP " + data.offer.address4;
-    proc.journal(0, msg);
-    console.log(msg);
+    ioprintln(proc.io, "[INFO] committing DHCP " + data.offer.address4);
+    console.log("COMMITING DHCP " + data.offer.address4);
 
     data.state = DHCPC_State.BOUND;
     proc.device.interface_address_set(data.iface, data.offer.address4, data.offer.netmask4);
@@ -230,8 +229,7 @@ function handle_ack(proc: Process<DHCPC_Data>, contact: Contact<"IPv4", "RAW">, 
         // i.e revalidate
     }
 
-    // for now just quit
-    proc.journal(0, "quitting dhcp client nothing more to do")
+    ioprintln(proc.io, "[INFO] closing dhcpc4");
     return proc.close(ProcessSignal.INTERRUPT);
 }
 
@@ -288,7 +286,8 @@ function receive_ipv4(this: Process<DHCPC_Data>, contact: Contact<"IPv4", "RAW">
         console.warn("DHCP Message type missing")
         return;
     }
-    this.journal(0, "received: " + getKeyByValue(DHCP_MESSGAGE_TYPES, tbuf[0]))
+
+    ioprintln(this.io, `[INFO] received ${getKeyByValue(DHCP_MESSGAGE_TYPES, tbuf[0])}`);
     switch (tbuf[0]) {
         case DHCP_MESSGAGE_TYPES.DHCPOFFER:
             return handle_offer(this, contact, data, dhcphdr, opts);
@@ -345,7 +344,7 @@ export const DEVICE_PROGRAM_DHCP_CLIENT: Program<DHCPC_Data> = {
 
         // send header
         send_dhcpc4(proc.data, discoverhdr);
-        proc.journal(0, "sending discover");
+        ioprintln(proc.io, "[INFO] sending discover");
 
         return ProcessSignal.__EXPLICIT__;
     }

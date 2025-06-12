@@ -210,20 +210,12 @@ export type Process<DT = any> = {
     program: Program;
     data: DT;
 
-
     close(status?: ProcessSignal): void;
     spawn<SDT extends any>(program: Program<SDT>, args?: string[], data?: Partial<SDT>, handlers?: ProcessStartHandlers): Process | undefined;
     handle(signal_handler: (proc: Process, signal: ProcessSignal) => void): void
 
-    /** write an entry into a process diary \
-     * type: 0(info), 1(warning), 2(error)
-    */
-    journal(type: number, message: string): void;
-
     io: DeviceIO;
     resources: DeviceResources;
-
-    // !TODO: for now it is the users responsibility to close contacts
 };
 
 export type DeviceTerminal = {
@@ -372,7 +364,6 @@ export class Device {
     processes = new DeviceResources<Process>();
     private process_handlers: ({ proc: Process, handler: ProcessHandler, id: ProcessID } | undefined)[] = [];
     private PROCESS_ID_SEPARATOR = ":";
-    private process_journal_entries: Map<string, [type: number, timestamp: number, message: string][]> = new Map();
 
     /** Process start only returns a process if a parent proc is provided */
     process_start<DT extends any>(program: Program<DT>, args?: string[], data?: Partial<DT>): void
@@ -418,7 +409,6 @@ export class Device {
             close(...p) { return device.process_close(this, ...p) },
             spawn(...p) { return device.process_spawn(this, ...p) },
             handle(...p) { return device.process_handle(this, ...p) },
-            journal(...p) { return device.process_journal(this, ...p) },
 
             resources: proc_resources,
             io: proc_resources.create(io),
@@ -511,9 +501,6 @@ export class Device {
             }
         }
 
-        // delete journal entries
-        this.process_journal_entries.delete(proc.id);
-
         proc.resources.close();
         proc.abort_controller.abort();
     }
@@ -529,20 +516,6 @@ export class Device {
             handler: handler,
             id: parent_id ? parent_id : proc.id
         }
-    }
-
-    /** write an entry into the process journal */
-    process_journal(proc: Process, type: number, message: string) {
-        let timestamp = Date.now();
-
-        let entries = this.process_journal_entries.get(proc.id);
-        if (!entries) {
-            entries = [[type, timestamp, message]];
-        } else {
-            entries.push([type, timestamp, message]);
-        }
-
-        this.process_journal_entries.set(proc.id, entries);
     }
 
     private terminal?: DeviceTerminal;

@@ -13,6 +13,7 @@ import { IPV4_HEADER, IPV4_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
 import { UDP_HEADER } from "../../header/udp";
 import { Program, ProcessSignal, Process, Contact, NetworkData, Device, address_is_unset, DeviceResult, _UNSET_ADDRESS_IPV4 } from "../device";
 import { BaseInterface } from "../interface";
+import { ioprintln } from "./helpers";
 
 const BROADCAST_IPV4_ADDRESS = new IPV4Address("255.255.255.255");
 
@@ -217,7 +218,8 @@ function handle_discover(proc: Process<typeof DAEMON_DHCP_SERVER>, contact: Cont
     client.gateways4 = config.gateways4;
     client.netmask4 = config.netmask4;
     client.transaction_id = dhcphdr.get("xid");
-    proc.journal(0, `${clid}: binding, with ${client.address4}`);
+
+    ioprintln(proc.io,`[INFO] ${clid} binding with ${client.address4}` )
 
     // commit information
     config.clients[clid] = client;
@@ -417,7 +419,7 @@ function handle_request(proc: Process<typeof DAEMON_DHCP_SERVER>, contact: Conta
     });
 
     client.state = DHCPServerClientState.BOUND;
-    proc.journal(0, `${clid}: bound, with ${client.address4}`);
+    ioprintln(proc.io, `[INFO] ${clid} bound with ${client.address4}`)
     proc.device.store_set(DAEMON_DHCP_SERVER_STORE_KEY, store_data);
     return send_dhcp4(proc, contact, ackhdr, data);
 }
@@ -496,7 +498,7 @@ export const DAEMON_DHCP_SERVER: Program = {
     init(proc) {
         // assert only on instance of the process can run;
         if (proc.device.processes.items.find(p => p?.id.includes(this.name) && p != proc)) {
-            proc.journal(1, "process already running");
+            ioprintln(proc.io, "[ERROR] process already running")
             return ProcessSignal.ERROR;
         }
 
