@@ -1,20 +1,56 @@
-import { uint8_fromString } from "../../binary/uint8-array";
-import { ProcessSignal, Program } from "../device";
+import { Device, ProcessSignal, Program } from "../device";
 import { EthernetInterface, VlanInterface } from "../interface";
-import { formatTable } from "./helpers";
+import { ppbind, PPFactory, ProgramParameter, ProgramParameterDefinition, ProgramParameterError } from "../internals/program-parameters";
+import { formatTable, ioprintln } from "./helpers";
+
+const VLANIF_NAME = "vlanif";
+function custom_vlanif_parser(this: ProgramParameter<string>, val: string, dev: Device): string {
+    if (!val.startsWith(VLANIF_NAME)) {
+        throw new ProgramParameterError(this);
+    }
+    
+    if (PPFactory.parse_number.call(this, val.substring(VLANIF_NAME.length), dev) <= 0) {
+        throw new ProgramParameterError(this);
+    }
+
+    return val;
+}
+
+function custom_etheriface_parser(this: ProgramParameter<EthernetInterface>, val: string, dev: Device): EthernetInterface {
+    let iface = PPFactory.parse_baseiface.call(this, val, dev);
+
+    if (iface instanceof EthernetInterface) {
+        return iface;
+    }
+
+    throw new ProgramParameterError(this);
+}
+
+const PPEtheriface = PPFactory.create("IFID", custom_etheriface_parser)
+const PPVlanrule = PPFactory.keywords("VLAN_RULE", ["trunk", "access"]);
+const PPVid = PPFactory.multiple(PPFactory.number("VID"))
+
+const pdef = new ProgramParameterDefinition([
+    ppbind(["vlaninfo"], "list all existing vlans"),
+    ppbind(["vlaninfo", PPFactory.create("VLANIF_ID", custom_vlanif_parser), PPFactory.optional(PPFactory.keyword("remove"))], "create a vlan interface, or remove one"),
+    ppbind(["vlaninfo", PPEtheriface, PPVlanrule, PPFactory.optional(PPVid)], "set an interfaces vlan rule, access or trunk"),
+    ppbind(["vlaninfo", PPEtheriface, PPVid], "set vlan ids, -4 means remove vid 4")
+]);
 
 export const DEVICE_PROGRAM_VLANINFO: Program = {
     name: "vlaninfo",
     description: "interacts with vlan",
-    content: `vlaninfo -- list the existing vlans
-vlaninfo vlanif[VID] -- create a vlan interface for vid
-vlaninfo vlanif[VID] remove -- delete a vlanif
-vlaninfo eth0 access -- set the interface to be access
-vlaninfo eth0 1 2 3 -4 5 6 assign the following vlans to the interface, and remove vlan 4`,
-    init(proc, argv) {
-        argv.shift();
+    parameters: pdef,
+    init(proc, args) {
+        const res = pdef.parse(proc.device, args);
 
-        if (argv.length == 0) {
+        if (!res.success) {
+            ioprintln(proc.io, pdef.message(res));
+            return ProcessSignal.ERROR;
+        }
+
+        const [, ifid, rest, numbers] = res.arguments;
+        if (!ifid) {
             // currently no special rules can be configured per vlan, so just list the existing vlan related interfaces
 
             let table: string[][] = [["Interface", ""]];
@@ -28,84 +64,66 @@ vlaninfo eth0 1 2 3 -4 5 6 assign the following vlans to the interface, and remo
 
             proc.io.write(formatTable(table));
             return ProcessSignal.EXIT;
-        }
+        } else if (ifid instanceof EthernetInterface) {
+            const iface = ifid;
 
-        const first_arg = argv.shift();
+            if (rest == "access") {
+                if (!iface.vlan) {
+                    iface.vlan = { type: "access", vids: [] }
+                }
+                iface.vlan.type = "access";
+            } else if (rest == "trunk") {
+                if (!iface.vlan) {
+                    iface.vlan = { type: "trunk", vids: [] }
+                }
+                iface.vlan.type = "trunk";
+            }
 
-        if (first_arg?.startsWith("vlanif")) {
-            // this is something that is botherd with vlanifs ...
-            let vid = parseInt(first_arg.substring("vlanif".length));
-            if (isNaN(vid)) {
-                proc.io.write(uint8_fromString("failed to read: " + first_arg));
+            if (!iface.vlan) {
+                ioprintln(proc.io, "interface must be configured as either \"access\" or \"trunk\"");
                 return ProcessSignal.ERROR;
             }
 
+            let vids = Array.isArray(rest) ? rest : numbers;
+            if (vids) {
+                for (let vid of vids) {
+                    if (vid < 0) { // remove vid
+                        iface.vlan.vids = iface.vlan.vids.filter(v => v !== Math.abs(vid));
+                    } else { // add vid
+                        if (!iface.vlan.vids.includes(vid)) {
+                            iface.vlan.vids.push(vid);
+                        }
+                    }
+                }
+            }
+
+            if (iface.vlan.vids.length == 0) {
+                delete iface.vlan
+                ioprintln(proc.io, `${iface.id()}\tvlan removed`);
+            } else {
+                ioprintln(proc.io, `${iface.id()}\t${iface.vlan.type} ${iface.vlan.vids.join(",")}`);
+            }
+
+        } else if (ifid.startsWith(VLANIF_NAME)) {
+            // this is something that is botherd with vlanifs ...
+
+            let vid = parseInt(ifid.substring(VLANIF_NAME.length));
+            if (isNaN(vid)) { return ProcessSignal.ERROR; /* this should throw parser already checked this */ }
+
             let vlanif = proc.device.interfaces.find(iface => (iface instanceof VlanInterface) && iface.vid == vid);
 
-            if (argv.includes("remove")) { // remove interface
+            if (rest == "remove") { // remove interface
                 if (vlanif) {
                     proc.device.interface_remove(vlanif)
                 }
 
-                proc.io.write(uint8_fromString("vlan interface removed for vlan: " + vid));
+                ioprintln(proc.io, "vlan interface removed for vlan: " + vid);
             } else if (!vlanif) { // add vlan interface
                 proc.device.interface_add(new VlanInterface(proc.device, vid));
-                proc.io.write(uint8_fromString("vlan interface created for vlan: " + vid));
+                ioprintln(proc.io, "vlan interface created for vlan: " + vid);
             } else {
-                proc.io.write(uint8_fromString("vlan interface already exists for vlan: " + vid));
+                ioprintln(proc.io, "vlan interface already exists for vlan: " + vid);
             }
-
-            return ProcessSignal.EXIT;
-        }
-
-        let iface = proc.device.interfaces.find(iface => iface.id() == first_arg && (iface instanceof EthernetInterface));
-
-        if (!iface) {
-            proc.io.write(uint8_fromString("no vlan aware interface exist with the id of: " + first_arg));
-            return ProcessSignal.ERROR;
-        }
-
-        if (!(iface instanceof EthernetInterface)) {
-            throw new Error("iface must be an eth interface")
-        }
-
-        if (argv.includes("access")) {
-            if (!iface.vlan) {
-                iface.vlan = { type: "access", vids: [] }
-            }
-            iface.vlan.type = "access";
-        }
-        if (argv.includes("trunk")) {
-            if (!iface.vlan) {
-                iface.vlan = { type: "trunk", vids: [] }
-            }
-            iface.vlan.type = "trunk";
-        }
-
-        if (!iface.vlan) {
-            proc.io.write(uint8_fromString("interface must be configured as either \"access\" or \"trunk\""));
-            return ProcessSignal.ERROR;
-        }
-
-        
-        for (let v of argv) {
-            let vid = parseInt(v);
-            if (isNaN(vid) || vid == 0) continue;
-
-            if (vid < 0) { // remove vid
-                iface.vlan.vids = iface.vlan.vids.filter(v => v !== Math.abs(vid));
-            } else { // add vid
-                if (!iface.vlan.vids.includes(vid)) {
-                    iface.vlan.vids.push(vid);
-                }
-            }
-        }
-
-        if (iface.vlan.vids.length == 0) {
-            delete iface.vlan
-            proc.io.write(uint8_fromString(`${iface.id()}\tvlan removed`));
-        } else {
-            proc.io.write(uint8_fromString(`${iface.id()}\t${iface.vlan.type} ${iface.vlan.vids.join(",")}`));
         }
 
         return ProcessSignal.EXIT;
