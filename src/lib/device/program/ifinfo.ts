@@ -22,6 +22,7 @@ const ifinfo_pdef = new ProgramParameterDefinition([
 export const DEVICE_PROGRAM_IFINFO: Program = {
     name: "ifinfo",
     content: ifinfo_pdef.content().map(([command, desc]) => `<${command}> -- ${desc}`).join("\n"),
+    parameters: ifinfo_pdef,
     init(proc, sargs) {
         sargs[0] = "ifinfo"
         let res = ifinfo_pdef.parse(proc.device, sargs);

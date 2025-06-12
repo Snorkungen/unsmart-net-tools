@@ -148,6 +148,73 @@ function lazywriter_write_options(proc: Process<string>, options: string[], i: n
     proc.io.write(CSI(...numbertonumbers(cursorX + 1), ASCIICodes.G))
 }
 
+function lazywriter_get_options(device: Device, args: string[]): string[] {
+    if (args.length < 1) {
+        args.push("");
+        return device.programs.map(({ name }) => name);
+    }
+
+    let program = device.programs.find(({ name }) => name == args[0]);
+
+    if (!program) {
+        return device.programs.map(({ name }) => name).filter(name => name.startsWith(args[0]));
+    }
+
+    let options: string[] = [];
+    if (program.sub) {
+        // still use this garbage
+        console.warn("program.sub is being deprecated")
+
+        let i = 0;
+        let subp: Program | undefined;
+        while (++i < args.length && program && program.sub) {
+            subp = program.sub.find(({ name }) => name == args[i]);
+
+            if (!subp) {
+                break
+            }
+
+            program = subp;
+        }
+
+        if (!program.sub) {
+            return [];
+        }
+        options = program.sub.map(({ name }) => name)
+        if (args[i]) {
+            options = options.filter((name) => name.startsWith(args[i]));
+        }
+        args[i] = ""; // undefined   
+    }
+
+    if (program.parameters) {
+        for (let params of program.parameters.definition) {
+            if (params.length < args.length) continue;
+            let i = 0; while (++i < args.length) {
+                if (!program.parameters.test(device, params[i], args[i])) {
+                    break;
+                }
+            }
+
+            let param = params[i];
+            if (typeof param != "string") {
+                continue;
+            }
+
+            let arg = args[i];
+            if (!arg || param.startsWith(arg)) {
+                options.push(param);
+            }
+        }
+
+        if (options.length && !args.at(-1)) {
+            args.push("")
+        }
+    }
+
+    return options;
+}
+
 /**
  * 
  * This does not actually need to be a seperate program \
@@ -157,49 +224,16 @@ const lazywriter: Program<string> = {
     name: "shell_lazywriter",
     init(proc: Process<string>, _, data?: string | undefined): ProcessSignal {
         proc.data = data || ""; // set data
-        let options = proc.device.programs.map(p => p.name);
-        if (options.includes(proc.data)) {
-            return ProcessSignal.EXIT;
-        }
-
-        let root = "";
-
-        if (proc.data) {
-            options = options.filter(n => n.startsWith(proc.data));
-            if (options.length == 1) {
-                proc.data = options[0];
-                return ProcessSignal.EXIT;
-            } else if (options.length == 0) {
-                let [name] = proc.data.split(" ");
-                let subp = proc.data.substring(name.length + 1);
-                let program = proc.device.programs.find(p => p.name == name);
-                while (program && program.sub && program.sub.length) {
-                    options = program.sub.map(p => p.name)
-
-                    if (subp) {
-                        options = options.filter(n => n.startsWith(subp))
-                    }
-
-                    if (options.length === 0) {
-                        root = root + name + " ";
-                        [name] = subp.split(" ");
-                        subp = subp.substring(name.length + 1);
-                        program = program.sub.find(p => p.name == name);
-                        continue
-                    }
-
-                    if (options.length == 1) {
-                        proc.data = program.name + " " + options[0]
-                        return ProcessSignal.EXIT;
-                    } else {
-                        root = root + name + " ";
-                        break
-                    }
-                }
-            }
-        }
+        let args = args_parse(proc.data);
+        let options = lazywriter_get_options(proc.device, args);
 
         if (options.length == 0) {
+            return ProcessSignal.EXIT; // do nothing
+        }
+
+        if (options.length == 1) {
+            args[args.length - 1] = options[0]
+            proc.data = args.join(" ") + " ";
             return ProcessSignal.EXIT;
         }
 
@@ -207,19 +241,24 @@ const lazywriter: Program<string> = {
         let selected_option_idx = 0;
         proc.io.write(new Uint8Array([ASCIICodes.NewLine]));
 
+        termquery(proc).then((data) => {
+            if (data.width) {
+                term_width = data.width;
+            };
+            lazywriter_write_options(proc, options, selected_option_idx, term_width);
+        })
+
         proc.io.reader_add((bytes) => {
             let byte = bytes[0];
-
-            if (byte === ASCIICodes.Space) {
-                options[selected_option_idx] += " ";
-            }
 
             if (
                 byte === ASCIICodes.Space ||
                 byte === ASCIICodes.NewLine ||
                 byte === ASCIICodes.CarriageReturn
             ) {
-                proc.data = root + options[selected_option_idx]
+                args[args.length - 1] = options[selected_option_idx]
+                proc.data = args.join(" ") + " ";
+
                 // move cursor to start clear line and go up on line
                 proc.io.write(CSI(...numbertonumbers(1), ASCIICodes.G, ...CSI(ASCIICodes.Two, ASCIICodes.K), ...CSI(ASCIICodes.A)));
                 proc.close(ProcessSignal.EXIT);
@@ -256,14 +295,6 @@ const lazywriter: Program<string> = {
             lazywriter_write_options(proc, options, selected_option_idx, term_width)
             return true;
         });
-
-        termquery(proc).then((data) => {
-            if (data.width) {
-                term_width = data.width;
-            };
-            lazywriter_write_options(proc, options, selected_option_idx, term_width);
-        })
-        // lazywriter_write_options(proc, options, selected_option_idx, term_width);
 
         return ProcessSignal.__EXPLICIT__;
     }
@@ -340,11 +371,9 @@ export const DAEMON_SHELL: Program<ShellData> = {
                         program = tmp;
                         break;
                     }
+
+                    console.warn("sub program is being deprecated")
                 }
-
-                // TODO! read sub programs, this could maybe be something that isn't a shell thing
-
-                proc.data.history.add(bytes);
 
                 if (program) {
                     proc.io.write(new Uint8Array([ASCIICodes.NewLine]));
@@ -368,6 +397,11 @@ export const DAEMON_SHELL: Program<ShellData> = {
                             // !TODO: possibly do something better when spawned program errors
                         }
                     })
+
+                }
+
+                if (promptv) {
+                    proc.data.history.add(bytes);
                 }
             }  /* Tab pressed */ else if (target[0] == ASCIICodes.Tab) {
                 let v = await new Promise<string | undefined>(resolve => {
@@ -384,8 +418,6 @@ export const DAEMON_SHELL: Program<ShellData> = {
                         }
                     });
                 });
-
-
 
                 if (v) {
                     initial_bytes = uint8_fromString(v);

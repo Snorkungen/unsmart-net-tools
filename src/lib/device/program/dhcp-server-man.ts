@@ -2,7 +2,7 @@ import { IPV4Address } from "../../address/ipv4";
 import { MACAddress } from "../../address/mac";
 import { uint8_concat } from "../../binary/uint8-array";
 import { DeviceIO, Program, ProcessSignal, Process } from "../device";
-import { ppbind, PPFactory, ProgramParameterDefinition, ProgramParameters } from "../internals/program-parameters";
+import { ppbind, PPFactory, ProgramParameterDefinition } from "../internals/program-parameters";
 import { DAEMON_DHCP_SERVER, dhcp_server_client_delete, dhcp_server_client_init, dhcp_server_gateways4_set, dhcp_server_get_store_data, dhcp_server_iface_delete, dhcp_server_iface_init, dhcp_server_range4_add, dhcp_server_serialize_clid, DHCPServerClient, DHCPServerClientState, DHCPServerConfig } from "./dhcp-server";
 import { ioprint, ioreadline, ioclearline, formatTable, ioprintln } from "./helpers";
 import { run_menu, MenuFields } from "./menu";
@@ -291,6 +291,7 @@ const DEVICE_PROGRAM_DHCP_SERVER_MAN_CONF: Program = {
     name: "conf",
     description: "edit dhcp server configurations",
     content: dhcpsman_conf_pdef.content().map(([command, desc]) => `<${command}> -- ${desc}`).join("\n"),
+    parameters: dhcpsman_conf_pdef,
     init(proc, sargs) {
         let pdres = dhcpsman_conf_pdef.parse(proc.device, sargs);
         if (!pdres.success) {

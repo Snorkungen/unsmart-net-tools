@@ -51,40 +51,40 @@ export type ProgramParseResult<T> = (
 
 /** class that retains the types because this one thing caused issues */
 export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
-    definition: T;
+    definition: ProgramParameters[];
 
     constructor(definition: T) {
         this.definition = definition;
     };
 
-    private errors: ProgramParameterError[] = [];
-    private parse_test(device: Device, arg: string, param: string | ProgramParameter<unknown>): undefined | true {
+    private error?: ProgramParameterError;
+    /** @returns a boolean where true means it succeeded */
+    test(device: Device, param: ProgramParameters[number], arg: string): boolean {
         if (typeof param == "string") {
-            if (arg != param) {
-                // !TODO: keyword error something ...
-                return true;
-            }
+            // !TODO: consider this being some kind of keyword error or something
+            return arg == param;
         } else {
             try {
                 param.parse(arg, device);
             } catch (error) {
                 if (error instanceof ProgramParameterError) {
-                    this.errors.push(error)
+                    this.error = error;
                 }
-                return true;
+                return false;
             }
-        }
 
-        return undefined;
+            return true;
+        }
     }
+
     parse(device: Device, args: string[]): ProgramParseResult<T> {
         let options: ProgramParameters[] = [];
 
         // create a stack of fail matrices, and when fail walk back until there is a good one
         // and then do some logic
 
-        let fail_matrices: (true | undefined)[][] = [
-            new Array(this.definition.length),
+        let fail_matrices: (boolean)[][] = [
+            new Array(this.definition.length).fill(false),
         ]
 
         let prev_fail_matrix = fail_matrices[0];
@@ -101,7 +101,7 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
                     fail_matrix[j] = true
                 }
 
-                fail_matrix[j] = this.parse_test(device, args[i], params[i]);
+                fail_matrix[j] = !this.test(device, params[i], args[i]);
             }
 
             // add a check everywher we fail if the issue is we got's to many params
@@ -152,7 +152,7 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
 
 
         // walk back fail matrixes until something is found, until a matrix with values is found
-        while (i > 1 && !fail_matrices[i - 1].includes(undefined)) { i--; }
+        while (i > 1 && !fail_matrices[i - 1].includes(false)) { i--; }
         fail_matrix = fail_matrices[i - 1]
 
         // there is this edge-case that I want to check
@@ -249,11 +249,10 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
                 let vals = [];
                 for (let j = i; j < args.length; j++) {
                     try {
-                        let v = param.parse(args[j], device);
-                        vals.push(v)
-                    } catch (error) {
-                        // !TODO: Consider returning an error, if failed to parse a value
-                    }
+                        vals.push(
+                            param.parse(args[j], device)
+                        )
+                    } catch (error) { /* !TODO: Consider returning an error, if failed to parse a value */ }
                 }
                 result[i] = vals;
                 break;

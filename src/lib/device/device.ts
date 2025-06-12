@@ -17,6 +17,7 @@ import { TCP_FLAGS, TCP_HEADER, TCP_OPTION_KINDS } from "../header/tcp";
 import { TCPConnection, TCPState, add_u32, tcp_connection_id, tcp_read_options, tcp_set_option } from "./internals/tcp";
 import { DeviceEvent, DeviceEventHandler, DeviceEventType } from "./internals/event";
 import { DeviceResource, DeviceResources } from "./internals/resources";
+import { ProgramParameterDefinition } from "./internals/program-parameters";
 
 // source <https://stackoverflow.com/a/63029283>
 export type DropFirst<T extends unknown[]> = T extends [any, ...infer U] ? U : never;
@@ -179,12 +180,13 @@ export type Program<DT = any> = {
     name: string;
     description?: string;
     content?: string;
-    // sub?: Program<unknown>[];
 
     init(proc: Process<DT>, args: string[], data?: Partial<DT>): ProcessSignal | Promise<ProcessSignal>;
 
     /** this is just extra complexity for no specific reason */
     sub?: Program[];
+    // TODO: make this a primary thing and remove sub
+    parameters?: ProgramParameterDefinition<any>
 
     __NODATA__?: true;
 }
