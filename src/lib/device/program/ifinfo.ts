@@ -14,21 +14,23 @@ function cidrNotate(addr?: BaseAddress, len?: number): string {
     return str;
 }
 
-const ifinfo_pdef = new ProgramParameterDefinition([
-    ppbind(["ifinfo", PPFactory.optional(PPFactory.multiple(PPFactory.create("IFID", PPFactory.parse_baseiface)))], "display interface configuration"),
-    ppbind(["ifinfo", "set4", PPFactory.create("IFID", PPFactory.parse_baseiface), PPFactory.ipv4("address"), PPFactory.create("mask", PPFactory.parse_amask_ip4)], "set ipv4 address"),
+const PPBaseInterface = PPFactory.create("IFID", PPFactory.parse_baseiface)
+
+const pdef = new ProgramParameterDefinition([
+    ppbind(["ifinfo", PPFactory.optional(PPFactory.multiple(PPBaseInterface))], "display interface configuration"),
+    ppbind(["ifinfo", "set4", PPBaseInterface, PPFactory.ipv4("address"), PPFactory.create("mask", PPFactory.parse_amask_ip4)], "set ipv4 address"),
 ])
 
 export const DEVICE_PROGRAM_IFINFO: Program = {
     name: "ifinfo",
-    content: ifinfo_pdef.content().map(([command, desc]) => `<${command}> -- ${desc}`).join("\n"),
-    parameters: ifinfo_pdef,
+    content: pdef.content().map(([command, desc]) => `<${command}> -- ${desc}`).join("\n"),
+    parameters: pdef,
     init(proc, sargs) {
         sargs[0] = "ifinfo"
-        let res = ifinfo_pdef.parse(proc.device, sargs);
+        let res = pdef.parse(proc.device, sargs);
 
         if (!res.success) {
-            ioprintln(proc.io, ifinfo_pdef.message(res));
+            ioprintln(proc.io, pdef.message(res));
             return ProcessSignal.ERROR;
         }
 
