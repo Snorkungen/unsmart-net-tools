@@ -95,9 +95,14 @@ export const DEVICE_PROGRAM_VLANINFO: Program = {
                         }
                     }
                 }
+            } 
+            
+            if (typeof rest == "string" && (!vids || iface.vlan.vids.length == 0)) {
+                ioprintln(proc.io, "interface must be configured with at least one vlan id");
+                return ProcessSignal.ERROR;
             }
 
-            if (iface.vlan.vids.length == 0) {
+            if (iface.vlan.vids.length == 0 && vids?.length) {
                 delete iface.vlan
                 ioprintln(proc.io, `${iface.id()}\tvlan removed`);
             } else {
