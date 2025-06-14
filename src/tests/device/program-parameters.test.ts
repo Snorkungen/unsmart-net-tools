@@ -10,10 +10,9 @@ describe("ProgramParameterDefinition", () => {
         ["bada", "cada"],
 
         ["issue1"],
-        ["issue1", "keyword"],
         ["issue1", "keyword", "2"],
         ["issue1", "keyword", "1"],
-        ["issue1", PPFactory.optional(PPFactory.keywords("optional", ["optional", "george"]))],
+        ["issue1", "keyword", PPFactory.optional(PPFactory.keyword("test"))],
 
         ["issue2"],
         ["issue2", "keyword", PPFactory.number("value"), "test"],
@@ -66,9 +65,8 @@ describe("ProgramParameterDefinition", () => {
             expect(res.idx).eq(2)
         }
 
-
         res = pdef.parse(device, ["test", "192.168.1.1", "1000"])
-        expect(res.success).be.true;
+        expect(res.success, res.problem).be.true;
 
         if (res.success) {
             let [name] = res.arguments;
@@ -95,7 +93,7 @@ describe("ProgramParameterDefinition", () => {
 
     test("echo #3", () => {
         let res = pdef.parse(device, ["echo", "d"])
-        expect(res.success).be.true;
+        expect(res.success, res.problem).be.true;
     })
 
     test("issue1 #4", () => {
@@ -110,7 +108,7 @@ describe("ProgramParameterDefinition", () => {
         expect(res.success).be.true;
 
         res = pdef.parse(device, ["issue1", "keyword"])
-        expect(res.success).be.true;
+        expect(res.success,res.problem).be.true;
 
         var res = pdef.parse(device, ["issue1", "foo", "bar", "aaaaaaaaa"])
         expect(res.success).be.false;

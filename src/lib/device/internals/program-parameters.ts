@@ -78,170 +78,92 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
     }
 
     parse(device: Device, args: string[]): ProgramParseResult<T> {
-        let options: ProgramParameters[] = [];
+        let fail_matrices: (boolean)[][] = []
 
-        // create a stack of fail matrices, and when fail walk back until there is a good one
-        // and then do some logic
-
-        let fail_matrices: (boolean)[][] = [
-            new Array(this.definition.length).fill(false),
-        ]
-
-        let prev_fail_matrix = fail_matrices[0];
-        let fail_matrix = fail_matrices[0];
+        let prev_fail_matrix = new Array(this.definition.length).fill(false);
+        let fail_matrix = prev_fail_matrix
 
         let i = 0;
         for (; i < args.length; i++) {
+            fail_matrices.push([...fail_matrix]);
+            fail_matrix = fail_matrices.at(-1)!
+
             for (let j = 0; j < this.definition.length; j++) {
                 let params = this.definition[j];
-                if (i == params.length || prev_fail_matrix[j]) {
-                    continue
-                }
-                if (i > params.length) {
-                    fail_matrix[j] = true
-                }
-
-                fail_matrix[j] = !this.test(device, params[i], args[i]);
-            }
-
-            // add a check everywher we fail if the issue is we got's to many params
-            let options_left = this.definition.length - fail_matrix.filter(Boolean).length;
-            if (options_left == 0) {
-                if (i == 0) {
-                    options = this.definition;
-                    break; // special case there is nothing to roll-back
-                }
-                // roll-back and look at previous problems
-                options = this.definition.filter((params, j) => !prev_fail_matrix[j] && params.length >= i);
-                if (options.length > 1) {
-                    break; // later logic resolves this problem
-                } else if (options.length == 1) {
-                    return {
-                        success: false,
-                        problem: "INVALID",
-                        idx: i,
-                        args: args,
-                        options: [options[0][i]],
-                    }
+                if (i >= params.length || prev_fail_matrix[j]) {
+                    fail_matrix[j] = true;
+                } else {
+                    fail_matrix[j] = !this.test(device, params[i], args[i]);
                 }
             }
 
             prev_fail_matrix = fail_matrices.at(-1)!;
-            if (i + 1 === args.length) {
-                continue;
-            }
-
-            fail_matrices.push([...fail_matrix]);
-            fail_matrix = fail_matrices.at(-1)!
         }
-
-        // if there are longer matches remove the shorter ones
-        let filter_shorter = false;
-        for (let j = 0; j < this.definition.length; j++) {
-            if (fail_matrix[j]) continue;
-            if (this.definition[j].length <= i) continue;
-            filter_shorter = true
-            break;
-        }
-        if (filter_shorter) {
-            for (let j = 0; j < this.definition.length; j++) {
-                if (fail_matrix[j] || this.definition[j].length >= i) continue;
-                fail_matrix[j] = true;
-            }
-        }
-
-
         // walk back fail matrixes until something is found, until a matrix with values is found
-        while (i > 1 && !fail_matrices[i - 1].includes(false)) { i--; }
-        fail_matrix = fail_matrices[i - 1]
-
-        // there is this edge-case that I want to check
-        // find the parameter thats left and check it's length 
-        if (i > 0) {
-            const k = fail_matrix.reduce((best, v, j) => (
-                v ? best : best > this.definition[j].length ? best : this.definition[j].length
-            ), -1);
-
-            if (k > 0 && k < i) {
-                let test_options = this.definition.filter((parameters, j) => {
-                    if (parameters.length <= k) return false;
-                    if (fail_matrices[k - 1][j]) return false;
-                    if (typeof parameters[k] != "string" && parameters[k].optional) return false;
-                    // set an uniqueness filter, and avoid copies
-                    let found = false;
-                    for (let l = j - 1; !found && l >= 0; l--) {
-                        if (fail_matrices[k - 1][l]) continue;
-                        found = this.definition[l][k] === parameters[k]
-                    }
-                    if (found) return false;
-
-                    return true
-                });
-
-                if (test_options.length === 1) {
-                    return {
-                        success: false,
-                        problem: "INVALID",
-                        idx: k,
-                        args: args,
-                        options: [test_options[0][i]],
-                    }
-                } else if (test_options.length > 1) {
-                    i = k;
-                    options = test_options;
-                }
-            }
-        }
-
-        if ((args.length > 0 && i === 0) || options.length > 1) {
-            let possible_values = new Array(options.length).fill(0).map((_, j) => options[j][i]);
-            return {
-                success: false,
-                problem: "UNKNOWN",
-                idx: i,
-                args: args,
-                options: possible_values,
-            }
-        }
-
-        options = this.definition.filter((_, j) => !fail_matrix[j])
+        while (i >= 1 && !fail_matrices[i - 1].includes(false)) { i--; };
+        let options = (i == 0 ? this.definition : this.definition.filter((_, j) => !fail_matrices[i - 1][j]))
             .sort((a, b) => a.length - b.length); // sort ascending
 
-        if (options.length == 0) {
-            throw new Error("unreachable");
+        // if there are longer matches remove the shorter ones
+        let max_param_len = options.reduce((best, opt) => best > opt.length ? best : opt.length, -1);
+        if (i < max_param_len && options.length > 1) {
+            options = options.filter((opt) => opt.length >= Math.min(args.length, (i + 2)))
         }
 
-        let params = options[0];
-        let last_param = params[args.length];
-        if (args.length < params.length && (typeof last_param == "string" || !last_param.optional)) {
-            if (options.length > 0) {
-                let possible_values = new Array(options.length).fill(0).map((_, j) => options[j][i]);
+        let shortest_parameters = options[0], next_param = shortest_parameters[i];
+        if ((i < args.length && i < shortest_parameters.length)) {
+            let k = i;
+            let unique_problem_options = Array.from(new Set(new Array(options.length).fill(0).map((_, j) => options[j][k])))
+            if (unique_problem_options.length > 1) {
+                return {
+                    success: false,
+                    problem: "UNKNOWN",
+                    idx: k,
+                    args: args,
+                    options: unique_problem_options
+                }
+            }
 
-                // check that the posible values are all the same
-                if (!possible_values.every((v) => v === possible_values[0])) {
-                    return {
-                        success: false,
-                        problem: "MISSING_UNKNOWN",
-                        idx: i,
-                        args: args,
-                        options: possible_values,
-                    }
+            return {
+                success: false,
+                problem: "INVALID",
+                idx: k,
+                args: args,
+                options: unique_problem_options
+            }
+        } 
+        
+        const find_optional_predicate = (params: ProgramParameters) => {
+            let param = params[i];
+            return typeof param != "string" && param.optional
+        }
+
+        if (args.length < shortest_parameters.length && !options.find(find_optional_predicate)) {
+            let k = args.length;
+            let unique_problem_options = Array.from(new Set(new Array(options.length).fill(0).map((_, j) => options[j][k])))
+            if (options.length > 1) {
+                return {
+                    success: false,
+                    problem: "MISSING_UNKNOWN",
+                    idx: k,
+                    args: args,
+                    options: unique_problem_options
                 }
             }
 
             return {
                 success: false,
                 problem: "MISSING",
-                idx: args.length,
+                idx: k,
                 args: args,
-                options: [params[args.length]],
+                options: unique_problem_options
             }
         }
 
         // successfully parse out arguements
         let result = args as any;
-        for (let i = 0; i < (Math.min(args.length, params.length)); i++) {
-            let param = params[i];
+        for (let i = 0; i < (Math.min(args.length, shortest_parameters.length)); i++) {
+            let param = shortest_parameters[i];
 
             if (typeof param == "string") {
                 result[i] = param;
