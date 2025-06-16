@@ -60,8 +60,8 @@ export function calculateMaskBufferLength<Address extends BaseAddress>(buffer: A
     return length;
 }
 
-export class AddressMask<Address extends typeof BaseAddress>  {
-    private address: Address;
+export class AddressMask<Address extends typeof BaseAddress> {
+    address: Address;
     buffer: Uint8Array;
 
     constructor(address: Address, input: number | ReturnType<typeof createMaskBuffer<Address>> | InstanceType<Address> | string) {

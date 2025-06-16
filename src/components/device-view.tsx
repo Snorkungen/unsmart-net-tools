@@ -95,7 +95,8 @@ export function DeviceViewComponent({ device, on_select }: DeviceViewComponentPr
         device_interface_update_event = device.event_create([
             "interface_add",
             "interface_remove",
-            "interface_set_address",
+            "interface_address_set",
+            "interface_address_remove",
             "interface_mcast_subscribe",
             "interface_mcast_unsubscribe",
             "interface_connect",

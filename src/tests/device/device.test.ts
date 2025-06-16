@@ -78,7 +78,7 @@ describe("Device route_resolve", () => {
     })
 })
 
-describe("Device interface_set_address", () => {
+describe("Device interface_address_set", () => {
     device.routes = [];
 
     test("reuse entry & set new entry", () => {

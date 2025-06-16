@@ -214,13 +214,7 @@ function handle_ack(proc: Process<DHCPC_Data>, contact: Contact<"IPv4", "RAW">, 
     // set gateways
     if (data.offer.gateways4) {
         for (let gateway of data.offer.gateways4) {
-            proc.device.routes.push({
-                destination: new IPV4Address("0.0.0.0"),
-                netmask: createMask(IPV4Address, 0),
-                gateway: gateway,
-                iface: data.iface,
-                f_gateway: true
-            })
+            proc.device.interface_route_set(data.iface, new IPV4Address("0.0.0.0"), createMask(IPV4Address, 0), gateway)
         }
     }
 

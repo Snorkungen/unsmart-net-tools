@@ -5,7 +5,10 @@ type DeviceEventMap = {
     "interface_add": [];
     "interface_remove": [];
 
-    "interface_set_address": [iface: BaseInterface];
+    "interface_address_set": [iface: BaseInterface];
+    "interface_address_remove": [iface: BaseInterface];
+    "interface_route_set": [iface: BaseInterface]
+    "interface_route_remove": [iface: BaseInterface]
     "interface_mcast_subscribe": [iface: BaseInterface];
     "interface_mcast_unsubscribe": [iface: BaseInterface];
     "interface_disconnect": [iface: BaseInterface];

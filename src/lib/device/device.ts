@@ -70,7 +70,6 @@ export type DeviceRoute<AddrType extends typeof BaseAddress = typeof BaseAddress
 
     /** this is statically set by a human */
     f_static?: true;
-    f_dynamic?: true;
     f_gateway?: true;
     f_host?: true;
 
@@ -1495,14 +1494,14 @@ export class Device {
             return { success: false, data: undefined, message: "address not found" };
         }
 
+        /* Remove address */
+        iface.addresses = iface.addresses.filter((_, i) => i != addridx);
+
+        this.event_dispatch("interface_address_remove", iface);
+
         const { netmask } = iface.addresses[addridx];
-        /* Remove route */ this.routes = this.routes.filter((rtentry) => rtentry.iface !== iface || !(
-            rtentry.destination.constructor === address.constructor &&
-            !rtentry.f_static &&
-            !(!rtentry.f_gateway && rtentry.netmask.length < netmask.length) && // routes netmask cannot be looser than the new netmask
-            netmask.compare(address, rtentry.f_gateway ? rtentry.gateway : rtentry.destination)  // check that thing is in the same "network" as the new route
-        ))
-        /* Remove address */ iface.addresses = iface.addresses.filter((_, i) => i != addridx);
+        let empty_gateway = new BaseAddress(new Uint8Array(address.buffer.length));
+        this.interface_route_remove(iface, address, netmask, empty_gateway, false)
 
         return { success: true, data: undefined };
     }
@@ -1551,25 +1550,69 @@ export class Device {
             throw new Error("could not add route addressType not recognised")
         }
 
-        // 5th: check if a route for the network exists, if not add a new route
-        if (!this.routes.find(value => value.iface === iface &&
-            uint8_equals(value.destination.buffer, rt_destination.buffer) &&
-            uint8_equals(value.gateway.buffer, rt_gateway.buffer) &&
-            uint8_equals(value.netmask.buffer, netmask.buffer) &&
-            !value.f_dynamic && !value.f_gateway && !value.f_host)) {
-            this.routes.push({
-                destination: rt_destination,
-                gateway: rt_gateway,
-                netmask: netmask,
-                iface: iface
-            })
-        }
+        this.event_dispatch("interface_address_set", iface);
 
-        this.event_dispatch("interface_set_address", iface);
+        // 5th: check if a route for the network exists, if not add a new route
+        this.interface_route_set(iface, rt_destination as InstanceType<AT>, netmask, rt_gateway as InstanceType<AT>);
+
         return {
             success: true,
             data: undefined
         }
+    }
+
+    interface_route_set<AT extends typeof BaseAddress>(iface: BaseInterface, destination: InstanceType<AT>, netmask: AddressMask<AT>, gateway: InstanceType<AT>, flags: Partial<DeviceRoute> = {}): DeviceResult {
+        let i = this.routes.findIndex((route) => (
+            route.iface === iface &&
+            uint8_equals(route.destination.buffer, destination.buffer) &&
+            uint8_equals(route.netmask.buffer, netmask.buffer) &&
+            uint8_equals(route.gateway.buffer, gateway.buffer)
+        ));
+
+        if (i < 0) {
+            this.routes.push({
+                iface: iface,
+                destination: destination,
+                netmask: netmask,
+                gateway: gateway,
+
+                f_gateway: !address_is_unset(gateway) || undefined,
+                f_host: (netmask.length == netmask.address.ADDRESS_LENGTH) || undefined,
+                f_static: flags.f_static,
+            });
+        } else if (flags.f_static && !this.routes[i].f_static) {
+            this.routes[i].f_static = flags.f_static;
+        } else {
+            return { success: false, data: undefined };
+        }
+
+        this.event_dispatch("interface_route_set", iface);
+
+        return { success: true, data: undefined };
+    }
+
+    interface_route_remove<AT extends typeof BaseAddress>(iface: BaseInterface, destination: InstanceType<AT>, netmask?: AddressMask<AT>, gateway?: InstanceType<AT>, remove_static?: boolean): DeviceResult {
+        let routes = this.routes.filter((route) => (route.iface == iface &&
+            uint8_equals(route.destination.buffer, destination.buffer) &&
+            (!netmask || uint8_equals(route.netmask.buffer, netmask.buffer)) &&
+            (!gateway || uint8_equals(route.gateway.buffer, gateway.buffer))
+        ));
+
+        if (routes.length == 0) {
+            return { success: false, error: undefined, message: "no route found" };
+        } else if (routes.length > 1) {
+            return { success: false, error: undefined, message: "multiple routes found, specify" };
+        }
+
+        if (!remove_static && routes[0].f_static) {
+            return { success: false, error: undefined, message: "could not remove a static route" };
+        }
+
+        this.routes = this.routes.filter((route) => route != routes[0]);
+
+        this.event_dispatch("interface_route_remove", iface);
+
+        return { success: true, data: undefined }
     }
 
     interface_mcast_subscribe(iface: BaseInterface, address: BaseAddress): DeviceResult {

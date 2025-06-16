@@ -71,16 +71,8 @@ r1.interface_address_set(r1_iface_vlan10, new IPV4Address("10.10.0.1"), createMa
 let r1_iface_vlan20 = r1.interface_add(new VlanInterface(r1, 20));
 r1.interface_address_set(r1_iface_vlan20, new IPV4Address("10.20.0.1"), createMask(IPV4Address, 16));
 
-
 function push_default_gateway(device: Device, iface: BaseInterface, gateway: IPV4Address) {
-
-    device.routes.push({
-        destination: new IPV4Address("0.0.0.0"),
-        netmask: createMask(IPV4Address, 0),
-        gateway: gateway,
-        f_gateway: true,
-        iface,
-    })
+    device.interface_route_set(iface, new IPV4Address("0.0.0.0"), createMask(IPV4Address, 0), gateway);
 }
 
 let server_pc = new Device(); server_pc.name = "SRV 10";

@@ -115,15 +115,15 @@ pc1.interface_address_set(iface_pc1, new IPV4Address("192.168.1.10"), createMask
 pc2.interface_address_set(iface_pc2, new IPV4Address("192.168.1.20"), createMask(IPV4Address, 24))
 
 // add default routes
-pc1.routes.push({ destination: new IPV4Address("0.0.0.0"), netmask: createMask(IPV4Address, 0), gateway: new IPV4Address("192.168.1.1"), iface: iface_pc1, f_gateway: true })
-pc2.routes.push({ destination: new IPV4Address("0.0.0.0"), netmask: createMask(IPV4Address, 0), gateway: new IPV4Address("192.168.1.1"), iface: iface_pc2, f_gateway: true })
+pc1.interface_route_set(iface_pc1, new IPV4Address("0.0.0.0"), createMask(IPV4Address, 0), new IPV4Address("192.168.1.1"))
+pc2.interface_route_set(iface_pc2, new IPV4Address("0.0.0.0"), createMask(IPV4Address, 0), new IPV4Address("192.168.1.1"))
 
 pc4.interface_address_set(iface_pc4, new IPV4Address("172.16.0.40"), createMask(IPV4Address, 24))
 pc5.interface_address_set(iface_pc5, new IPV4Address("172.16.0.50"), createMask(IPV4Address, 24))
 
 // add default routes
-pc4.routes.push({ destination: new IPV4Address("0.0.0.0"), netmask: createMask(IPV4Address, 0), gateway: new IPV4Address("172.16.0.1"), iface: iface_pc4, f_gateway: true })
-pc5.routes.push({ destination: new IPV4Address("0.0.0.0"), netmask: createMask(IPV4Address, 0), gateway: new IPV4Address("172.16.0.1"), iface: iface_pc5, f_gateway: true })
+pc4.interface_route_set(iface_pc4, new IPV4Address("0.0.0.0"), createMask(IPV4Address, 0), new IPV4Address("172.16.0.1"))
+pc5.interface_route_set(iface_pc5, new IPV4Address("0.0.0.0"), createMask(IPV4Address, 0), new IPV4Address("172.16.0.1"))
 
 swIface_pc1.connect(iface_pc1);
 swIface_pc2.connect(iface_pc2);
