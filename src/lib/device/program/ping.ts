@@ -305,7 +305,7 @@ const pdef = new ProgramParameterDefinition([
 ])
 
 const DEFAULT_MAX_SENDCOUNT = 10;
-export const DEVICE_PROGRAM_PING: Program = {
+export const DEVICE_PROGRAM_PING: Program<PingData> = {
     name: "ping",
     description: "Sends icmp echo requests to target",
     parameters: pdef,
@@ -327,7 +327,7 @@ export const DEVICE_PROGRAM_PING: Program = {
 
         const on_error: HeadlessPingReceiveErrorHandler = (e) => {
             if (e === "DESTINATION_UNREACHABLE") {
-                proc.data.contact.close(proc.data.contact);
+                proc.data.contact.close();
                 proc.io.write(MSG_DST_UNREACH)
                 proc.close(ProcessSignal.ERROR);
             }
@@ -353,7 +353,7 @@ export const DEVICE_PROGRAM_PING: Program = {
             return ProcessSignal.EXIT;
         }
 
-        (<Process<PingData>>proc).data = {
+        proc.data = {
             contact: contact,
             identifier: identifier,
             sequence: 0,
