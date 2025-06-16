@@ -303,9 +303,9 @@ export function network_map_remove_device_shape(state: NMState, dev: Device) {
     if (!shape) return;
 
     // close the monitor program
-    let proc = dev.processes.find(p => p?.id.startsWith(DAEMON_NETWORK_MAP_DEVICE_MONITOR.name));
+    let proc = dev.processes.items.find(p => p?.id.startsWith(DAEMON_NETWORK_MAP_DEVICE_MONITOR.name));
     if (proc) {
-        proc.close(proc, ProcessSignal.EXIT);
+        proc.close(ProcessSignal.EXIT);
     }
 
     // remove all interfaces 
