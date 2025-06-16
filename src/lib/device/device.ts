@@ -175,7 +175,7 @@ export interface Contact<AF extends ContactAF = ContactAF, Proto extends Contact
     on_error(on_error_handler: (contact: Contact, error: DeviceResult<ContactError>) => void): void
 }
 
-export type Program<DT = any> = {
+export type Program<DT = unknown> = {
     name: string;
     init(proc: Process<DT>, args: string[], data?: Partial<DT>): ProcessSignal | Promise<ProcessSignal>;
 
@@ -322,13 +322,14 @@ export class Device {
 
     /* store key-value information about something ... */
     /** NOTE: store should only store simple types as Objects, Arrays, Numbers, Strings */
-    private store_data: Record<string, Record<string, unknown>> = {};
-    store_get<T extends Record<string, unknown>>(key: string): T | null {
+    private store_data: Record<string, unknown> = {};
+    store_get<T extends unknown>(key: string): T | null {
         return (this.store_data[key] as T) ?? null;
     }
-    store_set(key: string, data: Record<string, unknown>) {
+    store_set<T extends unknown>(key: string, data: T) : T{
         this.store_data[key] = data;
         this.event_dispatch("store_set", key);
+        return data;
     }
     store_delete(key: string) {
         delete this.store_data[key];

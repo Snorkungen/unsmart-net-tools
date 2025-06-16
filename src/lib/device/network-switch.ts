@@ -7,7 +7,6 @@ import { MACAddress } from "../address/mac";
 import { uint8_equals } from "../binary/uint8-array";
 import { deinitialize, initialization, received_config_bpdu, received_tcn_bpdu, STP_DESTINATION } from "./internals/stp";
 import { BPDU_C_HEADER, BPDU_TCN_HEADER } from "../header/bpdu";
-import { DeviceResources } from "./internals/resources";
 
 export enum NetworkSwitchPortState {
     DISABLED = 0,
@@ -26,33 +25,50 @@ export type NetworkSwitchPort = {
     state: NetworkSwitchPortState;
 };
 
-/** KEY for switch store data  */
-export const NETWORK_SWITCH_STORE_KEY = "network_switch_data";
-export type NetworkSwitchData = {
+export const NETWORK_SWITCH_MACADDRESSES_STORE_KEY = "network_switch:macaddresses";
+export type NetworkSwitchMACAddresses = { destination: MACAddress, outgoing_port: number }[];
 
-    /* macaddresses allow for actually time and stuff if that were to be actually saved */
-    macaddresses: { destination: BaseAddress, outgoing_port: number }[];
+export const NETWORK_SWITCH_PORTS_STORE_KEY = "network_switch:ports";
+export type NetworkSwitchPorts = { [port_no: number]: NetworkSwitchPort };
 
-    /** access port by port_id */
-    ports: { [x: number]: NetworkSwitchPort };
+function get_macaddress(device: Device): NetworkSwitchMACAddresses {
+    const macaddresses = device.store_get<NetworkSwitchMACAddresses>(NETWORK_SWITCH_MACADDRESSES_STORE_KEY)
+    if (!macaddresses) {
+        throw new Error(device.name + " NetworkSwitch macadresses undefined");
+    }
+    return macaddresses;
+}
 
-    resources: DeviceResources
-};
+function set_macaddress(device: Device, macaddresses: NetworkSwitchMACAddresses): NetworkSwitchMACAddresses {
+    return device.store_set<NetworkSwitchMACAddresses>(NETWORK_SWITCH_MACADDRESSES_STORE_KEY, macaddresses)
+}
+
+function get_ports<T = NetworkSwitchPorts>(device: Device): T {
+    const ports = device.store_get<T>(NETWORK_SWITCH_PORTS_STORE_KEY)
+    if (!ports) {
+        throw new Error(device.name + " NetworkSwitch ports undefined");
+    }
+    return ports;
+}
+
+function set_ports<T = NetworkSwitchPorts>(device: Device, ports: T): T {
+    return device.store_set(NETWORK_SWITCH_PORTS_STORE_KEY, ports);
+}
+
+export {
+    get_macaddress as network_switch_get_macadresses,
+    set_macaddress as network_switch_set_macaddresses,
+    get_ports as network_switch_get_ports,
+    set_ports as network_switch_set_ports,
+}
 
 export class NetworkSwitch extends Device {
     /** a reference to device store */
-    private data: NetworkSwitchData;
-
     constructor() {
         super();
 
-        this.store_set(NETWORK_SWITCH_STORE_KEY,
-            this.data = {
-                macaddresses: [],
-                ports: [],
-                resources: this.resources
-            }
-        );
+        set_macaddress(this, []);
+        set_ports(this, []);
 
         // start bridging daemon
         this.process_start(NETWORK_SWITCH_BRIDGING_DAEMON);
@@ -84,15 +100,15 @@ export class NetworkSwitch extends Device {
             return { success: false, message: "unsupported interface type", error: undefined };
         }
 
-        // create port id
+        const ports = get_ports(this);
         const port_no = this.interfaces.length;
-        this.data.ports[port_no] = {
+        ports[port_no] = {
             iface: iface,
             port_no: port_no,
 
             state: NetworkSwitchPortState.FORWARDING, // stp does not exist for now
         }
-
+        set_ports(this, ports);
 
         // setup ethernet interface stuff 
         if (iface instanceof EthernetInterface) {
@@ -103,10 +119,13 @@ export class NetworkSwitch extends Device {
     }
 
     port_set_state(port_no: number, state: NetworkSwitchPortState) {
-        this.data.ports[port_no].state = state;
+        const ports = get_ports(this);
+        ports[port_no].state = state;
+        set_ports(this, ports);
     }
     port_iface_set_state(iface: BaseInterface, state: NetworkSwitchPortState) {
-        let port = Object.values(this.data.ports).find(({ iface: _iface }) => _iface === iface);
+        const ports = get_ports(this);
+        let port = Object.values(ports).find(({ iface: _iface }) => _iface === iface);
         !!port && this.port_set_state(port?.port_no, state);
     }
 }
@@ -116,13 +135,11 @@ const NETWORK_SWITCH_BRIDGING_DAEMON: Program = {
     __NODATA__: true,
 
     init(proc) {
-        let data = proc.device.store_get(NETWORK_SWITCH_STORE_KEY) as NetworkSwitchData;
-        if (!data) {
-            return ProcessSignal.ERROR;
-        }
+        const ports = get_ports(proc.device);
+        let macaddresses = get_macaddress(proc.device);
 
         function forward(port_no: number, etherheader: typeof ETHERNET_HEADER) {
-            let port = data.ports[port_no];
+            let port = ports[port_no];
 
             if (port.state != NetworkSwitchPortState.FORWARDING) {
                 return; // do not forward
@@ -135,19 +152,21 @@ const NETWORK_SWITCH_BRIDGING_DAEMON: Program = {
         }
 
         function flood(port_no: number, etherheader: typeof ETHERNET_HEADER) {
-            for (let port of Object.values(data.ports)) {
-                if (port.port_no == port_no) continue;
-
-                forward(port.port_no, etherheader);
+            for (let port of Object.values(ports)) {
+                if (port.port_no != port_no) {
+                    forward(port.port_no, etherheader);
+                };
             }
         }
 
         // remove entries from mac address table
         function iface_disconnect_handler(iface: BaseInterface) {
             if (!(iface instanceof EthernetInterface)) return;
-            let port = Object.values(data.ports).find(p => p.iface == iface);
-            if (!port) return;
-            data.macaddresses = data.macaddresses.filter(v => v.outgoing_port != port.port_no);
+            let port = Object.values(ports).find(p => p.iface == iface);
+            if (!port || !macaddresses) return;
+
+            macaddresses = proc.device.store_set(NETWORK_SWITCH_MACADDRESSES_STORE_KEY,
+                macaddresses.filter(v => v.outgoing_port != port.port_no));
         }
 
         proc.resources.create(proc.device.event_create("interface_disconnect", iface_disconnect_handler))
@@ -155,8 +174,8 @@ const NETWORK_SWITCH_BRIDGING_DAEMON: Program = {
         // setup a contact to listen to all incoming requests
         const contact = proc.resources.create(proc.device.contact_create("RAW", "RAW").data!);
         contact.receive((_, ndata) => {
-            let port = Object.values(data.ports).find(({ iface }) => iface === ndata.rcvif);
-            if (!port) return; // this check also handles the type of the rcvif
+            let port = Object.values(ports).find(({ iface }) => iface === ndata.rcvif);
+            if (!port || !macaddresses) return; // this check also handles the type of the rcvif
 
             let etherheader = ETHERNET_HEADER.from(ndata.buffer);
 
@@ -183,25 +202,27 @@ const NETWORK_SWITCH_BRIDGING_DAEMON: Program = {
                 return; // drop received frame
             }
 
-            let smac_macaddress_entry_idx = data.macaddresses.findIndex(({ destination }) => uint8_equals(destination.buffer, etherheader.get("smac").buffer));
+            let smac_macaddress_entry_idx = macaddresses.findIndex(({ destination }) => uint8_equals(destination.buffer, etherheader.get("smac").buffer));
 
             if (smac_macaddress_entry_idx >= 0) {
-                if (data.macaddresses[smac_macaddress_entry_idx].outgoing_port !== port.port_no) {
-                    console.warn("network-switch-bridging daemon out going port changed for destination: " + data.macaddresses[smac_macaddress_entry_idx].destination.toString());
-                    data.macaddresses[smac_macaddress_entry_idx].outgoing_port = port.port_no;
+                if (macaddresses[smac_macaddress_entry_idx].outgoing_port !== port.port_no) {
+                    console.warn("network-switch-bridging daemon out going port changed for destination: " + macaddresses[smac_macaddress_entry_idx].destination.toString());
+                    macaddresses[smac_macaddress_entry_idx].outgoing_port = port.port_no;
+                    set_macaddress(proc.device, macaddresses);
                 }
             } else {
-                data.macaddresses.push({
+                macaddresses.push({
                     destination: etherheader.get("smac"),
                     outgoing_port: port.port_no
                 });
+                set_macaddress(proc.device, macaddresses)
             }
 
             if (port.state != NetworkSwitchPortState.FORWARDING) {
                 return; // do not forward
             }
 
-            let macentry = data.macaddresses.find(({ destination }) => uint8_equals(destination.buffer, etherheader.get("dmac").buffer));
+            let macentry = macaddresses.find(({ destination }) => uint8_equals(destination.buffer, etherheader.get("dmac").buffer));
             if (macentry) {
                 forward(macentry.outgoing_port, etherheader);
             } else {
@@ -210,30 +231,29 @@ const NETWORK_SWITCH_BRIDGING_DAEMON: Program = {
         }, { promiscuous: true });
 
         return ProcessSignal.__EXPLICIT__;
-    },
+    }
 }
 
-export const NETWORK_SWITCH_STP_DAEMON: Program = {
+export const NETWORK_SWITCH_STP_DAEMON: Program<ReturnType<typeof initialization>> = {
     name: "network_switch_stp_daemon",
     __NODATA__: true,
 
     init(proc) {
+        let ports = get_ports(proc.device);
+
         const device = proc.device;
-        const bdata = device.store_get(NETWORK_SWITCH_STORE_KEY) as NetworkSwitchData;
-        // start listening for messages
-        if (!bdata || !(device instanceof NetworkSwitch)) return ProcessSignal.ERROR;
 
         // enumerate ports and subscribe to the mcast address
-        for (let port of Object.values(bdata.ports)) {
+        for (let port of Object.values(ports)) {
             device.interface_mcast_subscribe(port.iface, STP_DESTINATION);
         }
 
         let initialized = false;
         const contact = proc.resources.create(proc.device.contact_create("RAW", "RAW").data!);
         contact.receive((_, data) => {
-            if (!initialized) return;
+            if (!initialized || !data.rcvif) return;
 
-            let port = Object.values(bdata.ports).find(({ iface }) => iface == data.rcvif)
+            let port = Object.values(ports).find(({ iface }) => iface == data.rcvif)
             if (!port || port.iface.header != ETHERNET_HEADER) {
                 return; // not a port
             }
@@ -248,18 +268,22 @@ export const NETWORK_SWITCH_STP_DAEMON: Program = {
             if (payload.length < BPDU_TCN_HEADER.getMinSize()) return;
             let tcn = BPDU_TCN_HEADER.from(payload);
             if (tcn.get("type") == 128) {
-                received_tcn_bpdu(bdata as any /* trust */, port as any /* trust */, tcn)
+                received_tcn_bpdu(proc.data, port, tcn)
             } else if (payload.length >= BPDU_C_HEADER.getMinSize()) {
                 let config = BPDU_C_HEADER.from(payload);
-                received_config_bpdu(bdata as any /* trust */, port as any /* trust */, config);
+                received_config_bpdu(proc.data, port, config);
             }
-        }, { promiscuous: true });
+            
+            set_ports(proc.device, ports)
+        });
 
-        initialization(device);
+        proc.data = initialization(proc, ports);
         initialized = true;
+        set_ports(proc.device, ports)
 
         proc.handle(() => {
-            deinitialize(device);
+            deinitialize(proc);
+            set_ports(proc.device, ports)
             initialized = false;
             contact.close();
         })

@@ -2,7 +2,7 @@ import { IPV4Address } from "../../address/ipv4";
 import { IPV6Address } from "../../address/ipv6";
 import { Program, ProcessSignal, Process, Device, _UNSET_ADDRESS_IPV4 } from "../device";
 import { PPFactory, ProgramParameter, ProgramParameterDefinition } from "../internals/program-parameters";
-import { NETWORK_SWITCH_STORE_KEY, NetworkSwitchData } from "../network-switch";
+import { network_switch_get_macadresses, network_switch_get_ports, NetworkSwitch } from "../network-switch";
 import { formatTable, ioprintln } from "./helpers";
 
 function custom_destination4_parser(this: ProgramParameter<IPV4Address>, val: string, dev: Device): IPV4Address {
@@ -33,16 +33,16 @@ function routeinfo_arp(proc: Process, pdres: ReturnType<(typeof pdef)["parse"]>)
 
     proc.io.write(formatTable(table))
 
-    if (!proc.device.store_get(NETWORK_SWITCH_STORE_KEY)) {
+    if (!(proc.device instanceof NetworkSwitch)) {
         return ProcessSignal.EXIT;
     }
 
-    // Print information about mac address table;
-    let data = proc.device.store_get(NETWORK_SWITCH_STORE_KEY) as NetworkSwitchData;
+    const ports = network_switch_get_ports(proc.data);
+    const macaddresses = network_switch_get_macadresses(proc.data);
 
     table = [["Destination", "Iface"]]; // reset table
-    for (let { destination, outgoing_port } of data.macaddresses) {
-        table.push([destination.toString(), data.ports[outgoing_port].iface.id()])
+    for (let { destination, outgoing_port } of macaddresses) {
+        table.push([destination.toString(), ports[outgoing_port].iface.id()])
     }
 
     ioprintln(proc.io, "");

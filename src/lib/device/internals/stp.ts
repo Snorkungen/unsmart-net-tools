@@ -9,9 +9,10 @@ import { BaseAddress } from "../../address/base";
 import { MACAddress } from "../../address/mac";
 import { BPDU_C_HEADER, BPDU_TCN_HEADER } from "../../header/bpdu";
 import { ETHERNET_HEADER } from "../../header/ethernet";
+import { Process } from "../device";
 import { EthernetInterface } from "../interface";
-import { type NetworkSwitchPort, type NetworkSwitchData, NETWORK_SWITCH_STORE_KEY, NetworkSwitch, NetworkSwitchPortState } from "../network-switch";
-import { DeviceResource } from "./resources";
+import { type NetworkSwitchPort, NetworkSwitchPortState, NetworkSwitchPorts } from "../network-switch";
+import { DeviceResource, DeviceResources } from "./resources";
 
 
 // unexported constants
@@ -45,7 +46,10 @@ type NetworkSwitchPortSTP = NetworkSwitchPort & {
     change_detection_enabled: boolean;
 };
 
-type NetworkSwitchDataSTP = NetworkSwitchData & {
+type NetworkSwitchDataSTP = {
+    ports: NetworkSwitchPorts;
+    resources: DeviceResources;
+
     designated_root: bigint;
     root_path_cost: number;
     root_port: number;
@@ -316,7 +320,11 @@ function record_config_timeout_values(bdata: NetworkSwitchDataSTP, config: typeo
     bdata.topology_change = !!(config.get("flags") & BPDU_FLAG_TOPOLOGY_CHANGE)
 }
 
-export function received_tcn_bpdu(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPortSTP, tcn: typeof BPDU_TCN_HEADER) {
+export function received_tcn_bpdu(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPort, tcn: typeof BPDU_TCN_HEADER) {
+    if (!validate_port(port)) {
+        return;
+    }
+
     if (port.state != NetworkSwitchPortState.DISABLED) {
         if (designated_port(bdata, port)) {
             topology_change_detection(bdata);
@@ -325,7 +333,11 @@ export function received_tcn_bpdu(bdata: NetworkSwitchDataSTP, port: NetworkSwit
     }
 }
 
-export function received_config_bpdu(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPortSTP, config: typeof BPDU_C_HEADER) {
+export function received_config_bpdu(bdata: NetworkSwitchDataSTP, port: NetworkSwitchPort, config: typeof BPDU_C_HEADER) {
+    if (!validate_port(port)) {
+        return;
+    }
+
     let root = root_bridge(bdata);
 
     if (port.state != NetworkSwitchPortState.DISABLED) {
@@ -359,47 +371,47 @@ export function received_config_bpdu(bdata: NetworkSwitchDataSTP, port: NetworkS
     }
 }
 
-export function initialization(device: NetworkSwitch) {
-    const bdata = device.store_get(NETWORK_SWITCH_STORE_KEY) as NetworkSwitchDataSTP;
-    if (!bdata) throw "something went wrong";
-
+export function initialization(proc: Process, ports: NetworkSwitchPorts) {
     let macaddress = undefined;
-    for (let i in bdata.ports) if (bdata.ports[i].iface instanceof EthernetInterface) {
-        macaddress = bdata.ports[i].iface.macAddress;
+    for (let i in ports) if (ports[i].iface instanceof EthernetInterface) {
+        macaddress = ports[i].iface.macAddress;
         break;
     }
 
     if (!macaddress) throw "something went wrong 2";
 
+    const bridge_id = create_bridge_identifier(macaddress, DEFAULT_PRIORITY);
+    const bridge_forward_delay = DEFAULT_FORWARD_DELAY, bridge_hello_time = DEFAULT_HELLO_TIME, bridge_max_age = DEFAULT_MAX_AGE;
 
-    { // Setup the default stp bridge data values
-        bdata.bridge_id = create_bridge_identifier(macaddress, DEFAULT_PRIORITY);
+    const bdata: NetworkSwitchDataSTP = {
+        ports: ports,
+        resources: proc.resources,
 
-        bdata.designated_root = bdata.bridge_id;
-        bdata.root_path_cost = 0;
-        bdata.root_port = 0;
+        bridge_id: bridge_id,
 
-        bdata.bridge_forward_delay = DEFAULT_FORWARD_DELAY;
-        bdata.bridge_hello_time = DEFAULT_HELLO_TIME;
-        bdata.bridge_max_age = DEFAULT_MAX_AGE;
+        designated_root: bridge_id,
+        root_path_cost: 0,
+        root_port: 0,
 
-        bdata.max_age = bdata.bridge_max_age;
-        bdata.hello_time = bdata.bridge_hello_time;
-        bdata.forward_delay = bdata.bridge_forward_delay;
+        bridge_forward_delay: bridge_forward_delay,
+        forward_delay: bridge_forward_delay,
+        bridge_hello_time: bridge_hello_time,
+        hello_time: bridge_hello_time,
+        bridge_max_age: bridge_max_age,
+        max_age: bridge_max_age,
 
-        bdata.topology_change = false;
-        bdata.topology_change_detected = false;
+        topology_change: false,
+        topology_change_detected: false,
 
-        bdata.topology_change_time = 0;
-        bdata.hold_time = 0;
+        topology_change_time: 0,
+        hold_time: 0,
 
 
-        bdata.timer_ref_hello = undefined;
-        bdata.timer_ref_tcn = undefined;
-        bdata.timer_ref_topology_change = undefined;
-
-        bdata.timer_ref_message_age = Object.keys(bdata.ports).reduce<any>((o, k) => { o[parseInt(k)] = undefined; return o }, {})
-        bdata.timer_ref_forward_delay = Object.keys(bdata.ports).reduce<any>((o, k) => { o[parseInt(k)] = undefined; return o }, {})
+        timer_ref_hello: undefined,
+        timer_ref_tcn: undefined,
+        timer_ref_topology_change: undefined,
+        timer_ref_message_age: Object.keys(ports).reduce<any>((o, k) => { o[parseInt(k)] = undefined; return o }, {}),
+        timer_ref_forward_delay: Object.keys(ports).reduce<any>((o, k) => { o[parseInt(k)] = undefined; return o }, {}),
     }
 
     stop_tcn_timer(bdata);
@@ -413,11 +425,12 @@ export function initialization(device: NetworkSwitch) {
     port_state_selection(bdata);
     config_bpdu_generation(bdata);
     start_hello_timer(bdata);
+
+    return bdata;
 }
 
-export function deinitialize(device: NetworkSwitch) {
-    const bdata = device.store_get(NETWORK_SWITCH_STORE_KEY) as NetworkSwitchDataSTP;
-    if (!bdata) throw "something went wrong";
+export function deinitialize(proc: Process<NetworkSwitchDataSTP>) {
+    const bdata = proc.data;
 
     stop_hello_timer(bdata);
     stop_tcn_timer(bdata);
