@@ -1026,9 +1026,9 @@ export class Device {
         if (data.broadcast || dmac.isBroadcast()) {
             data.broadcast = true; data.destination = true;
         } else if (data.multicast || dmac.isMulticast()) {
-            // !TODO: some generic way of checking for multicast subscriptions
             data.multicast = true;
-            data.destination = this.interfaces_mcast_subscriptions[data.rcvif.id()].some((addr) => (dmac.constructor == addr.constructor) && uint8_equals(addr.buffer, dmac.buffer));
+            data.destination = this.interfaces_mcast_subscriptions[data.rcvif.id()]
+                .some((addr) => (dmac.constructor == addr.constructor) && uint8_equals(addr.buffer, dmac.buffer));
         } else if (dmac.isUnicast()) {
             data.destination = data.rcvif_hwaddress && uint8_equals(data.rcvif_hwaddress?.buffer, dmac.buffer);
         }
@@ -1505,9 +1505,8 @@ export class Device {
 
         return { success: true, data: undefined };
     }
-    interface_address_set<AT extends typeof BaseAddress>(iface: BaseInterface, address: InstanceType<AT>, netmask: AddressMask<AT>): DeviceResult { // !TODO: result could include the created route or address entry on iface idk
+    interface_address_set<AT extends typeof BaseAddress>(iface: BaseInterface, address: InstanceType<AT>, netmask: AddressMask<AT>): DeviceResult {
         // this functions maintains the information about the routes for the network that is just now configured
-
         // the thing is a interface could support having multiple addresses of the same type, but for simplicity, only one address is supported for now
 
         // 1st: check if iface already has a address set

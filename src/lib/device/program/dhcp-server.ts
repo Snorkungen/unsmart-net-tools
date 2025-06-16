@@ -157,7 +157,6 @@ function send_dhcp4(proc: Process<typeof DAEMON_DHCP_SERVER>, contact: Contact<"
 
 function createIPv4Address(config: DHCPServerConfig, probes_enabled: boolean = false): IPV4Address | undefined {
     if (!config.address_range4 || !config.netmask4) return undefined;
-    // !TODO: does the config setting function check that the range start makes sense
     let [start, end] = config.address_range4;
     let address = new IPV4Address(start);
 

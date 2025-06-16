@@ -169,13 +169,6 @@ function dhcpsman_mconf(proc: Process, pdres: ReturnType<(typeof pdef)["parse"]>
         [3]: {
             description: "clients exist",
             async cb(proc) {
-                // !TODO: list clients
-                /*
-                    i.e. a new menu
-                    (n) (formatted clid) (client ip conf) (state)
-                    (1) fa-ff-0f-00-00-86 10.20.0.20/24 BOUND
-                */
-
                 let clients = Object.entries(config.clients).filter(v => v[1]) as [string, DHCPServerClient][];
                 let id_start = 200;
 
@@ -258,7 +251,7 @@ function dhcpsman_mconf(proc: Process, pdres: ReturnType<(typeof pdef)["parse"]>
 
                 for (let [clid, client] of clients) {
                     fields[id_start] = {
-                        description: `modify: ${clid} - ${client.address4}/${client.netmask4!.length}`,
+                        description: `modify: ${clid} - ${client.address4}/${client.netmask4!.length} ${client.state == DHCPServerClientState.BOUND ? "BOUND" : ""}`,
                         cb: bind_cb(id_start, clid, client),
                     }
                     id_start++;
@@ -367,7 +360,7 @@ export const DEVICE_PROGRAM_DHCP_SERVER_MAN: Program = {
 
         if (pdres.arguments[1] == "conf") {
             return dhcpsman_conf(proc, pdres);
-        } else if(pdres.arguments[1] == "mconf") {
+        } else if (pdres.arguments[1] == "mconf") {
             return dhcpsman_mconf(proc, pdres);
         }
 
