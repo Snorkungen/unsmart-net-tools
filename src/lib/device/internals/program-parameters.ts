@@ -78,30 +78,30 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
     }
 
     parse(device: Device, args: string[]): ProgramParseResult<T> {
-        let fail_matrices: (boolean)[][] = []
-
-        let prev_fail_matrix = new Array(this.definition.length).fill(false);
-        let fail_matrix = prev_fail_matrix
+        const passed = new Array<number>(this.definition.length).fill(0);
+        let matches = 0;
 
         let i = 0;
         for (; i < args.length; i++) {
-            fail_matrices.push([...fail_matrix]);
-            fail_matrix = fail_matrices.at(-1)!
+            matches = 0;
 
             for (let j = 0; j < this.definition.length; j++) {
                 let params = this.definition[j];
-                if (i >= params.length || prev_fail_matrix[j]) {
-                    fail_matrix[j] = true;
-                } else {
-                    fail_matrix[j] = !this.test(device, params[i], args[i]);
+
+                if (params.length < i || passed[j] < i) {
+                    continue
+                } else if (this.test(device, params[i], args[i])) {
+                    passed[j] += 1;
+                    matches += 1;
                 }
             }
 
-            prev_fail_matrix = fail_matrices.at(-1)!;
+            if (matches === 0) {
+                break;
+            }
         }
-        // walk back fail matrixes until something is found, until a matrix with values is found
-        while (i >= 1 && !fail_matrices[i - 1].includes(false)) { i--; };
-        let options = (i == 0 ? this.definition : this.definition.filter((_, j) => !fail_matrices[i - 1][j]))
+
+        let options = (i == 0 ? this.definition : this.definition.filter((_, j) => passed[j] >= i))
             .sort((a, b) => a.length - b.length); // sort ascending
 
         // if there are longer matches remove the shorter ones
@@ -110,7 +110,7 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
             options = options.filter((opt) => opt.length >= Math.min(args.length, (i + 2)))
         }
 
-        let shortest_parameters = options[0], next_param = shortest_parameters[i];
+        let shortest_parameters = options[0];
         if ((i < args.length && i < shortest_parameters.length)) {
             let k = i;
             let unique_problem_options = Array.from(new Set(new Array(options.length).fill(0).map((_, j) => options[j][k])))
@@ -131,14 +131,14 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
                 args: args,
                 options: unique_problem_options
             }
-        } 
-        
+        }
+
         const find_optional_predicate = (params: ProgramParameters) => {
             let param = params[i];
             return typeof param != "string" && param.optional
         }
 
-        if (args.length < shortest_parameters.length && !options.find(find_optional_predicate)) {
+        if (args.length < shortest_parameters.length && !options.some(find_optional_predicate)) {
             let k = args.length;
             let unique_problem_options = Array.from(new Set(new Array(options.length).fill(0).map((_, j) => options[j][k])))
             if (options.length > 1) {
