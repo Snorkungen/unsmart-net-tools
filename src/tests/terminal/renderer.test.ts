@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest"
-import { terminal_resize, TerminalRendererCell, TerminalRendererState } from "../../lib/terminal/renderer"
+import { terminal_render, terminal_resize, TerminalRendererCell, TerminalRendererState } from "../../lib/terminal/renderer"
+import { CSI, ASCIICodes } from "../../lib/terminal/shared";
 
 describe("TerminalRenderer", () => {
     const state: TerminalRendererState = {
@@ -23,7 +24,7 @@ describe("TerminalRenderer", () => {
         rows: [],
         resize_markers: [],
         write(bytes) {
-            throw new Error("writing not implemented")            
+            throw new Error("writing not implemented")
         },
     }
 
@@ -71,7 +72,6 @@ describe("TerminalRenderer", () => {
         expect(state.cursor.x).toBe(0);
         expect(state.cursor.y).toBe(3);
     });
-
 
     test("resize terminal cursor tracks #2", () => {
 
@@ -144,4 +144,78 @@ describe("TerminalRenderer", () => {
         expect(state.y_offset).toBe(0);
 
     });
-})
+
+    //
+    // the following tests asserts that the movement of the cursor is aware of resize markers
+    //
+
+    test("write text #1", () => {
+        state.cursor.x = 0;
+        state.cursor.y = 0;
+        terminal_render(state, new Uint8Array([65, 66, 67, 68, 69]))
+
+        expect(state.resize_markers[0]).eq(1);
+        expect(state.cursor.x).eq(1);
+        expect(state.cursor.y).eq(1);
+    });
+
+    test("backspace #2", () => {
+        terminal_render(state, new Uint8Array([8, 8]));
+
+        expect(state.resize_markers[0]).eq(0);
+        expect(state.cursor.x).eq(3);
+        expect(state.cursor.y).eq(0);
+    });
+
+
+    test("move cursor up #3", () => {
+        state.cursor.x = 0;
+        state.cursor.y = 1;
+        terminal_render(state, new Uint8Array([65, 66, 67, 68, 69]))
+
+        terminal_render(state, CSI(ASCIICodes.One, ASCIICodes.A));
+
+        expect(state.cursor.y).eq(0);
+        expect(state.cursor.x).eq(3);
+    })
+
+    test("move cursor down #4", () => {
+        state.cursor.x = 0;
+        state.cursor.y = 0;
+        state.resize_markers = [];
+        terminal_render(state, new Uint8Array([65, 66, 67, 68, 69]))
+
+        terminal_render(state, CSI(ASCIICodes.One, ASCIICodes.B));
+
+        expect(state.cursor.y).eq(2);
+        expect(state.cursor.x).eq(3);
+    })
+
+    test("move cursor forward #5", () => {
+        state.cursor.x = 0;
+        state.cursor.y = 0;
+        state.resize_markers = [];
+        terminal_render(state, new Uint8Array([65, 66, 67, 68, 69]))
+
+        state.cursor.y = 0;
+        state.cursor.x = 3;
+
+        terminal_render(state, CSI(ASCIICodes.One, ASCIICodes.C));
+
+        expect(state.cursor.y).eq(1);
+        expect(state.cursor.x).eq(0);
+    })
+
+    test("move cursor backward #6", () => {
+        state.cursor.x = 0;
+        state.cursor.y = 0;
+        state.resize_markers = [];
+        terminal_render(state, new Uint8Array([65, 66, 67, 68, 69]))
+
+        state.cursor.x = 0;
+        terminal_render(state, CSI(ASCIICodes.One, ASCIICodes.D));
+
+        expect(state.cursor.y).eq(0);
+        expect(state.cursor.x).eq(3);
+    })
+});

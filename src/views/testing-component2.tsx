@@ -154,7 +154,7 @@ export const TestingComponent2: Component = () => {
                 ])))}>Down</button>
                 <button onclick={() => change_terminal_size(30)}>resize -</button>
                 <button onclick={() => change_terminal_size(90)}>resize +</button>
-                <button onclick={() => console.log(terminal.renderer.rows, terminal.renderer.resize_markers)}>dump</button>
+                <button onclick={() => console.log(terminal.renderer)}>dump</button>
             </div>
             <div ref={(el) => {
                 terminal = new Terminal(el)

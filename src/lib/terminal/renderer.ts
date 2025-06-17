@@ -253,6 +253,60 @@ function terminal_query_terminal(state: TerminalRendererState, n: number) {
     ));
 }
 
+function terminal_cursor_move_x(state: TerminalRendererState, x_dest: number, y_dest: number) {
+    let rzm = terminal_get_resize_marker_idx(state, y_dest);
+    if (rzm >= 0) {
+        y_dest = rzm;
+    }
+
+    x_dest = Math.min(
+        Math.max(x_dest, 0),
+        (rzm >= 0 ?
+            state.view_columns * (state.resize_markers[rzm] + 1)
+            : state.view_columns) - 1
+    );
+
+    while (x_dest >= state.view_columns) {
+        y_dest += 1;
+        x_dest -= state.view_columns;
+    }
+
+    state.cursor.x = x_dest;
+    state.cursor.y = y_dest;
+}
+
+function terminal_cursor_move_y(state: TerminalRendererState, y_dir: number) {
+    let y_dest: number;
+    let real_x: number;
+
+    let rzm = terminal_get_resize_marker_idx(state, state.cursor.y);
+    y_dest = rzm >= 0 ? rzm : state.cursor.y;
+    real_x = state.view_columns * (state.cursor.y - y_dest) + state.cursor.x;
+
+    if (y_dir >= 0) {
+        for (let i = 0; i < y_dir; i++) {
+            if (state.resize_markers[y_dest]) {
+                y_dest = y_dest + state.resize_markers[y_dest];
+            }
+
+            y_dest = y_dest + 1
+        }
+    } else {
+        y_dir = y_dir * -1;
+
+        for (let i = 0; i < y_dir; i++) {
+            y_dest = y_dest - 1;
+
+            rzm = terminal_get_resize_marker_idx(state, y_dest);
+            if (rzm >= 0) {
+                y_dest = rzm;
+            }
+        }
+    }
+
+    terminal_cursor_move_x(state, real_x, y_dest);
+}
+
 function terminal_handle_escape_sequences(state: TerminalRendererState, buffer: Uint8Array, i: number): number {
     let byte = buffer[i];
 
@@ -279,34 +333,55 @@ function terminal_handle_escape_sequences(state: TerminalRendererState, buffer: 
         switch (finalByte) {
             case ASCIICodes.A /* Cursor up */: {
                 let params = readParams(rawParams, 1, 1);
-                state.cursor.y = Math.max(state.cursor.y - params[0], 0);
+                terminal_cursor_move_y(state, -params[0])
             }; break;
             case ASCIICodes.B /* Cursor down */: {
-                let params = readParams(rawParams, 1, 1)
-                state.cursor.y += params[0];
+                let params = readParams(rawParams, 1, 1);
+                terminal_cursor_move_y(state, params[0])
             }; break;
             case ASCIICodes.C /* Cursor forward */: {
                 let params = readParams(rawParams, 1, 1);
-                state.cursor.x = Math.min(state.cursor.x + params[0], state.view_columns - 1);
+                let rzm = terminal_get_resize_marker_idx(state, state.cursor.y);
+
+                if (rzm >= 0) {
+                    let real_x = state.view_columns * (
+                        state.cursor.y - rzm
+                    ) + state.cursor.x;
+
+                    terminal_cursor_move_x(state, real_x + params[0], rzm);
+                } else {
+                    state.cursor.x = Math.min(state.cursor.x + params[0], state.view_columns - 1);
+                }
             }; break;
             case ASCIICodes.D /* Cursor backward */: {
                 let params = readParams(rawParams, 1, 1);
-                state.cursor.x = Math.max(state.cursor.x - params[0], 0);
+                let rzm = terminal_get_resize_marker_idx(state, state.cursor.y);
+
+                if (rzm >= 0) {
+                    let real_x = state.view_columns * (
+                        state.cursor.y - rzm
+                    ) + state.cursor.x;
+
+                    terminal_cursor_move_x(state, real_x - params[0], rzm);
+                } else {
+                    state.cursor.x = Math.max(state.cursor.x - params[0], 0);
+                }
             }; break;
             case ASCIICodes.E /* Cursor next line */: {
                 let params = readParams(rawParams, 1, 1);
-                state.cursor.y += params[0];
-                state.cursor.x = 0;
+                terminal_cursor_move_y(state, params[0])
+                terminal_cursor_move_x(state, 0, state.cursor.y);
             }; break;
             case ASCIICodes.F /* Cursor previous line */: {
                 let params = readParams(rawParams, 1, 1);
-                state.cursor.y = Math.max(state.cursor.y - params[0], 0);
-                state.cursor.x = 0;
+                terminal_cursor_move_y(state, -params[0])
+                terminal_cursor_move_x(state, 0, state.cursor.y);
             }; break;
             case ASCIICodes.G /* set horizontal absolute */: {
                 let params = readParams(rawParams, 1, 1);
                 // params are 1-based, correct
                 params[0] && (params[0] -= 1);
+                terminal_cursor_move_x(state, params[0], state.cursor.y);
                 state.cursor.x = Math.min(params[0], state.view_columns - 1);
             }; break;
             case ASCIICodes.H: case ASCIICodes.f:  /* set Cursor position */ {
@@ -314,9 +389,8 @@ function terminal_handle_escape_sequences(state: TerminalRendererState, buffer: 
                 // ESC [ <y> ; <x> H <https://github.com/0x5c/VT100-Examples/blob/master/vt_seq.md#simple-cursor-positioning>
                 row = Math.max(row - 1, 0);
                 col = Math.max(col - 1, 0); // 1-based
-
-                state.cursor.x = Math.min(col, state.view_columns - 1);
-                state.cursor.y = row;
+                terminal_cursor_move_y(state, row - state.cursor.y);
+                terminal_cursor_move_x(state, col, state.cursor.y);
             }; break;
             case ASCIICodes.J /* erase display */: {
                 let [n] = readParams(rawParams, 2, 1);
@@ -330,6 +404,7 @@ function terminal_handle_escape_sequences(state: TerminalRendererState, buffer: 
                 let [n] = readParams(rawParams, 1, 1);
                 if (n <= 0) break;
 
+                // !TODO: find terminal_resize_marker boundary
                 state.cursor.y = Math.max(
                     Math.floor(state.cursor.y / state.view_rows) - n,
                     0
@@ -338,6 +413,7 @@ function terminal_handle_escape_sequences(state: TerminalRendererState, buffer: 
             }; break;
             case ASCIICodes.T /* page down */: {
                 let [n] = readParams(rawParams, 1, 1);
+                // !TODO: find terminal_resize_marker boundary
                 let tmp = state.view_rows;
                 state.cursor.y = (Math.floor(state.cursor.y / state.view_rows) + n) * state.view_rows + tmp;
                 terminal_ensure_cursor_in_view(state);
@@ -362,9 +438,6 @@ function terminal_handle_escape_sequences(state: TerminalRendererState, buffer: 
 }
 
 export function terminal_render(state: TerminalRendererState, buffer: Uint8Array) {
-    // highlights are a just a visual thing not stateful, in that sense
-
-
     let i = 0;
     char_parse_loop: while (i < buffer.byteLength) {
         let byte = buffer[i];
@@ -408,8 +481,8 @@ export function terminal_render(state: TerminalRendererState, buffer: Uint8Array
                 }
                 break;
             } case ASCIICodes.NewLine: {
-                state.cursor.x = 0;
-                state.cursor.y += 1
+                terminal_cursor_move_y(state, 1)
+                terminal_cursor_move_x(state, 0, state.cursor.y);
                 break;
             }
             case ASCIICodes.CarriageReturn: {
