@@ -275,13 +275,10 @@ function terminal_cursor_move_x(state: TerminalRendererState, x_dest: number, y_
     state.cursor.y = y_dest;
 }
 
-function terminal_cursor_move_y(state: TerminalRendererState, y_dir: number) {
-    let y_dest: number;
-    let real_x: number;
-
+function terminal_cursor_move_y(state: TerminalRendererState, y_dir: number, x_dest?: number) {
     let rzm = terminal_get_resize_marker_idx(state, state.cursor.y);
-    y_dest = rzm >= 0 ? rzm : state.cursor.y;
-    real_x = state.view_columns * (state.cursor.y - y_dest) + state.cursor.x;
+    let y_dest = rzm >= 0 ? rzm : state.cursor.y;
+    let real_x = state.view_columns * (state.cursor.y - y_dest) + state.cursor.x;
 
     if (y_dir >= 0) {
         for (let i = 0; i < y_dir; i++) {
@@ -304,7 +301,7 @@ function terminal_cursor_move_y(state: TerminalRendererState, y_dir: number) {
         }
     }
 
-    terminal_cursor_move_x(state, real_x, y_dest);
+    terminal_cursor_move_x(state, x_dest ?? real_x, y_dest);
 }
 
 function terminal_handle_escape_sequences(state: TerminalRendererState, buffer: Uint8Array, i: number): number {
@@ -369,28 +366,24 @@ function terminal_handle_escape_sequences(state: TerminalRendererState, buffer: 
             }; break;
             case ASCIICodes.E /* Cursor next line */: {
                 let params = readParams(rawParams, 1, 1);
-                terminal_cursor_move_y(state, params[0])
-                terminal_cursor_move_x(state, 0, state.cursor.y);
+                terminal_cursor_move_y(state, params[0], 0)
             }; break;
             case ASCIICodes.F /* Cursor previous line */: {
                 let params = readParams(rawParams, 1, 1);
-                terminal_cursor_move_y(state, -params[0])
-                terminal_cursor_move_x(state, 0, state.cursor.y);
+                terminal_cursor_move_y(state, -params[0], 0)
             }; break;
             case ASCIICodes.G /* set horizontal absolute */: {
                 let params = readParams(rawParams, 1, 1);
                 // params are 1-based, correct
                 params[0] && (params[0] -= 1);
                 terminal_cursor_move_x(state, params[0], state.cursor.y);
-                state.cursor.x = Math.min(params[0], state.view_columns - 1);
             }; break;
             case ASCIICodes.H: case ASCIICodes.f:  /* set Cursor position */ {
                 let [row, col] = readParams(rawParams, 1, 2);
                 // ESC [ <y> ; <x> H <https://github.com/0x5c/VT100-Examples/blob/master/vt_seq.md#simple-cursor-positioning>
                 row = Math.max(row - 1, 0);
                 col = Math.max(col - 1, 0); // 1-based
-                terminal_cursor_move_y(state, row - state.cursor.y);
-                terminal_cursor_move_x(state, col, state.cursor.y);
+                terminal_cursor_move_y(state, row - state.cursor.y, col);
             }; break;
             case ASCIICodes.J /* erase display */: {
                 let [n] = readParams(rawParams, 2, 1);
@@ -481,8 +474,7 @@ export function terminal_render(state: TerminalRendererState, buffer: Uint8Array
                 }
                 break;
             } case ASCIICodes.NewLine: {
-                terminal_cursor_move_y(state, 1)
-                terminal_cursor_move_x(state, 0, state.cursor.y);
+                terminal_cursor_move_y(state, 1, 0)
                 break;
             }
             case ASCIICodes.CarriageReturn: {
