@@ -76,7 +76,7 @@ export default class Terminal {
     write_buffer = new Uint8Array(512);
     write_buffer_length = 0;
     write_waiting = false;
-    write_timeout = 50;
+    write_timeout = 16;
     write_timeout_callback = (() => {
         if (!this.write_waiting && this.container.isConnected) return;
         this.renderer.buffer = this.write_buffer.subarray(0, this.write_buffer_length);
@@ -123,9 +123,12 @@ export default class Terminal {
     }
 
     flush() {
-        this.renderer.render();
+        if (this.write_waiting) {
+            this.write_timeout_callback();
+        } else {
+            // nothing to do ...
+        }
     }
-
 
     private mousedepressed: boolean = false;
     private mouse_cell_selections: TerminalRendererHiglight[] = [];

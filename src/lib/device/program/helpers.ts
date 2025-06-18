@@ -348,6 +348,7 @@ export async function ioreadline(io: DeviceIO, options: Partial<{
 
         if (options.intial_bytes) {
             reader(options.intial_bytes);
+            io.flush()
         }
     });
 }

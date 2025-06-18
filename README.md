@@ -21,6 +21,7 @@ An attempt at implementing the TCP/IP stack within a browser context.
     - [x] TCP protocol support*
 - [ ] Terminal & Shell
   - [x] batch rendering for more efficient rendering
+    - [ ] `TerminalRenderer` batch paints, i.e. requestAnimation frame for draw calls ...
   - [x] `TerminalRenderer` make rendering faster
   - [x] *Auto resize `TerminaleRenderer` View* haven't decided on what this means
   - [ ] Enviroment Variables & Variable expansion `Shell.promptBuffer`

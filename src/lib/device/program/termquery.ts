@@ -49,7 +49,6 @@ export function termquery(proc: Process): Promise<TermQuery> {
                 }
             }
 
-
             if (rawParams.length == 0) {
                 proc.close(ProcessSignal.ERROR);
                 return;
@@ -68,6 +67,7 @@ export function termquery(proc: Process): Promise<TermQuery> {
                     // move cursor to extreme
                     proc.io.write(CSI(0x39, 0x39, 0x39, 0x39, ASCIICodes.G));
                     proc.io.write(CSI(0x36, ASCIICodes.n));
+                    proc.io.flush()
                 } else {
                     data!.width = horizontal
                     proc.io.write(CSI(...numbertonumbers(data.ch), ASCIICodes.G))
