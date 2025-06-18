@@ -169,7 +169,7 @@ let interpret_nav_params = (raw_params: number[],): { ctrl: boolean, shift: bool
 export async function ioreadline(io: DeviceIO, options: Partial<{
     intial_bytes: Uint8Array;
     targets: number[][];
-}> = {}): Promise<[bytes: Uint8Array, trigger: Uint8Array]> {
+}> = {}): Promise<[bytes: Uint8Array, trigger: Uint8Array, x_cursor: number]> {
     let x_max = 0;
     let x_cursor = 0;
     const buffer: number[] = [];
@@ -197,6 +197,7 @@ export async function ioreadline(io: DeviceIO, options: Partial<{
 
                     x_cursor += 1;
                     x_max = Math.max(x_cursor, x_max + 1 /* account for the new character */);
+                    io.flush();
                 } /* handle backspace */ else if (byte == ASCIICodes.Delete || byte == ASCIICodes.BackSpace) {
                     if (x_cursor == 0 || buffer.length == 0) {
                         continue;
@@ -221,12 +222,13 @@ export async function ioreadline(io: DeviceIO, options: Partial<{
                         io.write(new Uint8Array([ASCIICodes.BackSpace]))
                     }
 
+                    io.flush();
                 } /* handle escape */ else if (byte == ASCIICodes.Escape) {
                     if (i == (bytes.byteLength - 1) || bytes[i + 1] != ASCIICodes.OpenSquareBracket) {
 
                         if (options.targets!.find(v => v.length == 1 && v[0] == ASCIICodes.Escape)) {
                             io.reader_remove(reader);
-                            resolve([new Uint8Array(buffer), bytes.slice(i, i + 1)]);
+                            resolve([new Uint8Array(buffer), bytes.slice(i, i + 1), x_cursor]);
 
                             if (i < (bytes.byteLength - 1)) {
                                 throw new Error("more bytes in the pipline")
@@ -285,6 +287,7 @@ export async function ioreadline(io: DeviceIO, options: Partial<{
                             if (step > 0) {
                                 x_cursor += step;
                                 io.write(CSI(...numbertonumbers(step), ASCIICodes.C)); // move cursor
+                                io.flush();
                             }
                         }; break;
                         case ASCIICodes.D: { // ArrowLeft
@@ -312,23 +315,24 @@ export async function ioreadline(io: DeviceIO, options: Partial<{
                             if (step > 0) {
                                 x_cursor -= step;
                                 io.write(CSI(...numbertonumbers(step), ASCIICodes.D)); // move cursor
+                                io.flush();
                             }
                         }; break;
                         case ASCIICodes.F: { // End 
-                            // !NOTE: when wrapping this no longer manages to keep track of things
-                            io.write(CSI(...numbertonumbers(x_max - x_cursor), ASCIICodes.C)); // move cursor to the end
                             x_cursor = x_max;
+                            io.write(CSI(...numbertonumbers(x_max - x_cursor), ASCIICodes.C)); // move cursor to the end
+                            io.flush();
                         }; break;
                         case ASCIICodes.H: { // Home
-                            // !NOTE: when wrapping this no longer manages to keep track of things
-                            io.write(CSI(...numbertonumbers(x_cursor), ASCIICodes.D)); // move cursor to the end
                             x_cursor = 0;
+                            io.write(CSI(...numbertonumbers(x_cursor), ASCIICodes.D)); // move cursor to the end
+                            io.flush();
                         }
                     }
 
                     if (options.targets!.find(v => v.length >= 3 && v[0] == ASCIICodes.Escape && v[1] == ASCIICodes.OpenSquareBracket && v.at(-1)! == fbyte)) {
                         io.reader_remove(reader);
-                        resolve([new Uint8Array(buffer), bytes.slice(trigger_start, i + 1)]);
+                        resolve([new Uint8Array(buffer), bytes.slice(trigger_start, i + 1), x_cursor]);
 
                         if (i < (bytes.byteLength - 1)) {
                             throw new Error("more bytes in the pipline")
@@ -336,7 +340,7 @@ export async function ioreadline(io: DeviceIO, options: Partial<{
                     }
                 } else if (options.targets!.find(v => v.includes(byte))) /* Check that byte is a target */ {
                     io.reader_remove(reader);
-                    resolve([new Uint8Array(buffer), bytes.slice(i, i + 1)]);
+                    resolve([new Uint8Array(buffer), bytes.slice(i, i + 1), x_cursor]);
 
                     if (i < (bytes.byteLength - 1)) {
                         throw new Error("more bytes in the pipline")
