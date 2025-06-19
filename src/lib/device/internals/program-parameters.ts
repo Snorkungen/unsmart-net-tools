@@ -246,15 +246,17 @@ export class ProgramParameterDefinition<const T extends ProgramParameters[]> {
                 if (param.multiple) {
                     sb += "..."
                 }
-                sb += "["
-
                 if (param.optional) {
                     sb += "?";
                 }
+                sb += "["
+
                 if (param.keywords) {
                     if (param.optional && param.keywords.length > 1) sb += "("
                     sb += `${param.keywords.map(v => '"' + v + '"').join(" | ")}`
                     if (param.optional && param.keywords.length > 1) sb += ")"
+                } else if (param.keyword) {
+                    sb += "\"" + param.name + "\""
                 } else {
                     sb += param.name
                 }
