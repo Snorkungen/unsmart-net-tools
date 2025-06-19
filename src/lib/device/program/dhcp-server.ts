@@ -423,7 +423,7 @@ function handle_request(proc: Process<typeof DAEMON_DHCP_SERVER>, contact: Conta
     return send_dhcp4(proc, contact, ackhdr, data);
 }
 
-function receive_ipv4(this: Process<typeof DAEMON_DHCP_SERVER>, contact: Contact<"IPv4", "RAW">, data: NetworkData) {
+function receive_ipv4(this: Process, contact: Contact<"IPv4", "RAW">, data: NetworkData) {
     if (!data.rcvif) throw new Error("unreachable");
     // The rcif must be of type ethernet header so that this thing can keep track of the rcvhwsaddr
     if (data.rcvif.header !== ETHERNET_HEADER) return;// 
@@ -487,7 +487,7 @@ function receive_ipv4(this: Process<typeof DAEMON_DHCP_SERVER>, contact: Contact
             throw new Error("unhandled DHCP message type")
     }
 }
-function receive_ipv6(this: Process<typeof DAEMON_DHCP_SERVER>, contact: Contact<"IPv6", "RAW">, data: NetworkData) {
+function receive_ipv6(this: Process, contact: Contact<"IPv6", "RAW">, data: NetworkData) {
     throw "not supported"
 }
 
