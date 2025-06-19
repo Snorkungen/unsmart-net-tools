@@ -1,10 +1,11 @@
 // Parse the arguments
 
-export function args_parse(input: string): string[] {
+export function args_parse_ext(input: string, cursor: number = input.length): { args: string[], active: number } {
     const args: string[] = [];
+    let active = -1;
 
     if (input.length < 1) {
-        return args;
+        return { args, active };
     }
 
     let start = 0, end = 0;
@@ -18,6 +19,9 @@ export function args_parse(input: string): string[] {
         c = input[end];
         if (c == "'" || c == '"') {
             if (state == 0 && end > start) {
+                if (active < 0 && cursor > start && cursor <= end) {
+                    active = args.length;
+                };
                 args.push(input.substring(start, end))
             }
 
@@ -33,7 +37,11 @@ export function args_parse(input: string): string[] {
                     escape_level += 1;
                 } else if (c == quote && (escape_level & 1) == 0) {
                     if (state === 0) {
+                        if (active < 0 && cursor > start && cursor <= end) {
+                            active = args.length;
+                        };
                         args.push(input.substring(start, end))
+
                         start = end + 1;
                         state = 1;
                     }
@@ -50,6 +58,9 @@ export function args_parse(input: string): string[] {
             }
         } else if (c == " " || c == "\t" || c == "\n") {
             if (state === 0) {
+                if (active < 0 && cursor > start && cursor <= end) {
+                    active = args.length;
+                };
                 args.push(input.substring(start, end))
                 start = end;
                 state = 1;
@@ -63,8 +74,15 @@ export function args_parse(input: string): string[] {
     }
 
     if (state == 0 && end - start > 0) {
+        if (active < 0 && cursor > start && cursor <= end) {
+            active = args.length;
+        };
         args.push(input.substring(start, end))
     }
 
-    return args;
+    return { args, active };
+}
+
+export function args_parse(input: string) {
+    return args_parse_ext(input).args;
 }

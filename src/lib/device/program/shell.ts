@@ -1,6 +1,6 @@
 import { uint8_concat, uint8_equals, uint8_fromString } from "../../binary/uint8-array";
 import { ASCIICodes, CSI, numbertonumbers } from "../../terminal/shared";
-import { args_parse } from "../../utils/args-parse";
+import { args_parse, args_parse_ext } from "../../utils/args-parse";
 import { Device, Process, ProcessSignal, Program } from "../device";
 import { ioclearline, ioreadline } from "./helpers";
 import { termquery } from "./termquery";
@@ -124,8 +124,9 @@ function lazywriter_write_options(proc: Process<string>, options: string[], i: n
 
         if (j === i) {
             proc.io.write(uint8_concat([
+                uint8_fromString(option.slice(0, 1)), // !NOTE: this weird thing is to avoid the cursor covering the value ...
                 CSI(ASCIICodes.Six + 1, ASCIICodes.m), // invert colours
-                uint8_fromString(option),
+                uint8_fromString(option.slice(1)),
                 CSI(ASCIICodes.Zero, ASCIICodes.m), // reset
                 CSI(ASCIICodes.C)
             ]));
@@ -148,97 +149,120 @@ function lazywriter_write_options(proc: Process<string>, options: string[], i: n
     proc.io.write(CSI(...numbertonumbers(cursorX + 1), ASCIICodes.G))
 }
 
-function lazywriter_get_options(device: Device, args: string[]): string[] {
+function lazywriter_get_options(device: Device, args: string[]): { options: string[], idx: number } {
     if (args.length < 1) {
         args.push("");
-        return device.programs.map(({ name }) => name);
+        return {
+            options: device.programs.map(({ name }) => name),
+            idx: 0
+        };
     }
 
     let program = device.programs.find(({ name }) => name == args[0]);
 
     if (!program) {
-        return device.programs.map(({ name }) => name).filter(name => name.startsWith(args[0]));
+        return {
+            options: device.programs.map(({ name }) => name).filter(name => name.startsWith(args[0])),
+            idx: 0,
+        };
     }
 
-    let add_new_arg = false;
-    let options = new Set<string>();
+    if (!program.parameters) {
+        return {
+            options: [],
+            idx: 1,
+        }
+    }
 
-    if (program.parameters) {
-        for (let params of program.parameters.definition) {
-            if (params.length < args.length) continue;
-            let i = 0; while (++i < args.length) {
-                if (!program.parameters.test(device, params[i], args[i])) {
-                    break;
-                }
+    const options = new Set<string>();
+    const definition = program.parameters.definition;
+    const passed = new Array<number>(definition.length).fill(0);
+    let matches = 0;
+    let i = 0;
+
+    for (; i < args.length; i++) {
+        matches = 0;
+
+        for (let j = 0; j < definition.length; j++) {
+            let params = definition[j];
+
+            if (params.length < i || passed[j] < i) {
+                continue
+            } else if (program.parameters.test(device, params[i], args[i])) {
+                passed[j] += 1;
+                matches += 1;
             }
+        }
 
-            let names: string[];
-            let param = params[i];
-            if (typeof param != "string") {
-                if (param?.keyword) {
-                    names = [param.name];
-                } else if (param?.keywords) {
-                    names = param.keywords
-                } else {
-                    continue;
-                }
-            } else {
-                names = [param]
+        if (matches === 0) {
+            break;
+        }
+    }
+
+    let parameters_left = (i == 0 ? definition : definition.filter((_, j) => passed[j] >= i))
+        .sort((a, b) => a.length - b.length); // sort ascending
+
+    let arg = args[i];
+    for (let params of parameters_left) {
+        if (i >= params.length) {
+            continue;
+        }
+
+        let param = params[i];
+
+        if (typeof param == "string") {
+            if ((!arg || param.startsWith(arg))) {
+                options.add(param);
             }
-
-            let arg = args[i];
-            for (let name of names) {
-                if (!arg || name.startsWith(arg)) {
-                    options.add(name);
-                    if (!arg) {
-                        add_new_arg = true;
-                    }
+        } else if (param.keyword && (!arg || param.name.startsWith(arg))) {
+            options.add(param.name);
+        } else if (param.keywords) {
+            for (let keyword of param.keywords) {
+                if (!arg || keyword.startsWith(arg)) {
+                    options.add(keyword);
                 }
             }
         }
     }
 
-    if (add_new_arg) {
+    return {
+        options: Array.from(options),
+        idx: i
+    }
+}
+
+/**  this function does not return anything but it, moves the curso and things ... */
+export async function lazywriter2(proc: Process, input: string, x_cursor: number = input.length): Promise<string | undefined> {
+    const { args, active } = args_parse_ext(input, x_cursor);
+    const { options, idx } = lazywriter_get_options(proc.device, args.slice(0, active < 0 ? args.length : active + 1))
+
+    if (options.length === 0) {
+        // return early nothing to do ...
+        return undefined;
+    }
+
+    if (active >= 0 && active > idx) {
+        // this is a case where I want nothing to be done ...
+        return undefined;
+    }
+
+    if (idx >= args.length) {
         args.push("")
     }
 
-    return Array.from(options);
-}
+    if (options.length === 1) {
+        args[idx] = options[0]
+        return args.join(" ")
+    }
 
-/**
- * 
- * This does not actually need to be a seperate program \
- * but it exists to experiment with how spawning programs could be used
- */
-const lazywriter: Program<string> = {
-    name: "shell_lazywriter",
-    init(proc: Process<string>, _, data?: string | undefined): ProcessSignal {
-        proc.data = data || ""; // set data
-        let args = args_parse(proc.data);
-        let options = lazywriter_get_options(proc.device, args);
+    let selected = 0;
+    const tq = await termquery(proc);
+    const columns = tq.width || 38;
 
-        if (options.length == 0) {
-            return ProcessSignal.EXIT; // do nothing
-        }
-
-        if (options.length == 1) {
-            args[args.length - 1] = options[0]
-            proc.data = args.join(" ") + " ";
-            return ProcessSignal.EXIT;
-        }
-
-        let term_width = 38;
-        let selected_option_idx = 0;
-        proc.io.write(new Uint8Array([ASCIICodes.NewLine]));
-
-        termquery(proc).then((data) => {
-            if (data.width) {
-                term_width = data.width;
-            };
-            lazywriter_write_options(proc, options, selected_option_idx, term_width);
-        })
-
-        proc.io.reader_add((bytes) => {
+    proc.io.write(CSI(ASCIICodes.E))
+    ioclearline(proc.io);
+    return new Promise(resolve => {
+        let reader = proc.io.reader_add((bytes) => {
             let byte = bytes[0];
 
             if (
@@ -246,48 +270,47 @@ const lazywriter: Program<string> = {
                 byte === ASCIICodes.NewLine ||
                 byte === ASCIICodes.CarriageReturn
             ) {
-                args[args.length - 1] = options[selected_option_idx]
-                proc.data = args.join(" ") + " ";
+                proc.io.reader_remove(reader);
+                ioclearline(proc.io);
+                proc.io.write(CSI(ASCIICodes.F))
 
-                // move cursor to start clear line and go up on line
-                proc.io.write(CSI(...numbertonumbers(1), ASCIICodes.G, ...CSI(ASCIICodes.Two, ASCIICodes.K), ...CSI(ASCIICodes.A)));
-                proc.close(ProcessSignal.EXIT);
-                return true;
+                args[idx] = options[selected]
+                resolve(args.join(" "))
             }
 
             if (
                 byte === ASCIICodes.Escape && bytes.length === 1 ||
                 byte === 3
             ) {
-                proc.io.write(CSI(...numbertonumbers(1), ASCIICodes.G, ...CSI(ASCIICodes.Two, ASCIICodes.K), ...CSI(ASCIICodes.A)));
-                proc.close(ProcessSignal.EXIT);
-                return true;
-            }
+                proc.io.reader_remove(reader);
+                ioclearline(proc.io);
+                proc.io.write(CSI(ASCIICodes.F))
 
+                return resolve(input);
+            }
 
             if (byte === ASCIICodes.Escape && bytes[1] === ASCIICodes.OpenSquareBracket) {
                 let finalByte = bytes[bytes.length - 1];
 
                 if (finalByte === ASCIICodes.D || finalByte === ASCIICodes.B) { // ArrowLeft
-                    if (selected_option_idx === 0)
-                        selected_option_idx = options.length - 1;
+                    if (selected === 0)
+                        selected = options.length - 1;
                     else
-                        selected_option_idx = selected_option_idx - 1;
+                        selected = selected - 1;
                 } else {
-                    selected_option_idx = (selected_option_idx + 1) % options.length;
+                    selected = (selected + 1) % options.length;
                 }
 
-                lazywriter_write_options(proc, options, selected_option_idx, term_width)
+                lazywriter_write_options(proc, options, selected, columns)
                 return true;
             }
 
-            selected_option_idx = (selected_option_idx + 1) % options.length;
-            lazywriter_write_options(proc, options, selected_option_idx, term_width)
-            return true;
-        });
+            selected = (selected + 1) % options.length;
+            lazywriter_write_options(proc, options, selected, columns)
+        })
 
-        return ProcessSignal.__EXPLICIT__;
-    }
+        lazywriter_write_options(proc, options, selected, columns)
+    })
 }
 
 function get_prompt_buf(device: Device) {
@@ -334,7 +357,7 @@ export const DAEMON_SHELL: Program<ShellData> = {
 
         while (!proc.abort_controller.signal.aborted) {
             proc.io.write(get_prompt_buf(proc.device));
-            let [bytes, target] = await ioreadline(proc.io, {
+            let [bytes, target, x_cursor] = await ioreadline(proc.io, {
                 targets: [
                     [ASCIICodes.Tab],
                     [ASCIICodes.Escape, ASCIICodes.OpenSquareBracket, ASCIICodes.A], // ArrowUp
@@ -383,21 +406,7 @@ export const DAEMON_SHELL: Program<ShellData> = {
                     proc.data.history.add(bytes);
                 }
             }  /* Tab pressed */ else if (target[0] == ASCIICodes.Tab) {
-                let v = await new Promise<string | undefined>(resolve => {
-                    proc.data.runningProc = proc.spawn(lazywriter, undefined, promptv, {
-                        on_close(sproc) {
-                            delete proc.data.runningProc
-                            resolve(sproc.data)
-                        },
-                        io_on_write(bytes) {
-                            proc.io.write(bytes)
-                        },
-                        io_on_flush() {
-                            proc.io.flush()
-                        }
-                    });
-                });
-
+                let v = await lazywriter2(proc, promptv, x_cursor)
                 if (v) {
                     initial_bytes = uint8_fromString(v);
                 } else {
