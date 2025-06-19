@@ -19,6 +19,7 @@ import { DEVICE_PROGRAM_TRACEROUTE } from "../lib/device/program/traceroute";
 import { DEVICE_PROGRAM_HOSTSINFO, setaddress_by_host } from "../lib/device/program/hostsinfo";
 import { DEVICE_PROGRAM_DHCP_SERVER_MAN } from "../lib/device/program/dhcp-server-man";
 import { DEVICE_PROGRAM_DHCP_CLIENT } from "../lib/device/program/dhcp-client";
+import { deserialize_Device, serialize_Device } from "../lib/network-map/serialize";
 
 function init_programs(device: Device) {
     device.process_start(DAEMON_ECHO_REPLIER);
@@ -328,10 +329,10 @@ export default function NetworkMapViewer(): JSX.Element {
 
                     }>
                         <div class="text-center">
-                            <div onclick={() => active_device() && remove_device_from_state(active_device()!)} class="mb-5">
+                            <div class="mb-5">
                                 <h1>{active_device()!.name}</h1>
-                                <button class="btn btn-danger">Remove Device</button>
-
+                                <button class="btn btn-danger" onclick={() => active_device() && remove_device_from_state(active_device()!)}>Remove Device</button>
+                                <div class="btn-primary btn" onClick={() => console.log(deserialize_Device.call(undefined, serialize_Device.call(undefined, active_device()!)))}>Dump</div>
                             </div>
                             <For each={active_device()!.interfaces.filter(iface => iface instanceof EthernetInterface)}>
                                 {(item) => (
