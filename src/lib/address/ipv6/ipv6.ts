@@ -127,6 +127,13 @@ export class IPV6Address implements BaseAddress {
     isLoopback(): boolean {
         return LOOPBACK_MASK.compare(LOOPBACK_NET_ADDRESS, this);
     }
+
+    toJSON(): { type: string; address: string } {
+        return {
+            type: this.constructor.name,
+            address: this.toString(),
+        }
+    }
 }
 
 const LINK_LOCAL_MASK = createMask(IPV6Address, ADDRESS_TYPESV6.LINK_LOCAL[1]), LINK_LOCAL_NET_ADDRESS = new IPV6Address(ADDRESS_TYPESV6.LINK_LOCAL[0]);

@@ -7,9 +7,9 @@ import { IPV6Address } from "../address/ipv6";
 import { MACAddress } from "../address/mac";
 import { uint8_fromNumber, uint8_concat, uint8_equals } from "../binary/uint8-array";
 import { ETHERNET_HEADER, ETHER_TYPES, ETHERNET_DOT1Q_HEADER } from "../header/ethernet";
-import { DeviceResource, DeviceResources } from "./internals/resources";
+import { DeviceResources } from "./internals/resources";
 
-type DeviceAddress<AT extends typeof BaseAddress = typeof BaseAddress> = {
+export type DeviceAddress<AT extends typeof BaseAddress = typeof BaseAddress> = {
     address: InstanceType<AT>;
     // broadcast: InstanceType<AT>; // calculate broadcast on the fly
     netmask: AddressMask<AT>

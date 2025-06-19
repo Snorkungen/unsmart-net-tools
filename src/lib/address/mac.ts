@@ -32,7 +32,7 @@ export class MACAddress implements BaseAddress {
                 let v0 = v[0].toUpperCase(), v1 = v[1].toUpperCase();
                 if ((v0 < "0" && v0 > "9") && (v0 < "A" && v0 > "F")) return res;
                 if ((v1 < "0" && v1 > "9") && (v1 < "A" && v1 > "F")) return res;
-                
+
                 return res + 1;
             }, 0) == 6;
         }
@@ -96,6 +96,13 @@ export class MACAddress implements BaseAddress {
         octets[4] = 0xFE;
         uint8_mutateSet(octets, this.buffer.subarray(3), 5);
         return octets;
+    }
+
+    toJSON(): { type: string; address: string } {
+        return {
+            type: this.constructor.name,
+            address: this.toString(),
+        }
     }
 };
 
