@@ -3,13 +3,46 @@ import { IPV4Address } from "../address/ipv4";
 import { IPV6Address } from "../address/ipv6";
 import { MACAddress } from "../address/mac";
 import { createMask } from "../address/mask";
-import { Device, DeviceRoute } from "../device/device";
+import { Device, DeviceRoute, Program } from "../device/device";
 import { BaseInterface, EthernetInterface, LoopbackInterface, VlanInterface } from "../device/interface";
 import { NETWORK_SWITCH_PORTS_STORE_KEY, NetworkSwitch, NetworkSwitchPorts } from "../device/network-switch";
 import { OSInterface } from "../device/osinterface";
+import { DEVICE_PROGRAM_DAEMAN } from "../device/program/daeman";
+import { DEVICE_PROGRAM_DHCP_CLIENT } from "../device/program/dhcp-client";
+import { DEVICE_PROGRAM_DHCP_SERVER_MAN } from "../device/program/dhcp-server-man";
 import { DAEMON_ECHO_REPLIER } from "../device/program/echo-replier";
-import { HOSTSINFO_STORE_KEY, HostsinfoData } from "../device/program/hostsinfo";
-import { DAEMON_ROUTING } from "../device/program/routing";
+import { DEVICE_PROGRAM_HOSTSINFO, HOSTSINFO_STORE_KEY, HostsinfoData } from "../device/program/hostsinfo";
+import { DEVICE_PROGRAM_IFINFO } from "../device/program/ifinfo";
+import { DEVICE_PROGRAM_MENU } from "../device/program/menu";
+import { DEVICE_PROGRAM_PING } from "../device/program/ping";
+import { DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_HELP, DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_DOWNLOAD } from "../device/program/program";
+import { DEVICE_PROGRAM_ROUTEINFO } from "../device/program/routeinfo";
+import { DAEMON_ROUTING, DEVICE_PROGRAM_ROUTINGMAN } from "../device/program/routing";
+import { DEVICE_PROGRAM_TRACEROUTE } from "../device/program/traceroute";
+import { DEVICE_PROGRAM_VLANINFO } from "../device/program/vlaninfo";
+import { network_map_init_device_shape, network_map_init_state } from "./network-map";
+
+//
+// What about creating somekind of declarative system, that then serializes and de serializes the store data ...
+//
+
+const all_available_programs: Program[] = [
+    DEVICE_PROGRAM_ECHO,
+    DEVICE_PROGRAM_IFINFO,
+    DEVICE_PROGRAM_ROUTEINFO,
+    DEVICE_PROGRAM_VLANINFO,
+    DEVICE_PROGRAM_HELP,
+    DEVICE_PROGRAM_CLEAR,
+    DEVICE_PROGRAM_PING,
+    DEVICE_PROGRAM_DOWNLOAD,
+    DEVICE_PROGRAM_TRACEROUTE,
+    DEVICE_PROGRAM_HOSTSINFO,
+    DEVICE_PROGRAM_ROUTINGMAN,
+    DEVICE_PROGRAM_DAEMAN,
+    DEVICE_PROGRAM_DHCP_CLIENT,
+    DEVICE_PROGRAM_DHCP_SERVER_MAN,
+    DEVICE_PROGRAM_MENU
+]
 
 type SerializeContext = {
     /** an array that then linearly searches the array to find by reference */
@@ -35,12 +68,10 @@ type SerializeableDeviceRoute = {
     f_gateway?: boolean;
     f_host?: boolean;
 
-    /** keyof is from `iface.name` */
     iface: string;
 }
 
 type SerializeableBaseInterface = {
-    // !NOTE: does this need to reference the device that created it ...
     unit: number;
     mtu: number;
     addresses: SerializeableDeviceAddress[];
@@ -74,6 +105,7 @@ type SerializeableDevice = {
     };
     store: Record<string, unknown>;
     running_programs: string[];
+    programs: string[];
 }
 
 
@@ -132,7 +164,7 @@ function serialize_DeviceRoute(this: SerializeContext, route: DeviceRoute): Seri
     }
 }
 
-export function serialize_Device(this: SerializeContext, device: Device): SerializeableDevice {
+function serialize_Device(this: SerializeContext, device: Device): SerializeableDevice {
     // !TODO: figure out a better way of serializing the data, because theyre essentially allowed to change and other stuff so they'l break anyhow
     // only support for now the things needed to have fun creating weird routing demos
 
@@ -174,6 +206,8 @@ export function serialize_Device(this: SerializeContext, device: Device): Serial
         running_programs.push(DAEMON_ROUTING.name);
     }
 
+    const programs = device.programs.map(({ name }) => name)
+
     return {
         type: device.constructor.name,
         name: device.name,
@@ -189,7 +223,8 @@ export function serialize_Device(this: SerializeContext, device: Device): Serial
         }, {}),
         routes: device.routes.map(serialize_DeviceRoute.bind(this)),
         store: store,
-        running_programs: running_programs
+        running_programs: running_programs,
+        programs: programs,
     }
 }
 
@@ -219,6 +254,32 @@ function deserialize_onto_iface(this: SerializeContext, iface: BaseInterface, si
 }
 
 function deserialize_interfaces(this: SerializeContext, device: Device, sdevice: SerializeableDevice) {
+    for (let seth of sdevice.interfaces.eth) {
+        let iface = device.interface_add(
+            new EthernetInterface(device, new MACAddress(seth.mac_address))
+        )
+
+        deserialize_onto_iface.call(this, iface, seth);
+
+        iface.macAddress = new MACAddress(seth.mac_address);
+        iface.vlan = seth.vlan;
+
+        // attempt to resolve and find the target device ...
+        if (this && seth.target) {
+            let [didx, unit] = seth.target;
+
+            let d = this.objects[didx];
+            if (d instanceof Device) {
+                let target = d.interfaces.find((v) => v.id() === "eth" + unit)
+
+                if (target instanceof EthernetInterface) {
+                    iface.connect(target);
+                }
+            }
+
+        }
+    }
+
     for (let ser_iface of sdevice.interfaces.lo) {
         let iface = device.interface_add(
             new LoopbackInterface(device)
@@ -239,32 +300,9 @@ function deserialize_interfaces(this: SerializeContext, device: Device, sdevice:
         deserialize_onto_iface.call(this, iface, ser_iface);
         iface.start();
     }
-    for (let seth of sdevice.interfaces.eth) {
-        let iface = device.interface_add(
-            new EthernetInterface(device, new MACAddress(seth.mac_address))
-        )
-
-        deserialize_onto_iface.call(this, iface, seth);
-
-        // attempt to resolve and find the target device ...
-        if (this && seth.target) {
-            let [didx, unit] = seth.target;
-
-            let d = this.objects[didx];
-            if (d instanceof Device) {
-                let target = d.interfaces.find((v) => v.id() === "eth" + unit)
-
-                if (target instanceof EthernetInterface) {
-                    iface.connect(target);
-                }
-            }
-
-        }
-    }
-
 }
 
-export function deserialize_Device(this: SerializeContext, sdevice: SerializeableDevice): Device {
+function deserialize_Device(this: SerializeContext, sdevice: SerializeableDevice): Device {
     let device: Device;
     if (sdevice.type === NetworkSwitch.name) {
         device = new NetworkSwitch();
@@ -323,17 +361,18 @@ export function deserialize_Device(this: SerializeContext, sdevice: Serializeabl
         }, {}))
     }
 
-    const shostsinfo = sdevice.store[HOSTSINFO_STORE_KEY] as { hosts: string[]; addresses: ReturnType<BaseAddress["toJSON"]>[] };
+    const shostsinfo = sdevice.store[HOSTSINFO_STORE_KEY] as { hosts: string[]; addresses: ReturnType<BaseAddress["toJSON"]>[][] };
     if (shostsinfo) {
         device.store_set(HOSTSINFO_STORE_KEY, {
             hosts: shostsinfo.hosts,
-            addresses: shostsinfo.addresses.map(v => {
+            addresses: shostsinfo.addresses.map(adresses => adresses.map(v => {
                 let constructor = deserialize_resolve_address_type(v.type);
                 return new constructor(v.address);
-            })
+            }))
         })
     }
 
+    device.programs = sdevice.programs.map(name => all_available_programs.find(p => p.name === name)!)
 
     if (sdevice.running_programs.includes(DAEMON_ECHO_REPLIER.name)) {
         device.process_start(DAEMON_ECHO_REPLIER);
@@ -344,4 +383,69 @@ export function deserialize_Device(this: SerializeContext, sdevice: Serializeabl
     }
 
     return device;
+}
+
+export function serialize_NetworkMap(state: ReturnType<typeof network_map_init_state>) {
+    const context: SerializeContext = {
+        objects: []
+    }
+
+    const devices: SerializeableDevice[] = [];
+    const device_metadata: { position: typeof state["shapes"][number]["position"]; static?: boolean }[] = [];
+
+    for (let shape of state.shapes) {
+        if (shape.type != "shape" || !(shape.assob instanceof Device)) {
+            continue;
+        }
+
+        // find device in context or push
+        let s_device = serialize_Device.call(context, shape.assob!);
+        let mdata: typeof device_metadata[number] = {
+            position: shape.position,
+            static: shape.static,
+        }
+
+        let idx = context.objects.findIndex(v => v === shape.assob);
+        if (idx < 0) {
+            idx = context.objects.push(shape.assob) - 1;
+        }
+
+        devices[idx] = s_device;
+        device_metadata[idx] = mdata;
+    }
+
+    return {
+        scale: state.scale,
+        origin: state.origin,
+        devices: devices,
+        device_metadata: device_metadata,
+    };
+}
+
+const switch_dimensions = { width: 85, height: 25 }
+export function deserialize_NetworkMap(container: SVGSVGElement, s_state: ReturnType<typeof serialize_NetworkMap>): ReturnType<typeof network_map_init_state> {
+    let state = network_map_init_state(container);
+
+    // what should this thing do ...
+    // create devices and shapes and then the program can do whatever it feels like
+
+    const context: SerializeContext = {
+        objects: []
+    }
+
+    for (let i = 0; i < s_state.devices.length; i++) {
+        let device = deserialize_Device.call(context, s_state.devices[i]);
+        let md = s_state.device_metadata[i];
+        context.objects[i] = device;
+
+        let dimensions: typeof switch_dimensions | undefined = undefined;
+        if (device instanceof NetworkSwitch) {
+            dimensions = switch_dimensions;
+        }
+        // create and add shape and do stuff ...
+        let shape = network_map_init_device_shape(state, device, md.position.x, md.position.y, dimensions)
+        shape.static = md.static;
+    }
+
+    return state;
 }

@@ -19,7 +19,7 @@ import { DEVICE_PROGRAM_TRACEROUTE } from "../lib/device/program/traceroute";
 import { DEVICE_PROGRAM_HOSTSINFO, setaddress_by_host } from "../lib/device/program/hostsinfo";
 import { DEVICE_PROGRAM_DHCP_SERVER_MAN } from "../lib/device/program/dhcp-server-man";
 import { DEVICE_PROGRAM_DHCP_CLIENT } from "../lib/device/program/dhcp-client";
-import { deserialize_Device, serialize_Device } from "../lib/network-map/serialize";
+import { deserialize_NetworkMap, serialize_NetworkMap } from "../lib/network-map/serialize";
 
 function init_programs(device: Device) {
     device.process_start(DAEMON_ECHO_REPLIER);
@@ -170,24 +170,7 @@ let selected_iface: EthernetInterface | undefined = undefined;
 
 let state: undefined | ReturnType<typeof network_map_init_state> = undefined;
 
-function init_nmap(el: SVGSVGElement) {
-    state = network_map_init_state(el);
-
-    network_map_init_device(state, networkSwitch, 50, 50, switch_dimensions);
-
-    network_map_init_device(state, pc1, 150, 50);
-    network_map_init_device(state, pc2, 220, 50);
-    network_map_init_device(state, pc3, 290, 50);
-
-    network_map_init_device(state, networkRouter, 100, 270, switch_dimensions);
-
-    network_map_init_device(state, pc4, 220, 350);
-    network_map_init_device(state, pc5, 290, 350);
-    network_map_init_device(state, networkSwitch2, 100, 350, switch_dimensions);
-
-    network_map_render(state);
-
-    state.onclick = (dev, iface) => {
+function handle_nmap_click (...[dev, iface]: object[]) {
         if (!(dev instanceof Device) || !state) {
             return;
         }
@@ -218,7 +201,26 @@ function init_nmap(el: SVGSVGElement) {
             proc.io.read(new Uint8Array([10])); // Press enter
         }
         set_active_device(terminalOwner)
-    }
+}
+
+function init_nmap(el: SVGSVGElement) {
+    state = network_map_init_state(el);
+
+    network_map_init_device(state, networkSwitch, 50, 50, switch_dimensions);
+
+    network_map_init_device(state, pc1, 150, 50);
+    network_map_init_device(state, pc2, 220, 50);
+    network_map_init_device(state, pc3, 290, 50);
+
+    network_map_init_device(state, networkRouter, 100, 270, switch_dimensions);
+
+    network_map_init_device(state, pc4, 220, 350);
+    network_map_init_device(state, pc5, 290, 350);
+    network_map_init_device(state, networkSwitch2, 100, 350, switch_dimensions);
+
+    network_map_render(state);
+
+    state.onclick = handle_nmap_click;
 }
 
 function add_device_to_nmap(device: Device) {
@@ -297,6 +299,29 @@ export default function NetworkMapViewer(): JSX.Element {
             <div style={{ width: "24em", height: "100%", padding: "2em" }}>
                 {/* Shove random things into here */}
                 <nav>
+                    <div>
+                        <button class="btn btn-primary" onclick={() => {
+                            if (!state) return;
+                            let s_nmap = serialize_NetworkMap(state);
+                            window.sessionStorage.setItem("__dump_state__", JSON.stringify(s_nmap))
+                        }}>Dump</button>
+                        <button class="btn btn-secondary" onclick={() => {
+                            let v = window.sessionStorage.getItem("__dump_state__");
+                            if (!v || !state) return;
+
+                            for (let shape of state.shapes) {
+                                if (shape.type != "shape" || !(shape.assob instanceof Device)) {
+                                    continue;
+                                }
+                                network_map_remove_device(state, shape.assob)
+                            }
+
+                            state = deserialize_NetworkMap(state.container, JSON.parse(v));
+                            state.onclick = handle_nmap_click;
+                            network_map_render(state)
+                        }}>Recover</button>
+                    </div>
+
                     <button onclick={() => set_is_in_iface_connection_mode(v => !v)} class="btn btn-primary">toggle {is_in_iface_connection_mode() ? "⏸️" : "▶️"}</button>
                     <button class="btn btn-primary mx-3" on:click={() => set_active_device(undefined)}>Add</button>
                 </nav>
@@ -332,7 +357,6 @@ export default function NetworkMapViewer(): JSX.Element {
                             <div class="mb-5">
                                 <h1>{active_device()!.name}</h1>
                                 <button class="btn btn-danger" onclick={() => active_device() && remove_device_from_state(active_device()!)}>Remove Device</button>
-                                <div class="btn-primary btn" onClick={() => console.log(deserialize_Device.call(undefined, serialize_Device.call(undefined, active_device()!)))}>Dump</div>
                             </div>
                             <For each={active_device()!.interfaces.filter(iface => iface instanceof EthernetInterface)}>
                                 {(item) => (
