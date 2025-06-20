@@ -447,5 +447,8 @@ export function deserialize_NetworkMap(container: SVGSVGElement, s_state: Return
         shape.static = md.static;
     }
 
+    state.scale = s_state.scale;
+    state.origin = s_state.origin;
+
     return state;
 }

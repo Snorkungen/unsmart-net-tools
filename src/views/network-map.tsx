@@ -70,27 +70,16 @@ let swIface_pc3 = networkSwitch.interface_add(new EthernetInterface(networkSwitc
 let swIface2_pc4 = networkSwitch2.interface_add(new EthernetInterface(networkSwitch2));
 let swIface2_pc5 = networkSwitch2.interface_add(new EthernetInterface(networkSwitch2));
 
-let vlan10: EthernetInterface["vlan"] = {
-    type: "access",
-    vids: [10]
-}, vlan20: EthernetInterface["vlan"] = {
-    type: "access",
-    vids: [20]
-}, vlanTrunk: EthernetInterface["vlan"] = {
-    type: "trunk",
-    vids: [1, /*10,*/ 20]
-}
-
-swIface_pc1.vlan = vlan10;
-swIface_pc2.vlan = vlan10;
-swIface_pc3.vlan = vlan10;
+swIface_pc1.vlan_set("access", 10);
+swIface_pc2.vlan_set("access", 10);
+swIface_pc3.vlan_set("access", 10);
 
 // vlan test
-swIface2_pc4.vlan = vlan20;
-swIface2_pc5.vlan = vlan20;
+swIface2_pc4.vlan_set("access", 20);
+swIface2_pc5.vlan_set("access", 20);
 
-swIface_trunk.vlan = vlanTrunk;
-swIface2_trunk.vlan = vlanTrunk;
+swIface_trunk.vlan_set("trunk", 1, 20);
+swIface2_trunk.vlan_set("trunk", 1, 20);
 
 
 swIface_trunk_rtr.vlan_set("trunk", 1, 10, 20);
@@ -170,37 +159,37 @@ let selected_iface: EthernetInterface | undefined = undefined;
 
 let state: undefined | ReturnType<typeof network_map_init_state> = undefined;
 
-function handle_nmap_click (...[dev, iface]: object[]) {
-        if (!(dev instanceof Device) || !state) {
-            return;
-        }
+function handle_nmap_click(...[dev, iface]: object[]) {
+    if (!(dev instanceof Device) || !state) {
+        return;
+    }
 
-        if (iface instanceof EthernetInterface && is_in_iface_connection_mode()) {
-            if (selected_iface) {
-                if (selected_iface == iface) {
-                    iface.disconnect();
-                } else {
-                    selected_iface.connect(iface);
-                }
-
-                selected_iface = undefined;
-                return;
+    if (iface instanceof EthernetInterface && is_in_iface_connection_mode()) {
+        if (selected_iface) {
+            if (selected_iface == iface) {
+                iface.disconnect();
+            } else {
+                selected_iface.connect(iface);
             }
 
-            selected_iface = iface;
+            selected_iface = undefined;
             return;
         }
 
-        terminalOwner?.terminal_detach()
-        terminalOwner = dev;
-        terminalOwner.terminal_attach(terminal);
-        let proc = terminalOwner.processes.items.find(p => p && p.id.includes(DAEMON_SHELL.name))
-        if (!proc) {
-            terminalOwner.process_start(DAEMON_SHELL);
-        } else {
-            proc.io.read(new Uint8Array([10])); // Press enter
-        }
-        set_active_device(terminalOwner)
+        selected_iface = iface;
+        return;
+    }
+
+    terminalOwner?.terminal_detach()
+    terminalOwner = dev;
+    terminalOwner.terminal_attach(terminal);
+    let proc = terminalOwner.processes.items.find(p => p && p.id.includes(DAEMON_SHELL.name))
+    if (!proc) {
+        terminalOwner.process_start(DAEMON_SHELL);
+    } else {
+        proc.io.read(new Uint8Array([10])); // Press enter
+    }
+    set_active_device(terminalOwner)
 }
 
 function init_nmap(el: SVGSVGElement) {
@@ -313,7 +302,7 @@ export default function NetworkMapViewer(): JSX.Element {
                                 if (shape.type != "shape" || !(shape.assob instanceof Device)) {
                                     continue;
                                 }
-                                network_map_remove_device(state, shape.assob)
+                                remove_device_from_state(shape.assob)
                             }
 
                             state = deserialize_NetworkMap(state.container, JSON.parse(v));
