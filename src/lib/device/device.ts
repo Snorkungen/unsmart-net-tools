@@ -326,7 +326,7 @@ export class Device {
     store_get<T extends unknown>(key: string): T | null {
         return (this.store_data[key] as T) ?? null;
     }
-    store_set<T extends unknown>(key: string, data: T) : T{
+    store_set<T extends unknown>(key: string, data: T): T {
         this.store_data[key] = data;
         this.event_dispatch("store_set", key);
         return data;
@@ -1479,6 +1479,11 @@ export class Device {
     interface_remove(iface: BaseInterface) {
         delete this.interfaces_mcast_subscriptions[iface.id()];
 
+        this.routes = this.routes.filter((route) => route.iface != iface);
+        this.event_dispatch("interface_route_remove", iface);
+        iface.addresses.length = 0;
+        this.event_dispatch("interface_address_remove", iface);
+
         iface.disconnect()
         iface.resources.close();
         // @ts-expect-error
@@ -1495,15 +1500,13 @@ export class Device {
             return { success: false, data: undefined, message: "address not found" };
         }
 
-        /* Remove address */
-        iface.addresses = iface.addresses.filter((_, i) => i != addridx);
-
-        this.event_dispatch("interface_address_remove", iface);
-
         const { netmask } = iface.addresses[addridx];
         let empty_gateway = new BaseAddress(new Uint8Array(address.buffer.length));
-        this.interface_route_remove(iface, address, netmask, empty_gateway, false)
+        this.interface_route_remove(iface, netmask.mask(address), netmask, empty_gateway, false)
 
+        /* Remove address */
+        iface.addresses = iface.addresses.filter((_, i) => i != addridx);
+        this.event_dispatch("interface_address_remove", iface);
         return { success: true, data: undefined };
     }
     interface_address_set<AT extends typeof BaseAddress>(iface: BaseInterface, address: InstanceType<AT>, netmask: AddressMask<AT>): DeviceResult {
