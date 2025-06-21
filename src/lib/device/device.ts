@@ -8,7 +8,6 @@ import { uint8_concat, uint8_equals, uint8_fromNumber, uint8_matchLength, uint8_
 import { ETHERNET_DOT1Q_HEADER, ETHERNET_HEADER, ETHER_TYPES } from "../header/ethernet";
 import { IPV4_HEADER, IPV4_PSEUDO_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../header/ip";
 import { ARP_HEADER, ARP_OPCODES } from "../header/arp";
-import { PacketCaptureEthernetReader, type PacketCaptureRecordData } from "../packet-capture/reader";
 import { calculateChecksum } from "../binary/checksum";
 import { ICMPV4_CODES, ICMPV4_TYPES, ICMPV6_CODES, ICMPV6_TYPES, ICMP_HEADER, ICMP_NDPFLAG_SOLICITED, ICMP_NDP_HEADER, ICMP_UNUSED_HEADER } from "../header/icmp";
 import { UDP_HEADER } from "../header/udp";
@@ -18,6 +17,7 @@ import { TCPConnection, TCPState, add_u32, tcp_connection_id, tcp_read_options, 
 import { DeviceEvent, DeviceEventHandler, DeviceEventType } from "./internals/event";
 import { DeviceResource, DeviceResources } from "./internals/resources";
 import { ProgramParameterDefinition } from "./internals/program-parameters";
+import { DAEMON_EVENT_OBSERVER } from "./program/event-observer";
 
 // source <https://stackoverflow.com/a/63029283>
 export type DropFirst<T extends unknown[]> = T extends [any, ...infer U] ? U : never;
@@ -273,52 +273,11 @@ export function __find_best_caddr_match<CR extends ({ contact: Contact } | undef
 export class Device {
     name = Math.floor(Math.random() * 10_000).toString() + "B2";
 
-    constructor() { }
+    constructor() {
+        this.process_start(DAEMON_EVENT_OBSERVER);
+    }
 
     resources = new DeviceResources();
-
-    /** this approach is different in such a way that it allows to select for a specific interfac if that something i would like to do */
-    private log_records: { time: number, buffer: Uint8Array, iface: BaseInterface }[] = []
-    /** This thing is only to be called by interfaces that know the magic sauce  */
-    log(data: NetworkData, type: "SEND" | "RECEIVE" | "LOOPBACK", record = true) {
-        // data.buffer is a complete ethernet frame
-
-        let iface = data.rcvif;
-        if (!iface) {
-            console.warn("rcvif missing")
-            return;
-        }
-
-        let reader = new PacketCaptureEthernetReader(data.buffer, 0, { structs: [] } as any)
-        let frame_info: PacketCaptureRecordData = reader.read()
-
-        let iface_name = iface.name + iface.unit;
-        frame_info.protocol
-        if (type == "RECEIVE") {
-            console.info(`${this.name} - ${iface_name}: received a frame from ${frame_info.saddr} - ${frame_info.protocol}`)
-        } else if (type == "SEND") {
-            console.info(`${this.name} - ${iface_name}: sent a frame to ${frame_info.daddr} - ${frame_info.protocol} ${!frame_info.info.length ? "" : frame_info.info.join(" ")}`)
-        } else if (type == "LOOPBACK") {
-            console.info(`${this.name} - ${iface.name}: loopback from(${frame_info.saddr}) to(${frame_info.daddr}) - ${frame_info.protocol} ${!frame_info.info.length ? "" : frame_info.info.join(" ")}`)
-        }
-
-        if (!record) {
-            return;
-        }
-
-        this.log_records.push({
-            time: Date.now(),
-            buffer: new Uint8Array(data.buffer),
-            iface
-        })
-    }
-
-    log_select_records(iface_id?: string): Device["log_records"] {
-        if (!iface_id) {
-            return this.log_records
-        }
-        return this.log_records.filter((record) => record.iface.name + record.iface.unit == iface_id)
-    }
 
     /* store key-value information about something ... */
     /** NOTE: store should only store simple types as Objects, Arrays, Numbers, Strings */

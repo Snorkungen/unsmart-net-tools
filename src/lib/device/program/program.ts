@@ -3,6 +3,7 @@ import { PCAP_GLOBAL_HEADER, PCAP_MAGIC_NUMBER, PCAP_RECORD_HEADER } from "../..
 import { ASCIICodes, CSI, TERMINAL_DEFAULT_COLUMNS } from "../../terminal/shared";
 import { ProcessSignal, Program } from "../device";
 import { ppbind, PPFactory, ProgramParameterDefinition } from "../internals/program-parameters";
+import { DAEMON_EVENT_OBSERVER_FRAMES_STORE_KEY, Event_Observer_Frames } from "./event-observer";
 import { formatTable, ioprint, ioprintln } from "./helpers";
 import { termquery } from "./termquery";
 
@@ -102,7 +103,11 @@ export const DEVICE_PROGRAM_DOWNLOAD: Program = {
             name = ifid;
         }
 
-        let records = proc.device.log_select_records(ifid);
+        let records = proc.device.store_get<Event_Observer_Frames>(DAEMON_EVENT_OBSERVER_FRAMES_STORE_KEY) ?? [];
+        if (ifid) {
+            records = records.filter(({ iface }) => iface.id() === ifid)
+        }
+
         let buffer = [PCAP_GLOBAL_HEADER.create({
             "magicNumber": PCAP_MAGIC_NUMBER,
             "versionMajor": 2,

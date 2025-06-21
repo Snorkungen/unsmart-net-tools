@@ -74,19 +74,6 @@ export class NetworkSwitch extends Device {
         this.process_start(NETWORK_SWITCH_BRIDGING_DAEMON);
     }
 
-    /** Hacky thing to prevent the log spam of stp messages */
-    log(data: NetworkData, type: "SEND" | "RECEIVE" | "LOOPBACK", record?: boolean) {
-        // filter bpdu's
-        // let port = Object.values(this.data.ports).find(({ iface: _iface }) => _iface === data.rcvif)
-        // if (port && (port.type == "stp") &&
-        //     (data.buffer.length > ETHERNET_HEADER.getMinSize()) &&
-        //     uint8_equals(ETHERNET_HEADER.from(data.buffer).get("dmac").buffer, STP_DESTINATION.buffer)) {
-        //     return // filter;
-        // }
-
-        super.log(data, type, record)
-    }
-
     interface_add<F extends BaseInterface>(iface: F): F {
         super.interface_add(iface);
 
