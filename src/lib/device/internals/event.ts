@@ -1,5 +1,6 @@
+import type { NetworkData } from "../device";
 import type { BaseInterface } from "../interface";
-import { DeviceResource } from "./resources";
+import type { DeviceResource } from "./resources";
 
 type DeviceEventMap = {
     "interface_add": [];
@@ -13,8 +14,10 @@ type DeviceEventMap = {
     "interface_mcast_unsubscribe": [iface: BaseInterface];
     "interface_disconnect": [iface: BaseInterface];
     "interface_connect": [iface: BaseInterface];
-    "interface_recv": [iface: BaseInterface];
-    "interface_send": [iface: BaseInterface];
+
+    "interface_recv": [iface: BaseInterface, data: NetworkData];
+    "interface_send": [iface: BaseInterface, data: NetworkData];
+    "interface_loopback": [iface: BaseInterface, data: NetworkData];
 
     "store_set": [key: string];
     "store_delete": [key: string];

@@ -196,10 +196,9 @@ export class OSInterface extends BaseInterface {
         }
 
         if (destination instanceof IPV4Address) {
-            this.device.log({
-                buffer: ETHERNET_HEADER.create({ ethertype: ETHER_TYPES.IPv4, payload: data.buffer }).getBuffer(),
-                rcvif: this
-            }, "SEND")
+            this.device.event_dispatch("interface_send", this, {
+                buffer: ETHERNET_HEADER.create({ ethertype: ETHER_TYPES.IPv4, payload: data.buffer }).getBuffer(), rcvif: this
+            });
             OSINTERFACER.send_packet(this, ETHER_TYPES.IPv4, data)
         }
 
@@ -210,7 +209,7 @@ export class OSInterface extends BaseInterface {
         data.rcvif = this
         data.broadcast = false
         this.resources.create(this.device.schedule(() => {
-            this.device.log({ ...data, buffer: ETHERNET_HEADER.create({ ethertype: ethertype, payload: data.buffer }).getBuffer() }, "RECEIVE")
+            this.device.event_dispatch("interface_recv", this, { buffer: ETHERNET_HEADER.create({ ...data, ethertype: ETHER_TYPES.IPv4, payload: data.buffer }).getBuffer() });
 
             if (ethertype == ETHER_TYPES.IPv4) {
                 this.device.input_ipv4(IPV4_HEADER.from(data.buffer), data)

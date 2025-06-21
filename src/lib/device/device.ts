@@ -1283,10 +1283,17 @@ export class Device {
         data = { ...data, rcvif: route.iface, loopback: true };
 
         if (destination instanceof IPV4Address) this.resources.create(this.schedule(() => {
-            this.log({ ...data, buffer: ETHERNET_HEADER.create({ ethertype: ETHER_TYPES.IPv4, payload: data.buffer }).getBuffer() }, "LOOPBACK")
+            this.event_dispatch(
+                "interface_loopback",
+                route.iface,
+                { ...data, buffer: ETHERNET_HEADER.create({ ethertype: ETHER_TYPES.IPv4, payload: data.buffer }).getBuffer() })
+
             this.input_ipv4(IPV4_HEADER.from(data.buffer), data);
         })); else if (destination instanceof IPV6Address) this.resources.create(this.schedule(() => {
-            this.log({ ...data, buffer: ETHERNET_HEADER.create({ ethertype: ETHER_TYPES.IPv6, payload: data.buffer }).getBuffer() }, "LOOPBACK")
+            this.event_dispatch(
+                "interface_loopback",
+                route.iface,
+                { ...data, buffer: ETHERNET_HEADER.create({ ethertype: ETHER_TYPES.IPv6, payload: data.buffer }).getBuffer() })
             this.input_ipv6(IPV6_HEADER.from(data.buffer), data);
         })); else {
             // !TODO: check for iface header and proceed accordingly

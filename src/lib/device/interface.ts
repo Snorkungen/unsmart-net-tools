@@ -140,8 +140,9 @@ export class EthernetInterface extends BaseInterface {
         if (uint8_equals(etherheader.get("smac").buffer, etherheader.get("dmac").buffer)) {
             // this was meant for myself
             this.resources.create(this.device.schedule(() => {
-                let lodata = { buffer: etherheader.getBuffer(), rcvif: this, broadcast: undefined };
-                this.device.log(lodata, "RECEIVE"); this.device.input_ether(etherheader, lodata)
+                let lodata: NetworkData = { buffer: etherheader.getBuffer(), rcvif: this, broadcast: undefined, loopback: true };
+                this.device.event_dispatch("interface_loopback", this, lodata);
+                this.device.input_ether(etherheader, lodata)
             }))
             return { success: true, data: undefined }
         }
@@ -149,8 +150,9 @@ export class EthernetInterface extends BaseInterface {
         if (false && etherheader.get("dmac").isBroadcast()) {
             // here i should send to the interface to itself but i don't want that
             this.resources.create(this.device.schedule(() => {
-                let lodata = { buffer: etherheader.getBuffer(), rcvif: this, broadcast: true };
-                this.device.log(lodata, "RECEIVE"); this.device.input_ether(etherheader, lodata)
+                let lodata: NetworkData = { buffer: etherheader.getBuffer(), rcvif: this, broadcast: true, loopback: true };
+                this.device.event_dispatch("interface_loopback", this, lodata)
+                this.device.input_ether(etherheader, lodata)
             }));
         }
 
@@ -187,13 +189,11 @@ export class EthernetInterface extends BaseInterface {
             }
         }
 
-        this.device.event_dispatch("interface_send", this);
+        // this is called in a timeout to avoid some oddities with blockg the event looop, but the input side already schedules an event ...
+        // further inspection required
         // somehow put on wire
         this.resources.create(this.device.schedule(() => {
-            this.device.log({
-                buffer: etherheader.getBuffer(),
-                rcvif: this
-            }, "SEND")
+            this.device.event_dispatch("interface_send", this, { buffer: etherheader.getBuffer() });
             this.target && this.target.receive.call(this.target, etherheader)
         }, undefined));
         return { success: true, data: undefined }
@@ -243,11 +243,9 @@ export class EthernetInterface extends BaseInterface {
         }
 
         this.resources.create(this.device.schedule(() => {
-            this.device.log(data, "RECEIVE");
+            this.device.event_dispatch("interface_recv", this, data);
             this.device.input_ether(etherheader, data);
         }, this.receive_delay))
-
-        this.device.event_dispatch("interface_recv", this);
     }
 
     disconnect() {
