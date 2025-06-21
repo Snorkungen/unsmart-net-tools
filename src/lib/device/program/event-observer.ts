@@ -1,6 +1,7 @@
 import { PacketCaptureEthernetReader, PacketCaptureRecordData } from "../../packet-capture";
 import { NetworkData, Process, ProcessSignal, Program } from "../device";
 import { BaseInterface } from "../interface";
+import { ioprintln } from "./helpers";
 
 export const DAEMON_EVENT_OBSERVER_FRAMES_STORE_KEY = "daemon_event_observer:frames";
 export type Event_Observer_Frames = { time: number, buffer: Uint8Array, iface: BaseInterface }[];
@@ -42,19 +43,33 @@ function handle_interface_send(this: Process, iface: BaseInterface, data: Networ
 function handle_interface_recv(this: Process, iface: BaseInterface, data: NetworkData) { return log_frame(this, "recv", iface, data) }
 function handle_interface_loopback(this: Process, iface: BaseInterface, data: NetworkData) { return log_frame(this, "loopback", iface, data) }
 
+function handle_process_message(proc: Process, type: string, message: string) {
+    const device = proc.device;
+    console.info(`${device.name} - ${proc.id} - [${type}]: ${message}`);
+}
+
+// !TODO: Allow configuration of what gets logged
+
 export const DAEMON_EVENT_OBSERVER: Program = {
     name: "daemon_event_observer",
     description: "observes dispatched events",
     init(proc) {
+        const device = proc.device;
 
-        proc.resources.create(proc.device.event_create("interface_send",
-            handle_interface_send.bind(proc)));
-        proc.resources.create(proc.device.event_create("interface_recv",
-            handle_interface_recv.bind(proc)));
-        proc.resources.create(proc.device.event_create("interface_loopback",
-            handle_interface_loopback.bind(proc)));
+        proc.resources.create(device.event_create("interface_send", handle_interface_send.bind(proc)));
+        proc.resources.create(device.event_create("interface_recv", handle_interface_recv.bind(proc)));
+        proc.resources.create(device.event_create("interface_loopback", handle_interface_loopback.bind(proc)));
+
+        proc.resources.create(proc.device.event_create("process_message", handle_process_message))
 
         return ProcessSignal.__EXPLICIT__;
     },
     __NODATA__: true
+}
+
+export function process_print_messages(proc: Process) {
+    proc.resources.create(proc.device.event_create("process_message", (p, type, msg) => {
+        if (p !== proc) return;
+        ioprintln(proc.io, `[${type}]: ${msg}`)
+    }))
 }

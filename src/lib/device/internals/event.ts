@@ -1,4 +1,4 @@
-import type { NetworkData } from "../device";
+import type { NetworkData, Process, ProcessMessageType } from "../device";
 import type { BaseInterface } from "../interface";
 import type { DeviceResource } from "./resources";
 
@@ -18,6 +18,10 @@ type DeviceEventMap = {
     "interface_recv": [iface: BaseInterface, data: NetworkData];
     "interface_send": [iface: BaseInterface, data: NetworkData];
     "interface_loopback": [iface: BaseInterface, data: NetworkData];
+
+    "process_message": [proc: Process, type: ProcessMessageType, message: string];
+    "process_close": [proc: Process],
+    "process_start": [proc: Process],
 
     "store_set": [key: string];
     "store_delete": [key: string];

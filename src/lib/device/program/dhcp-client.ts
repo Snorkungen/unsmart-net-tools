@@ -13,7 +13,7 @@ import { getKeyByValue } from "../../misc";
 import { _UNSET_ADDRESS_IPV4, address_is_unset, NetworkData } from "../device";
 import { Contact, Process, ProcessSignal, Program } from "../device";
 import { EthernetInterface } from "../interface";
-import { ioprintln } from "./helpers";
+import { process_print_messages } from "./event-observer";
 
 const BROADCAST_IPV4_ADDRESS = new IPV4Address("255.255.255.255");
 
@@ -186,7 +186,8 @@ function handle_offer(proc: Process<DHCPC_Data>, contact: Contact<"IPv4", "RAW">
     });
 
     data.state = DHCPC_State.REQUEST;
-    ioprintln(proc.io, "[INFO] sending request")
+    proc.device.event_dispatch("process_message", proc, "INFO", "sending request");
+
     return send_dhcpc4(data, replyhdr);
 }
 
@@ -205,8 +206,7 @@ function handle_ack(proc: Process<DHCPC_Data>, contact: Contact<"IPv4", "RAW">, 
         return; // not interested
     }
 
-    ioprintln(proc.io, "[INFO] committing DHCP " + data.offer.address4);
-    console.log("COMMITING DHCP " + data.offer.address4);
+    proc.device.event_dispatch("process_message", proc, "INFO", "COMMITING DHCP " + data.offer.address4);
 
     data.state = DHCPC_State.BOUND;
     proc.device.interface_address_set(data.iface, data.offer.address4, data.offer.netmask4);
@@ -223,7 +223,6 @@ function handle_ack(proc: Process<DHCPC_Data>, contact: Contact<"IPv4", "RAW">, 
         // i.e revalidate
     }
 
-    ioprintln(proc.io, "[INFO] closing dhcpc4");
     return proc.close(ProcessSignal.INTERRUPT);
 }
 
@@ -281,7 +280,7 @@ function receive_ipv4(this: Process<DHCPC_Data>, contact: Contact<"IPv4", "RAW">
         return;
     }
 
-    ioprintln(this.io, `[INFO] received ${getKeyByValue(DHCP_MESSGAGE_TYPES, tbuf[0])}`);
+    this.device.event_dispatch("process_message", this, "INFO", `received ${getKeyByValue(DHCP_MESSGAGE_TYPES, tbuf[0])}`);
     switch (tbuf[0]) {
         case DHCP_MESSGAGE_TYPES.DHCPOFFER:
             return handle_offer(this, contact, data, dhcphdr, opts);
@@ -293,9 +292,11 @@ function receive_ipv4(this: Process<DHCPC_Data>, contact: Contact<"IPv4", "RAW">
 export const DEVICE_PROGRAM_DHCP_CLIENT: Program<DHCPC_Data> = {
     name: "dhcpc4",
     init(proc, [, ifid]) {
+        process_print_messages(proc);
+
         let iface = proc.device.interfaces.find(f => f.id() == ifid);
         if (!iface || !(iface instanceof EthernetInterface)) {
-            ioprintln(proc.io, "no interface found")
+            proc.device.event_dispatch("process_message", proc, "ERROR", "interface not found");
             return ProcessSignal.ERROR;
         }
 
@@ -338,7 +339,7 @@ export const DEVICE_PROGRAM_DHCP_CLIENT: Program<DHCPC_Data> = {
 
         // send header
         send_dhcpc4(proc.data, discoverhdr);
-        ioprintln(proc.io, "[INFO] sending discover");
+        proc.device.event_dispatch("process_message", proc, "INFO", "sending discover");
 
         return ProcessSignal.__EXPLICIT__;
     }

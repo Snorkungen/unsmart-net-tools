@@ -189,6 +189,7 @@ export enum ProcessSignal {
     /** Explicit means that the user is in charge of closing the process */
     __EXPLICIT__
 };
+export type ProcessMessageType = ("INFO" | "ERROR")
 export type ProcessID = string; // number[] !TODO: it could be an array of numbers becouse then it would make things easier in coding
 export type ProcessHandler = (proc: Process, signal: ProcessSignal) => void;
 export type ProcessTerminalReadFunc = (proc: Process, bytes: Uint8Array) => void | true;
@@ -379,6 +380,7 @@ export class Device {
         }
 
         let init_sig = program.init(proc, args || [], data);
+        this.event_dispatch("process_start", proc);
 
         if (init_sig instanceof Promise) {
             init_sig.then(sig => {
@@ -434,6 +436,8 @@ export class Device {
             proc.status = "MARKED_CLOSED";
             return;
         }
+
+        this.event_dispatch("process_close", proc);
 
         // just to get a consistent warning
         this.process_should_close(proc, signal);

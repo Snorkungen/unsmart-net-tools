@@ -76,7 +76,7 @@ export const DAEMON_ROUTING: Program = {
             iphdr.set("csum", 0);
             iphdr.set("csum", calculateChecksum(iphdr.getBuffer().subarray(0, iphdr.get("ihl") << 2)));
 
-            console.log(proc.device.name, "[ROUTING]")
+            proc.device.event_dispatch("process_message", proc, "INFO", `ROUTING - (${iphdr.get("saddr")}) => (${iphdr.get("daddr")})`);
             contact.send({ buffer: iphdr.getBuffer() }, iphdr.get("daddr"), route)
         }, RECEIVE_OPTIONS);
 
@@ -155,6 +155,9 @@ export const DAEMON_ROUTING: Program = {
             }
 
             iphdr.set("hopLimit", iphdr.get("hopLimit") - 1)
+
+            proc.device.event_dispatch("process_message", proc, "INFO", `ROUTING - (${iphdr.get("saddr")}) => (${iphdr.get("daddr")})`);
+            contact.send({ buffer: iphdr.getBuffer() }, iphdr.get("daddr"), route)
         }, RECEIVE_OPTIONS);
 
         proc.handle(() => {
