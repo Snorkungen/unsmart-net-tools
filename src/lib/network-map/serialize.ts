@@ -1,10 +1,7 @@
-import { BaseAddress } from "../address/base";
-import { IPV4Address } from "../address/ipv4";
-import { IPV6Address } from "../address/ipv6";
 import { MACAddress } from "../address/mac";
-import { createMask } from "../address/mask";
-import { Device, DeviceRoute, Program } from "../device/device";
+import { Device, Program } from "../device/device";
 import { BaseInterface, EthernetInterface, LoopbackInterface, VlanInterface } from "../device/interface";
+import { storev_Array, storev_BaseAddress, storev_BaseInterface, storev_DeviceAddress, storev_DeviceRoute, storev_discrete, storev_number, storev_Object, storev_string, StoreValue, StoreValueS, StoreValueT } from "../device/internals/store";
 import { NETWORK_SWITCH_PORTS_STORE_KEY, NetworkSwitch, NetworkSwitchPorts } from "../device/network-switch";
 import { OSInterface } from "../device/osinterface";
 import { DEVICE_PROGRAM_DAEMAN } from "../device/program/daeman";
@@ -22,9 +19,20 @@ import { DEVICE_PROGRAM_TRACEROUTE } from "../device/program/traceroute";
 import { DEVICE_PROGRAM_VLANINFO } from "../device/program/vlaninfo";
 import { network_map_init_device_shape, network_map_init_state } from "./network-map";
 
-//
-// What about creating somekind of declarative system, that then serializes and de serializes the store data ...
-//
+const store_hostsinfo: StoreValue<HostsinfoData> = storev_Object({
+    hosts: storev_Array(storev_string),
+    addresses: storev_Array(storev_Array(storev_BaseAddress)),
+});
+
+const store_ports: StoreValue<NetworkSwitchPorts> = storev_discrete(storev_Object({
+    iface: storev_BaseInterface,
+    port_no: storev_number,
+    // !NOTE: this is an enum so nothing is guaranteed
+    state: storev_number,
+}));
+
+const device_routes = storev_Array(storev_DeviceRoute);
+const device_interfaces_mcast_subscriptions = storev_discrete(storev_Array(storev_BaseAddress));
 
 const all_available_programs: Program[] = [
     DEVICE_PROGRAM_ECHO,
@@ -50,31 +58,10 @@ type SerializeContext = {
     // contain information and stuff ....
 } | undefined;
 
-type SerializeableDeviceAddress = {
-    // <address>.constructor.name
-    type: string;
-    address: string;
-    netmask: number;
-}
-
-type SerializeableDeviceRoute = {
-    // <address>.constructor.name
-    type: string;
-    destination: string;
-    gateway: string;
-    netmask: number;
-
-    f_static?: boolean;
-    f_gateway?: boolean;
-    f_host?: boolean;
-
-    iface: string;
-}
-
 type SerializeableBaseInterface = {
     unit: number;
     mtu: number;
-    addresses: SerializeableDeviceAddress[];
+    addresses: StoreValueS<typeof storev_DeviceAddress>[];
 }
 
 interface SerializeableLoopbackInterface extends SerializeableBaseInterface { }
@@ -99,28 +86,17 @@ type SerializeableDevice = {
         osif: SerializeableOSInterface[];
         vlanif: SerializeableVlanInterface[];
     },
-    routes: SerializeableDeviceRoute[];
-    interfaces_mcast_subscriptions: {
-        [ifid: string]: { type: string; address: string }[]
-    };
+    routes: StoreValueS<typeof device_routes>;
+    interfaces_mcast_subscriptions: StoreValueS<typeof device_interfaces_mcast_subscriptions>
     store: Record<string, unknown>;
     running_programs: string[];
     programs: string[];
 }
 
-
-function serialize_DeviceAddress(this: SerializeContext, da: BaseInterface["addresses"][number]): SerializeableDeviceAddress {
-    return {
-        type: da.address.constructor.name,
-        address: da.address.toString(),
-        netmask: da.netmask.length,
-    }
-}
-
 function serialize_BaseInterface(this: SerializeContext, iface: BaseInterface): SerializeableBaseInterface {
     return {
         unit: iface.unit,
-        addresses: iface.addresses.map(serialize_DeviceAddress),
+        addresses: iface.addresses.map(da => storev_DeviceAddress.serialize(da)),
         mtu: iface.mtu
     }
 }
@@ -150,20 +126,6 @@ function serialize_EthernetInterface(this: SerializeContext, iface: BaseInterfac
     }
 }
 
-function serialize_DeviceRoute(this: SerializeContext, route: DeviceRoute): SerializeableDeviceRoute {
-    return {
-        type: route.destination.constructor.name,
-        destination: route.destination.toString(),
-        gateway: route.gateway.toString(),
-        netmask: route.netmask.length,
-        f_gateway: route.f_gateway,
-        f_host: route.f_host,
-        f_static: route.f_static,
-
-        iface: route.iface.id(),
-    }
-}
-
 function serialize_Device(this: SerializeContext, device: Device): SerializeableDevice {
     // !TODO: figure out a better way of serializing the data, because theyre essentially allowed to change and other stuff so they'l break anyhow
     // only support for now the things needed to have fun creating weird routing demos
@@ -171,30 +133,12 @@ function serialize_Device(this: SerializeContext, device: Device): Serializeable
     const store: Record<string, any> = {};
     const ports = device.store_get<NetworkSwitchPorts>(NETWORK_SWITCH_PORTS_STORE_KEY);
     if (ports) {
-        store[NETWORK_SWITCH_PORTS_STORE_KEY] = Object.entries(ports).reduce<{
-            [port_no: string]: {
-                [x: string]: unknown;
-                iface: string;
-            }
-        }>((res, [port_no, port]) => {
-            if (port.type) {
-                throw new Error("serializing unknown port types not supported")
-            }
-
-            res[port_no] = {
-                ...port,
-                iface: port.iface.id(),
-            }
-            return res;
-        }, {});
+        store[NETWORK_SWITCH_PORTS_STORE_KEY] = store_ports.serialize(ports, device);
     }
 
     const hostsinfo = device.store_get<HostsinfoData>(HOSTSINFO_STORE_KEY);
     if (hostsinfo) {
-        store[HOSTSINFO_STORE_KEY] = {
-            hosts: hostsinfo.hosts,
-            addresses: hostsinfo.addresses.map(addresses => addresses.map(a => a.toJSON()))
-        }
+        store[HOSTSINFO_STORE_KEY] = store_hostsinfo.serialize(hostsinfo, device);
     }
 
     const running_programs: string[] = [];
@@ -217,40 +161,19 @@ function serialize_Device(this: SerializeContext, device: Device): Serializeable
             osif: device.interfaces.filter(iface => iface instanceof OSInterface).map(serialize_BaseInterface),
             vlanif: device.interfaces.filter(iface => iface instanceof VlanInterface).map(serialize_BaseInterface),
         },
-        interfaces_mcast_subscriptions: Object.entries(device.interfaces_mcast_subscriptions).reduce<SerializeableDevice["interfaces_mcast_subscriptions"]>((res, [ifid, addresses]) => {
-            res[ifid] = addresses.map(a => a.toJSON())
-            return res;
-        }, {}),
-        routes: device.routes.map(serialize_DeviceRoute.bind(this)),
+        interfaces_mcast_subscriptions: device_interfaces_mcast_subscriptions.serialize(device.interfaces_mcast_subscriptions, device),
+        routes: device_routes.serialize(device.routes, device),
         store: store,
         running_programs: running_programs,
         programs: programs,
     }
 }
 
-function deserialize_resolve_address_type(type: string): typeof BaseAddress {
-    if (type == MACAddress.name) {
-        return MACAddress;
-    } else if (type == IPV4Address.name) {
-        return IPV4Address;
-    } else if (type == IPV6Address.name) {
-        return IPV6Address;
-    }
-
-    throw new Error();
-}
-
 function deserialize_onto_iface(this: SerializeContext, iface: BaseInterface, siface: SerializeableBaseInterface) {
     iface.mtu = siface.mtu;
     iface.unit = siface.unit;
 
-    iface.addresses = siface.addresses.map(v => {
-        let constructor = deserialize_resolve_address_type(v.type);
-        return {
-            address: new constructor(v.address),
-            netmask: createMask(constructor, v.netmask),
-        }
-    })
+    iface.addresses = siface.addresses.map(v => storev_DeviceAddress.deserialize(v))
 }
 
 function deserialize_interfaces(this: SerializeContext, device: Device, sdevice: SerializeableDevice) {
@@ -313,63 +236,18 @@ function deserialize_Device(this: SerializeContext, sdevice: SerializeableDevice
     device.name = sdevice.name;
     deserialize_interfaces.call(this, device, sdevice);
 
-    device.routes = sdevice.routes.map((v) => {
-        let constructor = deserialize_resolve_address_type(v.type);
+    device.routes = device_routes.deserialize(sdevice.routes, device);
 
-        let iface = device.interfaces.find((vi) => vi.id() == v.iface)
-
-        if (!iface) {
-            throw new Error();
-        }
-
-        return {
-            iface: iface,
-            destination: new constructor(v.destination),
-            gateway: new constructor(v.gateway),
-            netmask: createMask(constructor, v.netmask),
-            f_gateway: v.f_gateway || undefined,
-            f_host: v.f_host || undefined,
-            f_static: v.f_static || undefined,
-        }
-    })
-
-    device.interfaces_mcast_subscriptions = {};
-    Object.entries(sdevice.interfaces_mcast_subscriptions).forEach(([key, val]) => {
-        device.interfaces_mcast_subscriptions[key] = val.map((v) => {
-            let constructor = deserialize_resolve_address_type(v.type);
-            return new constructor(v.address)
-        })
-    })
-
-    const sports = sdevice.store[NETWORK_SWITCH_PORTS_STORE_KEY] as {
-        [port_no: string]: {
-            [x: string]: unknown;
-            iface: string;
-        }
-    };
+    device.interfaces_mcast_subscriptions = device_interfaces_mcast_subscriptions.deserialize(sdevice.interfaces_mcast_subscriptions, device);
+    
+    const sports = sdevice.store[NETWORK_SWITCH_PORTS_STORE_KEY] as undefined | StoreValueS<typeof store_ports>
     if (sports) {
-        device.store_set(NETWORK_SWITCH_PORTS_STORE_KEY, Object.entries(sports).reduce<any>((res, [port_no, port]) => {
-            let iface = device.interfaces.find(v => v.id() == port.iface);
-            if (!iface) {
-                throw new Error();
-            }
-            res[port_no] = {
-                ...port,
-                iface: iface,
-            }
-            return res;
-        }, {}))
+        device.store_set(NETWORK_SWITCH_PORTS_STORE_KEY, store_ports.deserialize(sports, device))
     }
 
-    const shostsinfo = sdevice.store[HOSTSINFO_STORE_KEY] as { hosts: string[]; addresses: ReturnType<BaseAddress["toJSON"]>[][] };
+    const shostsinfo = sdevice.store[HOSTSINFO_STORE_KEY] as undefined | StoreValueS<typeof store_hostsinfo>;
     if (shostsinfo) {
-        device.store_set(HOSTSINFO_STORE_KEY, {
-            hosts: shostsinfo.hosts,
-            addresses: shostsinfo.addresses.map(adresses => adresses.map(v => {
-                let constructor = deserialize_resolve_address_type(v.type);
-                return new constructor(v.address);
-            }))
-        })
+        device.store_set(HOSTSINFO_STORE_KEY, store_hostsinfo.deserialize(shostsinfo, device))
     }
 
     device.programs = sdevice.programs.map(name => all_available_programs.find(p => p.name === name)!)

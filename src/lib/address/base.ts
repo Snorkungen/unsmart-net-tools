@@ -6,18 +6,11 @@ export class BaseAddress {
 
     buffer: Uint8Array;
 
-    constructor(input: Uint8Array | string) {
-        if (typeof input == "string") {
-            throw new Error("lying to tsc")
-        }
+    constructor(input: Uint8Array) {
         this.buffer = input;
     }
 
     toString(): string {
-        throw new Error("Not Implemented!")
-    }
-
-    toJSON(): { type: string; address: string } {
         throw new Error("Not Implemented!")
     }
 }

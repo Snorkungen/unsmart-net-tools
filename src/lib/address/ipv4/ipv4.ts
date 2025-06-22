@@ -45,11 +45,4 @@ export class IPV4Address implements BaseAddress {
     toString(): string {
         return `${this.buffer[0]}.${this.buffer[1]}.${this.buffer[2]}.${this.buffer[3]}`;
     }
-
-    toJSON(): { type: string; address: string } {
-        return {
-            type: this.constructor.name,
-            address: this.toString(),
-        }
-    }
 }
