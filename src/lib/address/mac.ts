@@ -97,12 +97,5 @@ export class MACAddress implements BaseAddress {
         uint8_mutateSet(octets, this.buffer.subarray(3), 5);
         return octets;
     }
-
-    toJSON(): { type: string; address: string } {
-        return {
-            type: this.constructor.name,
-            address: this.toString(),
-        }
-    }
 };
 
