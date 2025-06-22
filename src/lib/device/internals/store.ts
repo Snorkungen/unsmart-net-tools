@@ -20,8 +20,8 @@ interface StoreValue<T = unknown, P = unknown> {
     serialize(value: T, device?: Device): P; // what is serializable depends could be whatever ...
     deserialize(input: P, device?: Device,): T;
 
-    readonly definition?: StoreValue; // and then this would recursively call  serialize and deserialize on theme kids ...
-    readonly definitions?: Record<number, StoreValue>;
+    readonly definition?: StoreValue;
+    readonly definitions?: Record<number | string, StoreValue>;
 }
 
 type StoreValueT<T extends StoreValue> = T extends StoreValue<infer P> ? P : never;
@@ -104,7 +104,6 @@ function storev_optional<T extends unknown, S extends unknown>(definition: Store
     }
 }
 
-// !TODO: the types do not really work how the should, the key should be able to be narrowed to either number or string
 /**
  * discrete could also handle the situation above ...
  * 
@@ -116,22 +115,50 @@ function storev_optional<T extends unknown, S extends unknown>(definition: Store
  */
 function storev_discrete<T = unknown, S = unknown>(definition: StoreValue<T, S>): StoreValue<
     { [x: string | number]: T },
-    [(string | number)[], ...S[]]
+    [(string | number)[], ...S[]] | [(string | number)[], (keyof S)[], ...S[keyof S][][]]
 > {
     return {
         definition: definition,
         serialize(value, device) {
-            // !TODO: recreate the same optimisation as in Array for objects
             let keys = Object.keys(value) as (string | number)[];
             let values = Object.values(value).map(v => this.definition!.serialize(v, device)) as S[];
+
+            // filter keys where values  are falsy
+            values = values.filter((_, j) => !!value[keys[j]])
+            keys = keys.filter(k => !!value[k]);
+
+            if (this.definition!.definitions) {
+                const v_keys = Object.keys(this.definition!.definitions!) as (keyof S)[];
+                const flattened_values = values.map<S[keyof S][]>((v) => v_keys.map(k => (v as S)[k]));
+                return [keys, v_keys, ...flattened_values];
+            }
+
             return [keys, ...values];
         },
         deserialize(input, device) {
-            // !TODO: recreate the same optimisation as in Array for objects
             const keys = input[0];
-            const values = input.slice(1) as S[];
-
             const result: { [x: string | number]: T } = {};
+
+            if (this.definition!.definitions) {
+                const v_keys = input[1] as (keyof S)[];
+                const flattened_values = input.slice(2) as S[keyof S][][];
+
+                for (let i = 0; i < keys.length; i++) {
+                    let key = keys[i];
+                    result[key] = {} as T;
+
+                    // fill in the keys
+                    for (let j = 0; j < v_keys.length; j++) {
+                        result[key][v_keys[j] as unknown as keyof T] = (
+                            this.definition!.definitions![v_keys[j] as string].deserialize(flattened_values[i][j], device) as T[keyof T]
+                        )
+                    }
+                }
+
+                return result;
+            }
+
+            const values = input.slice(1) as S[];
             for (let i = 0; i < keys.length; i++) {
                 result[keys[i]] = this.definition!.deserialize(values[i], device) as T;
             }
