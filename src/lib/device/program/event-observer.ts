@@ -60,7 +60,7 @@ export const DAEMON_EVENT_OBSERVER: Program = {
         proc.resources.create(device.event_create("interface_recv", handle_interface_recv.bind(proc)));
         proc.resources.create(device.event_create("interface_loopback", handle_interface_loopback.bind(proc)));
 
-        proc.resources.create(proc.device.event_create("process_message", handle_process_message))
+        proc.resources.create(device.event_create("process_message", handle_process_message))
 
         return ProcessSignal.__EXPLICIT__;
     },
@@ -68,8 +68,7 @@ export const DAEMON_EVENT_OBSERVER: Program = {
 }
 
 export function process_print_messages(proc: Process) {
-    proc.resources.create(proc.device.event_create("process_message", (p, type, msg) => {
-        if (p !== proc) return;
+    proc.resources.create(proc.device.event_create("process_message", (_, type, msg) => {
         ioprintln(proc.io, `[${type}]: ${msg}`)
-    }))
+    }, proc))
 }
