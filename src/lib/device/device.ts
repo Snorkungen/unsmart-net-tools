@@ -14,7 +14,7 @@ import { UDP_HEADER } from "../header/udp";
 import { BaseInterface, VlanInterface, EthernetInterface } from "./interface";
 import { TCP_FLAGS, TCP_HEADER, TCP_OPTION_KINDS } from "../header/tcp";
 import { TCPConnection, TCPState, add_u32, tcp_connection_id, tcp_read_options, tcp_set_option } from "./internals/tcp";
-import { DeviceEvent, DeviceEventHandler, DeviceEventType } from "./internals/event";
+import { DeviceEvent, DeviceEventFilters, DeviceEventHandler, DeviceEventType } from "./internals/event";
 import { DeviceResource, DeviceResources } from "./internals/resources";
 import { ProgramParameterDefinition } from "./internals/program-parameters";
 import { DAEMON_EVENT_OBSERVER } from "./program/event-observer";
@@ -297,14 +297,17 @@ export class Device {
     }
 
     private events = new DeviceResources<DeviceEvent>();
-    event_create<T extends DeviceEventType>(keys: T[] | T, handler: DeviceEventHandler<T>): DeviceEvent {
+    event_create<T extends DeviceEventType>(keys: T[] | T, handler: DeviceEventHandler<T>, ...filters: DeviceEventFilters<T>): DeviceEvent {
         return this.events.create({
             abort_controller: new AbortController(),
             handler: handler as any,
             keys: Array.isArray(keys) ? keys : [keys],
+            filters: filters,
             close() {
                 if (this.abort_controller.signal.aborted) return;
                 this.abort_controller.abort();
+                this.keys.length = 0;
+                this.filters.length = 0;
             },
         })
     }
@@ -312,6 +315,9 @@ export class Device {
     event_dispatch<T extends DeviceEventType>(evt: T, ...params: Parameters<DeviceEventHandler<T>>) {
         for (let event of this.events.items) {
             if (event && event.keys.includes(evt)) {
+                if (!event.filters.every((filterv, i) => filterv == params[i])) {
+                    continue;
+                }
                 event.handler(...params);
             }
         }
