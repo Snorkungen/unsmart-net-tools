@@ -131,13 +131,13 @@ function serialize_Device(this: SerializeContext, device: Device): Serializeable
     // only support for now the things needed to have fun creating weird routing demos
 
     const store: Record<string, any> = {};
-    const ports = device.store_get<NetworkSwitchPorts>(NETWORK_SWITCH_PORTS_STORE_KEY);
-    if (ports) {
+    const ports = device.store_get(NETWORK_SWITCH_PORTS_STORE_KEY);
+    if (ports && store_ports.validate(ports)) {
         store[NETWORK_SWITCH_PORTS_STORE_KEY] = store_ports.serialize(ports, device);
     }
 
-    const hostsinfo = device.store_get<HostsinfoData>(HOSTSINFO_STORE_KEY);
-    if (hostsinfo) {
+    const hostsinfo = device.store_get(HOSTSINFO_STORE_KEY);
+    if (hostsinfo && store_hostsinfo.validate(hostsinfo)) {
         store[HOSTSINFO_STORE_KEY] = store_hostsinfo.serialize(hostsinfo, device);
     }
 
