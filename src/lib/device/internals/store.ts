@@ -1,33 +1,41 @@
-/*
-    -----------------------------
-    The limit shall be 300 LOC
-    -----------------------------
-
-    Why this file exists has not been understood.
-
-    NOTE: optimisation refers to the final JSON bytes size
-*/
-
 import type { Device, DeviceRoute } from "../device";
-import type { BaseInterface, DeviceAddress } from "../interface";
+import { BaseInterface, DeviceAddress } from "../interface";
 import { BaseAddress } from "../../address/base";
 import { IPV4Address } from "../../address/ipv4";
 import { IPV6Address } from "../../address/ipv6";
 import { MACAddress } from "../../address/mac";
 import { AddressMask } from "../../address/mask";
 
-interface StoreValue<T = unknown, P = unknown> {
+export interface StoreValue<T = unknown, P = unknown> {
     serialize(value: T, device?: Device): P; // what is serializable depends could be whatever ...
     deserialize(input: P, device?: Device,): T;
+    validate(input: unknown, device?: Device): input is T;
 
     readonly definition?: StoreValue;
     readonly definitions?: Record<number | string, StoreValue>;
 }
+export type StoreValueT<T extends StoreValue> = T extends StoreValue<infer P> ? P : never;
+export type StoreValueS<P extends StoreValue> = P extends StoreValue<unknown, infer R> ? R : never;
 
-type StoreValueT<T extends StoreValue> = T extends StoreValue<infer P> ? P : never;
-type StoreValueS<P extends StoreValue> = P extends StoreValue<unknown, infer R> ? R : never
+function storev_base_type<T extends unknown>(type: string): StoreValue<T, T> {
+    return {
+        serialize(value) { return value; },
+        deserialize(input) { return input; },
+        validate(input): input is T { return typeof input == type },
+    }
+}
 
-function storev_Object<T extends Record<string, StoreValue>>(definition: T): StoreValue<{ [Key in keyof T]: StoreValueT<T[Key]> }, { [Key in keyof T]: StoreValueS<T[Key]> }> {
+export const storev_number = storev_base_type<number>("number");
+export const storev_string = storev_base_type<string>("string");
+export const storev_boolean = storev_base_type<boolean>("boolean");
+
+export const storev_bigint: StoreValue<bigint, string> = {
+    serialize(value) { return value.toString(); },
+    deserialize(input) { return BigInt(input); },
+    validate(input) { return typeof input === "bigint" },
+}
+
+export function storev_Object<T extends Record<string, StoreValue>>(definition: T): StoreValue<{ [Key in keyof T]: StoreValueT<T[Key]> }, { [Key in keyof T]: StoreValueS<T[Key]> }> {
     return {
         definitions: definition,
         serialize(value, device) {
@@ -43,7 +51,17 @@ function storev_Object<T extends Record<string, StoreValue>>(definition: T): Sto
                 result[key] = this.definitions[key].deserialize(input[key], device)
             }
             return result as { [Key in keyof T]: StoreValueT<T[Key]> };
-        }
+        },
+        validate(input, device): input is { [Key in keyof T]: StoreValueT<T[Key]> } {
+            if (!this.definitions) return false;
+            if (!input || typeof input != "object") return false;
+
+            for (let key in this.definition) {
+                if (!this.definitions[key]?.validate((input as any)[key], device)) return false;
+            }
+
+            return true;
+        },
     }
 }
 
@@ -55,7 +73,7 @@ function storev_Object<T extends Record<string, StoreValue>>(definition: T): Sto
  * ```
  * NOTE: this thing is lying about the types ... so they should probably be opaque
  */
-function storev_Array<T extends unknown, S extends unknown>(definition: StoreValue<T, S>): StoreValue<T[], S[] | [string[], ...unknown[][]]> {
+export function storev_Array<T extends unknown, S extends unknown>(definition: StoreValue<T, S>): StoreValue<T[], S[] | [string[], ...unknown[][]]> {
     return {
         definition: definition,
         serialize(value, device) {
@@ -86,10 +104,20 @@ function storev_Array<T extends unknown, S extends unknown>(definition: StoreVal
             }
             return input.map(v => this.definition!.deserialize(v, device)) as T[];
         },
+        validate(input, device): input is T[] {
+            if (!this.definition) return false;
+            if (typeof input != "object" || !Array.isArray(input)) return false;
+
+            for (let value of input) {
+                if (!this.definition.validate(value, device)) return false;
+            }
+
+            return true;
+        },
     }
 }
 
-function storev_optional<T extends unknown, S extends unknown>(definition: StoreValue<T, S>): StoreValue<T | null, S | null> {
+export function storev_optional<T extends unknown, S extends unknown>(definition: StoreValue<T, S>): StoreValue<T | null, S | null> {
     // This solution is a hack in order to get storev_Arrays optimiasation to work
     return {
         ...definition,
@@ -100,7 +128,11 @@ function storev_optional<T extends unknown, S extends unknown>(definition: Store
         deserialize(input, device) {
             if (!input) return null;
             return definition.deserialize(input, device) as T;
-        }
+        },
+        validate(input, device): input is (T | null) {
+            if (!input /* Just check falsy who cares ... */) return true;
+            return definition.validate(input, device);
+        },
     }
 }
 
@@ -113,7 +145,7 @@ function storev_optional<T extends unknown, S extends unknown>(definition: Store
  * }
  * ```
  */
-function storev_discrete<T = unknown, S = unknown>(definition: StoreValue<T, S>): StoreValue<
+export function storev_discrete<T = unknown, S = unknown>(definition: StoreValue<T, S>): StoreValue<
     { [x: string | number]: T },
     [(string | number)[], ...S[]] | [(string | number)[], (keyof S)[], ...S[keyof S][][]]
 > {
@@ -165,22 +197,18 @@ function storev_discrete<T = unknown, S = unknown>(definition: StoreValue<T, S>)
 
             return result;
         },
+        validate(input, device): input is { [x: string | number]: T } {
+            if (!this.definition) return false;
+            if (typeof input != "object") return false;
+
+            for (let key in input) {
+                if (!this.definition.validate((input as any)[key], device)) return false;
+            }
+
+            return true;
+        },
     }
 
-}
-
-const storev_base_type: StoreValue<unknown, unknown> = {
-    serialize(value) { return value; },
-    deserialize(input) { return input; },
-}
-
-const storev_number = storev_base_type as StoreValue<number, number>;
-const storev_string = storev_base_type as StoreValue<string, string>;
-const storev_boolean = storev_base_type as StoreValue<boolean, boolean>;
-
-const storev_bigint: StoreValue<bigint, string> = {
-    serialize(value) { return value.toString(); },
-    deserialize(input) { return BigInt(input); }
 }
 
 function storev_get_address_constructor(constructor_name: string): typeof BaseAddress {
@@ -201,52 +229,44 @@ function storev_get_address_constructor(constructor_name: string): typeof BaseAd
  * bytes are for interopability with the actual BaseInterface which only supports Uint8Array as input
  * [\<constructor\>.name, ...bytes ] 
 */
-const storev_BaseAddress: StoreValue<BaseAddress, [string, ...number[]]> = {
-    serialize(value) {
-        return [value.constructor.name, ...value.buffer]
-    },
-    deserialize(input) {
-        const constructor_name = input[0];
-        const bytes = new Uint8Array(input.slice(1) as number[])
-        const constructor = storev_get_address_constructor(constructor_name);
-        return new constructor(bytes);
+function storev_create_BaseAddress<T extends typeof BaseAddress>(bound_counstructor: T): StoreValue<InstanceType<T>, [string, ...number[]]> {
+    return {
+        serialize(value) {
+            return [value.constructor.name, ...value.buffer];
+        },
+        deserialize(input) {
+            const constructor = storev_get_address_constructor(input[0]);
+            return new constructor(new Uint8Array(input.slice(1) as number[])) as InstanceType<T>;
+        },
+        validate(input): input is InstanceType<T> {
+            return input instanceof bound_counstructor;
+        },
     }
 }
 
-const storev_IPV4Address = storev_BaseAddress as StoreValue<IPV4Address>;
-const storev_IPV6Address = storev_BaseAddress as StoreValue<IPV6Address>;
-const storev_MACAddress = storev_BaseAddress as StoreValue<MACAddress>;
+export const storev_BaseAddress = storev_create_BaseAddress(BaseAddress);
+export const storev_IPV4Address = storev_create_BaseAddress(IPV4Address);
+export const storev_IPV6Address = storev_create_BaseAddress(IPV6Address);
+export const storev_MACAddress = storev_create_BaseAddress(MACAddress);
 
-const storev_AddressMask: StoreValue<AddressMask<typeof BaseAddress>, [string, number]> = {
-    serialize(value) {
-        return [value.address.name, value.length];
-    },
-    deserialize(input) {
-        const constructor = storev_get_address_constructor(input[0]);
-        const length = input[1];
-        return new AddressMask(constructor, length);
+function storev_create_AddressMask<T extends typeof BaseAddress>(bound_counstructor: T): StoreValue<AddressMask<T>, [string, number]> {
+    return {
+        serialize(value) { return [value.address.name, value.length] },
+        deserialize(input) {
+            const constructor = storev_get_address_constructor(input[0]) as T;
+            return new AddressMask(constructor, input[1]);
+        },
+        validate(input): input is AddressMask<T> {
+            return ((input instanceof AddressMask) && (input.address instanceof bound_counstructor));
+        },
     }
 }
 
-/** see {@link storev_BaseAddress}  */
-const storev_DeviceAddress: StoreValue<DeviceAddress, [string, number, ...number[]]> = {
-    serialize(value) {
-        return [value.address.constructor.name, value.netmask.length, ...value.address.buffer]
-    },
-    deserialize(input) {
-        const constructor = storev_get_address_constructor(input[0]);
-        const bytes = new Uint8Array(input.slice(2) as number[])
-        return {
-            address: new constructor(bytes),
-            netmask: new AddressMask(constructor, input[1]),
-        };
-    }
-}
+export const storev_AddressMask = storev_create_AddressMask(BaseAddress);
+export const storev_IPV4Mask = storev_create_AddressMask(IPV4Address);
+export const storev_IPV6Mask = storev_create_AddressMask(IPV6Address);
 
-const storev_IPV4Mask = storev_AddressMask as StoreValue<AddressMask<typeof IPV4Address>>;
-const storev_IPV6Mask = storev_AddressMask as StoreValue<AddressMask<typeof IPV6Address>>;
-
-const storev_BaseInterface: StoreValue<BaseInterface, string> = {
+export const storev_BaseInterface: StoreValue<BaseInterface, string> = {
     serialize(value) { return value.id(); },
     deserialize(input, device) {
         if (!device) throw new Error("device required")
@@ -257,9 +277,35 @@ const storev_BaseInterface: StoreValue<BaseInterface, string> = {
         }
         return iface;
     },
+    validate(input, device): input is BaseInterface {
+        if (!(input instanceof BaseInterface)) return false;
+        return !device || device != input.device;
+    },
 }
 
-const storev_DeviceRoute: StoreValue<DeviceRoute> = storev_Object({
+// !NOTE: this should probably not exist or find a better solution to this pattern to remove repeated values
+/** see {@link storev_create_BaseAddress}  */
+export const storev_DeviceAddress: StoreValue<DeviceAddress, [string, number, ...number[]]> = {
+    serialize(value) {
+        return [value.address.constructor.name, value.netmask.length, ...value.address.buffer]
+    },
+    deserialize(input) {
+        const constructor = storev_get_address_constructor(input[0]);
+        const bytes = new Uint8Array(input.slice(2) as number[])
+        return {
+            address: new constructor(bytes),
+            netmask: new AddressMask(constructor, input[1]),
+        };
+    },
+    validate(input): input is DeviceAddress {
+        if (typeof input != "object") return false;
+        if (!((input as Partial<DeviceAddress>)?.address instanceof BaseAddress)) return false;
+        if (!((input as Partial<DeviceAddress>)?.netmask instanceof AddressMask)) return false;
+        return true;
+    },
+}
+
+export const storev_DeviceRoute: StoreValue<DeviceRoute> = storev_Object({
     destination: storev_BaseAddress,
     gateway: storev_BaseAddress,
     netmask: storev_AddressMask,
@@ -270,28 +316,4 @@ const storev_DeviceRoute: StoreValue<DeviceRoute> = storev_Object({
     f_host: storev_optional(storev_boolean) as StoreValue<true | undefined>,
 
     iface: storev_BaseInterface,
-})
-
-export {
-    type StoreValue,
-    type StoreValueT,
-    type StoreValueS,
-    storev_number,
-    storev_string,
-    storev_boolean,
-    storev_bigint,
-    storev_Array,
-    storev_Object,
-    storev_optional,
-    storev_discrete,
-    storev_BaseAddress,
-    storev_IPV4Address,
-    storev_IPV6Address,
-    storev_MACAddress,
-    storev_AddressMask,
-    storev_IPV4Mask,
-    storev_IPV6Mask,
-    storev_DeviceAddress,
-    storev_BaseInterface,
-    storev_DeviceRoute,
-}
+});

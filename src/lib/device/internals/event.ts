@@ -29,7 +29,9 @@ type DeviceEventMap = {
 
 export type DeviceEventType = keyof DeviceEventMap;
 export type DeviceEventHandler<K extends DeviceEventType> = (...a: DeviceEventMap[K]) => void;
-export type DeviceEvent<T extends DeviceEventType = DeviceEventType> = {
-    keys: T[];
-    handler: DeviceEventHandler<T>;
+export type DeviceEventFilters<K extends DeviceEventType> = Partial<DeviceEventMap[K]>;
+export type DeviceEvent<K extends DeviceEventType = DeviceEventType> = {
+    keys: K[];
+    handler: DeviceEventHandler<K>;
+    filters: DeviceEventFilters<K>;
 } & DeviceResource;
