@@ -92,9 +92,9 @@ export class EthernetInterface extends BaseInterface {
     vlan?: {
         // first id default
         vids: number[];
-        type: "access" | "trunk"
+        type: "access" | "trunk" | "hybrid"
     }
-    vlan_set(type: "access" | "trunk", ...vids: number[]) {
+    vlan_set(type: "access" | "trunk" | "hybrid", ...vids: number[]) {
         if (vids.length < 1) {
             vids.push(1); // default id;
         }
@@ -186,6 +186,28 @@ export class EthernetInterface extends BaseInterface {
                         message: "vlan id: " + vlanhdr.get("vid") + " is not in vlan id list"
                     }
                 }
+            } else if (this.vlan.type == "hybrid") {
+                if (etherheader.get("ethertype") !== ETHER_TYPES.VLAN) {
+                    // tag frame
+                    let vid = this.vlan.vids[0] || 0; // default to 0 to insinuate that there is a problem
+
+                    let vlanhdr = ETHERNET_DOT1Q_HEADER.create({
+                        vid: vid,
+                        ethertype: etherheader.get("ethertype"),
+                        payload: etherheader.get("payload")
+                    });
+
+                    etherheader.set("ethertype", ETHER_TYPES.VLAN);
+                    etherheader.set("payload", vlanhdr.getBuffer());
+
+                    break vlan_handler;
+                }
+
+                let vlanhdr = ETHERNET_DOT1Q_HEADER.from(etherheader.get("payload"));
+                if (!this.vlan.vids.includes(vlanhdr.get("vid"))) return {
+                    success: false, error: "UDUMB",
+                    message: "vlan id: " + vlanhdr.get("vid") + " is not in vlan id list"
+                }
             }
         }
 
@@ -223,7 +245,7 @@ export class EthernetInterface extends BaseInterface {
                 if (!this.vlan.vids.includes(vlanhdr.get("vid"))) {
                     return; // discard
                 }
-            } else if (this.vlan.type == "trunk") {
+            } else if (this.vlan.type == "trunk" || this.vlan.type == "hybrid") {
                 if (etherheader.get("ethertype") != ETHER_TYPES.VLAN) {
                     return; // discard
                 }

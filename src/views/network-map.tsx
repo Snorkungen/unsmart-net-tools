@@ -55,7 +55,7 @@ networkRouter.process_start(DAEMON_ROUTING); // start routing daemon
 
 networkRouter.programs.push(DEVICE_PROGRAM_DHCP_SERVER_MAN)
 
-let rtr_iface = networkRouter.interface_add(new EthernetInterface(networkRouter)); rtr_iface.vlan_set("trunk", 1, 10, 20)
+let rtr_iface = networkRouter.interface_add(new EthernetInterface(networkRouter)); rtr_iface.vlan_set("hybrid", 1, 10, 20)
 let rtr_vlanif10 = networkRouter.interface_add(new VlanInterface(networkRouter, 10));
 let rtr_vlanif20 = networkRouter.interface_add(new VlanInterface(networkRouter, 20));
 
@@ -85,11 +85,11 @@ swIface_pc3.vlan_set("access", 10);
 swIface2_pc4.vlan_set("access", 20);
 swIface2_pc5.vlan_set("access", 20);
 
-swIface_trunk.vlan_set("trunk", 1, 20);
-swIface2_trunk.vlan_set("trunk", 1, 20);
+swIface_trunk.vlan_set("hybrid", 1, 20);
+swIface2_trunk.vlan_set("hybrid", 1, 20);
 
 
-swIface_trunk_rtr.vlan_set("trunk", 1, 10, 20);
+swIface_trunk_rtr.vlan_set("hybrid", 1, 10, 20);
 swIface_trunk_rtr.connect(rtr_iface)
 
 let pc1 = new Device(); pc1.name = "PC1";

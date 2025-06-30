@@ -27,7 +27,7 @@ function custom_etheriface_parser(this: ProgramParameter<EthernetInterface>, val
 }
 
 const PPEtheriface = PPFactory.create("IFID", custom_etheriface_parser)
-const PPVlanrule = PPFactory.keywords("VLAN_RULE", ["trunk", "access"]);
+const PPVlanrule = PPFactory.keywords("VLAN_RULE", ["trunk", "access", "hybrid"]);
 const PPVid = PPFactory.multiple(PPFactory.number("VID"))
 
 const pdef = new ProgramParameterDefinition([
@@ -77,10 +77,15 @@ export const DEVICE_PROGRAM_VLANINFO: Program = {
                     iface.vlan = { type: "trunk", vids: [] }
                 }
                 iface.vlan.type = "trunk";
+            } else if (rest == "hybrid") {
+                if (!iface.vlan) {
+                    iface.vlan = { type: "hybrid", vids: [] }
+                }
+                iface.vlan.type = "hybrid";
             }
 
             if (!iface.vlan) {
-                ioprintln(proc.io, "interface must be configured as either \"access\" or \"trunk\"");
+                ioprintln(proc.io, "interface must be configured as either \"access\", \"trunk\" or \"hybrid\"");
                 return ProcessSignal.ERROR;
             }
 
