@@ -1,22 +1,13 @@
 import { MACAddress } from "../address/mac";
-import { Device, Program } from "../device/device";
+import { Device } from "../device/device";
 import { BaseInterface, EthernetInterface, LoopbackInterface, VlanInterface } from "../device/interface";
-import { storev_Array, storev_BaseAddress, storev_BaseInterface, storev_DeviceAddress, storev_DeviceRoute, storev_discrete, storev_number, storev_Object, storev_string, StoreValue, StoreValueS, StoreValueT } from "../device/internals/store";
-import { NETWORK_SWITCH_PORTS_STORE_KEY, NetworkSwitch, NetworkSwitchPorts } from "../device/network-switch";
+import { ALL_REGISTERED_PROGRAMS } from "../device/internals/program";
+import { storev_Array, storev_BaseAddress, storev_BaseInterface, storev_DeviceAddress, storev_DeviceRoute, storev_discrete, storev_number, storev_Object, storev_string, StoreValue, StoreValueS } from "../device/internals/store";
+import { NETWORK_SWITCH_PORTS_STORE_KEY, NetworkSwitch, NetworkSwitchPort, NetworkSwitchPorts } from "../device/network-switch";
 import { OSInterface } from "../device/osinterface";
-import { DEVICE_PROGRAM_DAEMAN } from "../device/program/daeman";
-import { DEVICE_PROGRAM_DHCP_CLIENT } from "../device/program/dhcp-client";
-import { DEVICE_PROGRAM_DHCP_SERVER_MAN } from "../device/program/dhcp-server-man";
 import { DAEMON_ECHO_REPLIER } from "../device/program/echo-replier";
-import { DEVICE_PROGRAM_HOSTSINFO, HOSTSINFO_STORE_KEY, HostsinfoData } from "../device/program/hostsinfo";
-import { DEVICE_PROGRAM_IFINFO } from "../device/program/ifinfo";
-import { DEVICE_PROGRAM_MENU } from "../device/program/menu";
-import { DEVICE_PROGRAM_PING } from "../device/program/ping";
-import { DEVICE_PROGRAM_ECHO, DEVICE_PROGRAM_HELP, DEVICE_PROGRAM_CLEAR, DEVICE_PROGRAM_DOWNLOAD } from "../device/program/program";
-import { DEVICE_PROGRAM_ROUTEINFO } from "../device/program/routeinfo";
-import { DAEMON_ROUTING, DEVICE_PROGRAM_ROUTINGMAN } from "../device/program/routing";
-import { DEVICE_PROGRAM_TRACEROUTE } from "../device/program/traceroute";
-import { DEVICE_PROGRAM_VLANINFO } from "../device/program/vlaninfo";
+import { HOSTSINFO_STORE_KEY, HostsinfoData } from "../device/program/hostsinfo";
+import { DAEMON_ROUTING } from "../device/program/routing";
 import { network_map_init_device_shape, network_map_init_state } from "./network-map";
 
 const store_hostsinfo: StoreValue<HostsinfoData> = storev_Object({
@@ -28,29 +19,11 @@ const store_ports: StoreValue<NetworkSwitchPorts> = storev_discrete(storev_Objec
     iface: storev_BaseInterface,
     port_no: storev_number,
     // !NOTE: this is an enum so nothing is guaranteed
-    state: storev_number,
+    state: storev_number as StoreValue<NetworkSwitchPort["state"], number>,
 }));
 
 const device_routes = storev_Array(storev_DeviceRoute);
 const device_interfaces_mcast_subscriptions = storev_discrete(storev_Array(storev_BaseAddress));
-
-const all_available_programs: Program[] = [
-    DEVICE_PROGRAM_ECHO,
-    DEVICE_PROGRAM_IFINFO,
-    DEVICE_PROGRAM_ROUTEINFO,
-    DEVICE_PROGRAM_VLANINFO,
-    DEVICE_PROGRAM_HELP,
-    DEVICE_PROGRAM_CLEAR,
-    DEVICE_PROGRAM_PING,
-    DEVICE_PROGRAM_DOWNLOAD,
-    DEVICE_PROGRAM_TRACEROUTE,
-    DEVICE_PROGRAM_HOSTSINFO,
-    DEVICE_PROGRAM_ROUTINGMAN,
-    DEVICE_PROGRAM_DAEMAN,
-    DEVICE_PROGRAM_DHCP_CLIENT,
-    DEVICE_PROGRAM_DHCP_SERVER_MAN,
-    DEVICE_PROGRAM_MENU
-]
 
 type SerializeContext = {
     /** an array that then linearly searches the array to find by reference */
@@ -239,7 +212,7 @@ function deserialize_Device(this: SerializeContext, sdevice: SerializeableDevice
     device.routes = device_routes.deserialize(sdevice.routes, device);
 
     device.interfaces_mcast_subscriptions = device_interfaces_mcast_subscriptions.deserialize(sdevice.interfaces_mcast_subscriptions, device);
-    
+
     const sports = sdevice.store[NETWORK_SWITCH_PORTS_STORE_KEY] as undefined | StoreValueS<typeof store_ports>
     if (sports) {
         device.store_set(NETWORK_SWITCH_PORTS_STORE_KEY, store_ports.deserialize(sports, device))
@@ -250,7 +223,8 @@ function deserialize_Device(this: SerializeContext, sdevice: SerializeableDevice
         device.store_set(HOSTSINFO_STORE_KEY, store_hostsinfo.deserialize(shostsinfo, device))
     }
 
-    device.programs = sdevice.programs.map(name => all_available_programs.find(p => p.name === name)!)
+    console.log(ALL_REGISTERED_PROGRAMS)
+    device.programs = sdevice.programs.map(name => ALL_REGISTERED_PROGRAMS.find(p => p.name === name)!)
 
     if (sdevice.running_programs.includes(DAEMON_ECHO_REPLIER.name)) {
         device.process_start(DAEMON_ECHO_REPLIER);
