@@ -8,14 +8,6 @@ import { BaseInterface, EthernetInterface } from "../lib/device/interface";
 import { network_switch_get_ports, NETWORK_SWITCH_PORTS_STORE_KEY, NETWORK_SWITCH_STP_DAEMON, NetworkSwitch, NetworkSwitchPortState } from "../lib/device/network-switch";
 import { DAEMON_STP_SERVER, DAEMON_STP_SERVER_STATE_STORE_KEY, stp_disable_port, stp_enable_port } from "../lib/device/program/stp-server";
 
-function network_switch_set_port_state(device: Device, iface: BaseInterface, state: NetworkSwitchPortState) {
-    if (!(device instanceof NetworkSwitch)) {
-        return;
-    }
-
-    device.port_iface_set_state(iface, state);
-}
-
 const [redundant_connection, set_redundant_connection] = createSignal(true)
 
 let sw1 = new NetworkSwitch(); sw1.name = "SW1"
@@ -118,11 +110,6 @@ export function BroadcastStorm() {
             let p = sw1.processes.items.find(p => p?.program.name === DAEMON_STP_SERVER.name); (p) && p.close(ProcessSignal.INTERRUPT);
             p = sw2.processes.items.find(p => p?.program.name === DAEMON_STP_SERVER.name); (p) && p.close(ProcessSignal.INTERRUPT);
             p = sw3.processes.items.find(p => p?.program.name === DAEMON_STP_SERVER.name); (p) && p.close(ProcessSignal.INTERRUPT);
-
-            if (!redundant_connection()) { // fix state
-                network_switch_set_port_state(sw2, sw2_sw3_iface, NetworkSwitchPortState.BLOCKING);
-                network_switch_set_port_state(sw3, sw3_sw2_iface, NetworkSwitchPortState.BLOCKING);
-            }
         }}>Stop</button>
         <button onclick={() => {
             // get the   informations ...

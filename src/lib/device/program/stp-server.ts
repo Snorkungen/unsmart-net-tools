@@ -45,7 +45,6 @@ export const DAEMON_STP_SERVER: Program<STP_Server_Data> = {
 
             topology_change: false,
             topology_change_detected: false,
-            topology_change_time: DEFAULT_FORWARD_DELAY + DEFAULT_MAX_AGE,
 
             // allow for the preconfiguration of things ...
             ...(device.store_get(DAEMON_STP_SERVER_STATE_STORE_KEY) || {}),
@@ -94,7 +93,7 @@ type STP_Server_Data = {
 }
 
 type STP_State = StoreValueT<typeof storev_stp_state>;
-const storev_stp_state = storev_Object({
+export const storev_stp_state = storev_Object({
     bridge_id: storev_bigint,
     designated_root: storev_bigint,
     root_path_cost: storev_number,
@@ -110,13 +109,11 @@ const storev_stp_state = storev_Object({
 
     topology_change_detected: storev_boolean,
     topology_change: storev_boolean,
-    /** 8.5.3.13  */
-    topology_change_time: storev_number,
 });
 
 // !NOTE: the priority should be configurable ...
 type STP_Port = NetworkSwitchPort & StoreValueT<typeof storev_stp_port>;
-const storev_stp_port = storev_Object({
+export const storev_stp_port = storev_Object({
     port_id: storev_number,
     path_cost: storev_number,
 
@@ -534,7 +531,8 @@ function start_topology_change_timer(proc: Process<STP_Server_Data>) {
     }
 
     proc.data.topology_change_timer = proc.resources.create(proc.device.schedule(foo,
-        state.topology_change_time * 1000
+        /** 8.5.3.13  */
+        (state.bridge_forward_delay + state.bridge_max_age) * 1000
     ))
 }
 

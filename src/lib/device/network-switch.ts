@@ -8,13 +8,13 @@ import { uint8_equals } from "../binary/uint8-array";
 import { deinitialize, initialization, received_config_bpdu, received_tcn_bpdu, STP_DESTINATION } from "./internals/stp";
 import { BPDU_C_HEADER, BPDU_TCN_HEADER } from "../header/bpdu";
 
-export enum NetworkSwitchPortState {
-    DISABLED = 0,
-    BLOCKING = 1,
-    LISTENING = 2,
-    LEARNING = 3,
-    FORWARDING = 4
-}
+export const NetworkSwitchPortState = {
+    DISABLED: 0,
+    BLOCKING: 1,
+    LISTENING: 2,
+    LEARNING: 3,
+    FORWARDING: 4
+} as const;
 
 export type NetworkSwitchPort = {
     /** reference to iface */
@@ -22,7 +22,7 @@ export type NetworkSwitchPort = {
     type?: unknown;
 
     port_no: number;
-    state: NetworkSwitchPortState;
+    state: typeof NetworkSwitchPortState[keyof typeof NetworkSwitchPortState];
 };
 
 export const NETWORK_SWITCH_MACADDRESSES_STORE_KEY = "network_switch:macaddresses";
@@ -103,17 +103,6 @@ export class NetworkSwitch extends Device {
         }
 
         return { success: true, data: iface };
-    }
-
-    port_set_state(port_no: number, state: NetworkSwitchPortState) {
-        const ports = get_ports(this);
-        ports[port_no].state = state;
-        set_ports(this, ports);
-    }
-    port_iface_set_state(iface: BaseInterface, state: NetworkSwitchPortState) {
-        const ports = get_ports(this);
-        let port = Object.values(ports).find(({ iface: _iface }) => _iface === iface);
-        !!port && this.port_set_state(port?.port_no, state);
     }
 }
 
@@ -260,7 +249,7 @@ export const NETWORK_SWITCH_STP_DAEMON: Program<ReturnType<typeof initialization
                 let config = BPDU_C_HEADER.from(payload);
                 received_config_bpdu(proc.data, port, config);
             }
-            
+
             set_ports(proc.device, ports)
         });
 

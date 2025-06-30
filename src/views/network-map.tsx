@@ -20,6 +20,8 @@ import { DEVICE_PROGRAM_HOSTSINFO, setaddress_by_host } from "../lib/device/prog
 import { DEVICE_PROGRAM_DHCP_SERVER_MAN } from "../lib/device/program/dhcp-server-man";
 import { DEVICE_PROGRAM_DHCP_CLIENT } from "../lib/device/program/dhcp-client";
 import { deserialize_NetworkMap, serialize_NetworkMap } from "../lib/network-map/serialize";
+import { DEVICE_PROGRAM_SWPORTINFO } from "../lib/device/program/swportinfo";
+import { DEVICE_PROGRAM_DAEMAN } from "../lib/device/program/daeman";
 
 function init_programs(device: Device) {
     device.process_start(DAEMON_ECHO_REPLIER);
@@ -34,8 +36,13 @@ function init_programs(device: Device) {
         DEVICE_PROGRAM_DOWNLOAD,
         DEVICE_PROGRAM_TRACEROUTE,
         DEVICE_PROGRAM_HOSTSINFO,
-        DEVICE_PROGRAM_ROUTINGMAN
+        DEVICE_PROGRAM_ROUTINGMAN,
+        DEVICE_PROGRAM_DAEMAN
     );
+
+    if (device instanceof NetworkSwitch) {
+        device.programs.push(DEVICE_PROGRAM_SWPORTINFO)
+    }
 }
 
 let networkSwitch = new NetworkSwitch();
