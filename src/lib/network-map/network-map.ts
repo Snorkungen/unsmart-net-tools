@@ -2,11 +2,13 @@
 
 import { Device, Process, ProcessSignal, Program } from "../device/device";
 import { BaseInterface, EthernetInterface } from "../device/interface";
+import { network_switch_get_ports, NETWORK_SWITCH_PORTS_STORE_KEY, NetworkSwitch, NetworkSwitchPortState } from "../device/network-switch";
 
 // special features zoom, pan, edit connection paths
 const INTERFACE_ANIM_DELAY = 420;
 const IF_SEND_COLOR = "#ff8533"
 const IF_RECV_COLOR = "#b300b3"
+const IF_BLOCKING_COLOR = "#68688f"
 const CONNECTION_FILL_COLOR = "#b30077"
 const CONNECTION_FILL_COLOR_2 = "#800055"
 
@@ -98,6 +100,13 @@ const DAEMON_NETWORK_MAP_DEVICE_MONITOR: Program<{
                 "interface_add",
                 "interface_remove"
             ], () => network_map_device_refresh_interfaces(state, shape, proc.device, if_delay, dimensions.height, dimensions.ifsize, dimensions.ifpad))
+        );
+
+        proc.resources.create(
+            proc.device.event_create("store_set",
+                () => network_map_device_refresh_interfaces(state, shape, proc.device, if_delay, dimensions.height, dimensions.ifsize, dimensions.ifpad),
+                NETWORK_SWITCH_PORTS_STORE_KEY
+            )
         )
 
         return ProcessSignal.__EXPLICIT__;
@@ -146,6 +155,16 @@ function network_map_device_iface_update_appearance(so: NMRect, type?: "recv" | 
     }
 
     if (!type) {
+        if (so.assob.device instanceof NetworkSwitch) {
+            const ports = network_switch_get_ports(so.assob.device);
+            if (ports) {
+                const port = Object.values(ports).find(p => p && p.iface == so.assob);
+                if (port && port.iface.up && port.state <= NetworkSwitchPortState.LISTENING) {
+                    so.fillColor = IF_BLOCKING_COLOR;
+                    return;
+                }
+            }
+        }
         so.fillColor = so.assob.up ? "green" : "red";
     } else if (type == "recv") {
         so.fillColor = IF_RECV_COLOR;
