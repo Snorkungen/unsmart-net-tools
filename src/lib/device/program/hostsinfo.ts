@@ -2,6 +2,7 @@
 
 import type { BaseAddress } from "../../address/base";
 import { Device, DeviceRoute, ProcessSignal, Program } from "../device";
+import { device_program_register } from "../internals/program";
 import { ioprint } from "./helpers";
 
 export type HostsinfoData = {
@@ -68,7 +69,7 @@ export function setaddress_by_host(device: Device, host: string, ...addresses: B
     return;
 }
 
-export const DEVICE_PROGRAM_HOSTSINFO: Program = {
+export const DEVICE_PROGRAM_HOSTSINFO: Program = device_program_register({
     name: "hostsinfo",
     init: function (proc, args): ProcessSignal {
         let data = get_store_data(proc.device)
@@ -80,4 +81,4 @@ export const DEVICE_PROGRAM_HOSTSINFO: Program = {
         return ProcessSignal.EXIT;
     },
     __NODATA__: true
-}
+})

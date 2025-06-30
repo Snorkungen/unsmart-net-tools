@@ -2,6 +2,7 @@ import { uint8_concat, uint8_equals, uint8_fromString } from "../../binary/uint8
 import { ASCIICodes, CSI, numbertonumbers } from "../../terminal/shared";
 import { args_parse, args_parse_ext } from "../../utils/args-parse";
 import { Device, Process, ProcessSignal, Program } from "../device";
+import { device_program_register } from "../internals/program";
 import { ioclearline, ioreadline } from "./helpers";
 import { termquery } from "./termquery";
 
@@ -323,7 +324,7 @@ function get_prompt_buf(device: Device) {
     ]);
 }
 
-export const DAEMON_SHELL: Program<ShellData> = {
+export const DAEMON_SHELL: Program<ShellData> = device_program_register({
     name: "daemon_shell",
     async init(proc, _) {
         // just because i know the internals, but this is not obvious
@@ -445,4 +446,4 @@ export const DAEMON_SHELL: Program<ShellData> = {
 
         return ProcessSignal.EXIT;
     }
-}
+});

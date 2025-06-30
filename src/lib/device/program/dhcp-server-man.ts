@@ -2,6 +2,7 @@ import { IPV4Address } from "../../address/ipv4";
 import { MACAddress } from "../../address/mac";
 import { uint8_concat } from "../../binary/uint8-array";
 import { DeviceIO, Program, ProcessSignal, Process } from "../device";
+import { device_program_register } from "../internals/program";
 import { ppbind, PPFactory, ProgramParameterDefinition } from "../internals/program-parameters";
 import { DAEMON_DHCP_SERVER, dhcp_server_client_delete, dhcp_server_client_init, dhcp_server_gateways4_set, dhcp_server_get_store_data, dhcp_server_iface_delete, dhcp_server_iface_init, dhcp_server_range4_add, dhcp_server_serialize_clid, DHCPServerClient, DHCPServerClientState, DHCPServerConfig } from "./dhcp-server";
 import { ioprint, ioreadline, ioclearline, formatTable, ioprintln } from "./helpers";
@@ -342,7 +343,7 @@ function dhcpsman_conf(proc: Process, pdres: ReturnType<(typeof pdef)["parse"]>)
     return ProcessSignal.EXIT;
 }
 
-export const DEVICE_PROGRAM_DHCP_SERVER_MAN: Program = {
+export const DEVICE_PROGRAM_DHCP_SERVER_MAN: Program = device_program_register({
     name: "dhcpsman",
     description: "manage the status of the dhcp-server daemon",
     parameters: pdef,
@@ -394,4 +395,4 @@ export const DEVICE_PROGRAM_DHCP_SERVER_MAN: Program = {
         return ProcessSignal.EXIT;
     },
     __NODATA__: true
-}
+});

@@ -1,5 +1,6 @@
 import { Device, ProcessSignal, Program } from "../device";
 import { EthernetInterface, VlanInterface } from "../interface";
+import { device_program_register } from "../internals/program";
 import { ppbind, PPFactory, ProgramParameter, ProgramParameterDefinition, ProgramParameterError } from "../internals/program-parameters";
 import { formatTable, ioprintln } from "./helpers";
 
@@ -8,7 +9,7 @@ function custom_vlanif_parser(this: ProgramParameter<string>, val: string, dev: 
     if (!val.startsWith(VLANIF_NAME)) {
         throw new ProgramParameterError(this);
     }
-    
+
     if (PPFactory.parse_number.call(this, val.substring(VLANIF_NAME.length), dev) <= 0) {
         throw new ProgramParameterError(this);
     }
@@ -37,7 +38,7 @@ const pdef = new ProgramParameterDefinition([
     ppbind(["vlaninfo", PPEtheriface, PPVid], "set vlan ids, -4 means remove vid 4")
 ]);
 
-export const DEVICE_PROGRAM_VLANINFO: Program = {
+export const DEVICE_PROGRAM_VLANINFO: Program = device_program_register({
     name: "vlaninfo",
     description: "interacts with vlan",
     parameters: pdef,
@@ -100,8 +101,8 @@ export const DEVICE_PROGRAM_VLANINFO: Program = {
                         }
                     }
                 }
-            } 
-            
+            }
+
             if (typeof rest == "string" && (!vids || iface.vlan.vids.length == 0)) {
                 ioprintln(proc.io, "interface must be configured with at least one vlan id");
                 return ProcessSignal.ERROR;
@@ -139,4 +140,4 @@ export const DEVICE_PROGRAM_VLANINFO: Program = {
         return ProcessSignal.EXIT;
     },
     __NODATA__: true
-}
+});

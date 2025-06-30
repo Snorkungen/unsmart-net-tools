@@ -1,5 +1,6 @@
 import { getKeyByValue } from "../../misc";
 import { ProcessSignal, Program } from "../device";
+import { device_program_register } from "../internals/program";
 import { PPFactory, ProgramParameterDefinition } from "../internals/program-parameters";
 import { NETWORK_SWITCH_PORTS_STORE_KEY, NetworkSwitchPorts, NetworkSwitchPortState } from "../network-switch";
 import { formatTable, ioprintln } from "./helpers";
@@ -11,7 +12,7 @@ const pdef = new ProgramParameterDefinition([
     // update port somehow
 ])
 
-export const DEVICE_PROGRAM_SWPORTINFO: Program = {
+export const DEVICE_PROGRAM_SWPORTINFO: Program = device_program_register({
     name: "swportinfo",
     parameters: pdef,
     init(proc, args) {
@@ -71,4 +72,4 @@ export const DEVICE_PROGRAM_SWPORTINFO: Program = {
 
         return ProcessSignal.EXIT;
     }
-}
+})

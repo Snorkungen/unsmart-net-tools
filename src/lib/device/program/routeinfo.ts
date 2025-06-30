@@ -1,6 +1,7 @@
 import { IPV4Address } from "../../address/ipv4";
 import { IPV6Address } from "../../address/ipv6";
 import { Program, ProcessSignal, Process, Device, _UNSET_ADDRESS_IPV4 } from "../device";
+import { device_program_register } from "../internals/program";
 import { PPFactory, ProgramParameter, ProgramParameterDefinition } from "../internals/program-parameters";
 import { network_switch_get_macadresses, network_switch_get_ports, NetworkSwitch } from "../network-switch";
 import { formatTable, ioprintln } from "./helpers";
@@ -52,7 +53,7 @@ function routeinfo_arp(proc: Process, pdres: ReturnType<(typeof pdef)["parse"]>)
     return ProcessSignal.EXIT;
 }
 
-export const DEVICE_PROGRAM_ROUTEINFO: Program = {
+export const DEVICE_PROGRAM_ROUTEINFO: Program = device_program_register({
     name: "routeinfo",
     description: "displays information about the device's routing information",
     parameters: pdef,
@@ -116,4 +117,4 @@ export const DEVICE_PROGRAM_ROUTEINFO: Program = {
         return ProcessSignal.EXIT;
     },
     __NODATA__: true
-}
+})

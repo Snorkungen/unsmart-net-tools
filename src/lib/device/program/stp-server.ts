@@ -5,11 +5,12 @@ import { BPDU_C_HEADER, BPDU_TCN_HEADER } from "../../header/bpdu";
 import { ETHER_TYPES, ETHERNET_HEADER } from "../../header/ethernet";
 import { Program, ProcessSignal, Process, Contact, NetworkData, Device } from "../device"
 import { EthernetInterface } from "../interface";
+import { device_program_register } from "../internals/program";
 import { DeviceResource } from "../internals/resources";
 import { storev_bigint, storev_boolean, storev_number, storev_Object, StoreValueT } from "../internals/store";
 import { network_switch_get_ports, NetworkSwitchPort, NetworkSwitchPortState } from "../network-switch";
 
-export const DAEMON_STP_SERVER: Program<STP_Server_Data> = {
+export const DAEMON_STP_SERVER: Program<STP_Server_Data> = device_program_register({
     name: "daemon_stp_server",
     init(proc) {
         if (proc.device.processes.items.find(p => p && p !== proc && p.id.includes(this.name))) {
@@ -82,7 +83,7 @@ export const DAEMON_STP_SERVER: Program<STP_Server_Data> = {
 
         return ProcessSignal.__EXPLICIT__;
     },
-}
+})
 
 type STP_Server_Data = {
     // message_age_timers: Record<number, DeviceResource | undefined>;

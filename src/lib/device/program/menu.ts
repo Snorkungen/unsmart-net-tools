@@ -1,5 +1,6 @@
 import { ASCIICodes, CSI, numbertonumbers } from "../../terminal/shared";
 import { Process, ProcessSignal, Program } from "../device";
+import { device_program_register } from "../internals/program";
 import { ioprint, ioprintln, ioreadline } from "./helpers";
 import { termquery } from "./termquery";
 
@@ -67,7 +68,7 @@ export async function run_menu(proc: Process, fields: MenuFields, initial_op?: n
     return ProcessSignal.ERROR
 }
 
-export const DEVICE_PROGRAM_MENU: Program = {
+export const DEVICE_PROGRAM_MENU: Program = device_program_register({
     name: "menu",
     init(proc) {
         return run_menu(proc, {
@@ -85,7 +86,7 @@ export const DEVICE_PROGRAM_MENU: Program = {
         });
     },
     __NODATA__: true,
-}
+})
 
 async function menu_prog_example(proc: Process) {
     ioprint(proc.io, "How high shall I count? ");

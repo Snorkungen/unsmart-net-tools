@@ -4,12 +4,13 @@ import { uint8_concat } from "../../binary/uint8-array";
 import { ICMPV4_CODES, ICMPV4_TYPES, ICMPV6_CODES, ICMPV6_TYPES, ICMP_HEADER, ICMP_UNUSED_HEADER } from "../../header/icmp";
 import { IPV4_HEADER, IPV4_PSEUDO_HEADER, IPV6_HEADER, PROTOCOLS } from "../../header/ip";
 import { Program, ProcessSignal, ContactReceiveOptions, Process, address_is_unset } from "../device";
+import { device_program_register } from "../internals/program";
 import { PPFactory, ProgramParameterDefinition } from "../internals/program-parameters";
 import { ioprintln } from "./helpers";
 
 const RECEIVE_OPTIONS: ContactReceiveOptions = { promiscuous: true };
 
-export const DAEMON_ROUTING: Program = {
+export const DAEMON_ROUTING: Program = device_program_register({
     name: "daemon_routing",
     init(proc) {
         // check that program is not running
@@ -169,9 +170,9 @@ export const DAEMON_ROUTING: Program = {
     },
 
     __NODATA__: true,
-}
+})
 
-export const DEVICE_PROGRAM_ROUTINGMAN: Program = {
+export const DEVICE_PROGRAM_ROUTINGMAN: Program = device_program_register({
     name: "routingman",
     description: "manage the status of the routing daemon",
     parameters: new ProgramParameterDefinition([["routingman", PPFactory.optional(PPFactory.keywords("ACTION", ["start", "stop"]))]]),
@@ -193,4 +194,4 @@ export const DEVICE_PROGRAM_ROUTINGMAN: Program = {
         return ProcessSignal.EXIT;
     },
     __NODATA__: true,
-}
+})

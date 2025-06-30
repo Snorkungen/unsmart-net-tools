@@ -1,4 +1,5 @@
 import { ProcessSignal, Program } from "../device";
+import { device_program_register } from "../internals/program";
 import { PPFactory, ProgramParameterDefinition } from "../internals/program-parameters";
 import { formatTable, ioprintln } from "./helpers";
 
@@ -7,7 +8,7 @@ const pdef = new ProgramParameterDefinition([
     ["daeman", PPFactory.number("PID"), PPFactory.keywords("ACTION", ["interrupt", "close"])]
 ])
 
-export const DEVICE_PROGRAM_DAEMAN: Program = {
+export const DEVICE_PROGRAM_DAEMAN: Program = device_program_register({
     name: "daeman",
     parameters: pdef,
     init(proc, sargs) {
@@ -52,4 +53,4 @@ export const DEVICE_PROGRAM_DAEMAN: Program = {
         return ProcessSignal.EXIT;
     },
     __NODATA__: true
-};
+});

@@ -3,6 +3,7 @@ import { uint8_concat } from "../../binary/uint8-array";
 import { ICMPV4_TYPES, ICMPV6_TYPES, ICMP_HEADER } from "../../header/icmp";
 import { IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
 import { Contact, NetworkData, ProcessSignal, Program } from "../device";
+import { device_program_register } from "../internals/program";
 
 function receive4(contact: Contact, data: NetworkData) {
     let iphdr = IPV4_HEADER.from(data.buffer);
@@ -72,7 +73,7 @@ function receive6(contact: Contact, data: NetworkData) {
     contact.send({ buffer: iphdr.getBuffer() }, iphdr.get("daddr"));
 }
 
-export const DAEMON_ECHO_REPLIER: Program = {
+export const DAEMON_ECHO_REPLIER: Program = device_program_register({
     name: "daemon_echo_replier",
     init(proc) {
         // check that program is not running
@@ -94,4 +95,4 @@ export const DAEMON_ECHO_REPLIER: Program = {
     },
 
     __NODATA__: true,
-}
+})

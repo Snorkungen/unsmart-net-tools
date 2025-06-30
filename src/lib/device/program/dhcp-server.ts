@@ -13,6 +13,7 @@ import { IPV4_HEADER, IPV4_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
 import { UDP_HEADER } from "../../header/udp";
 import { Program, ProcessSignal, Process, Contact, NetworkData, Device, address_is_unset, DeviceResult, _UNSET_ADDRESS_IPV4 } from "../device";
 import { BaseInterface } from "../interface";
+import { device_program_register } from "../internals/program";
 
 const BROADCAST_IPV4_ADDRESS = new IPV4Address("255.255.255.255");
 
@@ -491,7 +492,7 @@ function receive_ipv6(this: Process, contact: Contact<"IPv6", "RAW">, data: Netw
 }
 
 export const DAEMON_DHCP_SERVER_STORE_KEY = "DAEMON_DHCP_SERVER:STORE_KEY";
-export const DAEMON_DHCP_SERVER: Program = {
+export const DAEMON_DHCP_SERVER: Program = device_program_register({
     name: "daemon_dhcp_server",
     init(proc) {
         // assert only on instance of the process can run;
@@ -513,7 +514,7 @@ export const DAEMON_DHCP_SERVER: Program = {
 
         return ProcessSignal.__EXPLICIT__;
     }
-}
+})
 
 // 
 // 

@@ -2,12 +2,13 @@ import { uint8_fromString } from "../../binary/uint8-array";
 import { PCAP_GLOBAL_HEADER, PCAP_MAGIC_NUMBER, PCAP_RECORD_HEADER } from "../../header/pcap";
 import { ASCIICodes, CSI, TERMINAL_DEFAULT_COLUMNS } from "../../terminal/shared";
 import { ProcessSignal, Program } from "../device";
+import { device_program_register } from "../internals/program";
 import { ppbind, PPFactory, ProgramParameterDefinition } from "../internals/program-parameters";
 import { DAEMON_EVENT_OBSERVER_FRAMES_STORE_KEY, Event_Observer_Frames } from "./event-observer";
 import { formatTable, ioprint, ioprintln } from "./helpers";
 import { termquery } from "./termquery";
 
-export const DEVICE_PROGRAM_CLEAR: Program = {
+export const DEVICE_PROGRAM_CLEAR: Program = device_program_register({
     name: "clear",
     description: "This program clears the terminal",
     parameters: new ProgramParameterDefinition([["clear"]]),
@@ -16,9 +17,9 @@ export const DEVICE_PROGRAM_CLEAR: Program = {
         return ProcessSignal.EXIT;
     },
     __NODATA__: true
-};
+});
 
-export const DEVICE_PROGRAM_ECHO: Program = {
+export const DEVICE_PROGRAM_ECHO: Program = device_program_register({
     name: "echo",
     description: "This program writes to the terminal the inputed text.",
     parameters: new ProgramParameterDefinition([["echo", PPFactory.optional(PPFactory.multiple(PPFactory.value("input")))]]),
@@ -30,7 +31,7 @@ export const DEVICE_PROGRAM_ECHO: Program = {
         return ProcessSignal.EXIT;
     },
     __NODATA__: true
-}
+})
 
 const help_pdef = new ProgramParameterDefinition([
     ppbind(["help"],
@@ -39,7 +40,7 @@ const help_pdef = new ProgramParameterDefinition([
         "Display information about the specified program.")
 ]);
 
-export const DEVICE_PROGRAM_HELP: Program = {
+export const DEVICE_PROGRAM_HELP: Program = device_program_register({
     name: "help",
     description: "This program displays information about the programs, on the device.",
     parameters: help_pdef,
@@ -85,14 +86,14 @@ export const DEVICE_PROGRAM_HELP: Program = {
         return ProcessSignal.EXIT;
     },
     __NODATA__: true
-}
+})
 
 const download_pdef = new ProgramParameterDefinition([
     ["download", PPFactory.optional(PPFactory.create("IFID", PPFactory.parse_baseiface))]
 ]);
 
 const PCAP_FILE_EXTENSION = ".cap";
-export const DEVICE_PROGRAM_DOWNLOAD: Program = {
+export const DEVICE_PROGRAM_DOWNLOAD: Program = device_program_register({
     name: "download",
     description: "Download the devices packet-capture.",
     parameters: download_pdef,
@@ -147,4 +148,4 @@ export const DEVICE_PROGRAM_DOWNLOAD: Program = {
         return ProcessSignal.EXIT;
     },
     __NODATA__: true
-}
+})

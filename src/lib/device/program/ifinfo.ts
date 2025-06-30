@@ -2,6 +2,7 @@ import { BaseAddress } from "../../address/base";
 import { IPV4Address } from "../../address/ipv4";
 import { address_is_unset, ProcessSignal, Program } from "../device";
 import { EthernetInterface, VlanInterface } from "../interface";
+import { device_program_register } from "../internals/program";
 import { ppbind, PPFactory, ProgramParameterDefinition } from "../internals/program-parameters";
 import { formatTable, ioprintln } from "./helpers";
 
@@ -21,7 +22,7 @@ const pdef = new ProgramParameterDefinition([
     ppbind(["ifinfo", "set4", PPBaseInterface, PPFactory.ipv4("address"), PPFactory.create("mask", PPFactory.parse_amask_ip4)], "set ipv4 address"),
 ])
 
-export const DEVICE_PROGRAM_IFINFO: Program = {
+export const DEVICE_PROGRAM_IFINFO: Program = device_program_register({
     name: "ifinfo",
     parameters: pdef,
     init(proc, sargs) {
@@ -115,4 +116,4 @@ export const DEVICE_PROGRAM_IFINFO: Program = {
 
         return ProcessSignal.EXIT;
     },
-}
+})

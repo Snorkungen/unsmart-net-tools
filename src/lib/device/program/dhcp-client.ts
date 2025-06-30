@@ -13,6 +13,7 @@ import { getKeyByValue } from "../../misc";
 import { _UNSET_ADDRESS_IPV4, address_is_unset, NetworkData } from "../device";
 import { Contact, Process, ProcessSignal, Program } from "../device";
 import { EthernetInterface } from "../interface";
+import { device_program_register } from "../internals/program";
 import { process_print_messages } from "./event-observer";
 
 const BROADCAST_IPV4_ADDRESS = new IPV4Address("255.255.255.255");
@@ -289,7 +290,7 @@ function receive_ipv4(this: Process<DHCPC_Data>, contact: Contact<"IPv4", "RAW">
     }
 }
 
-export const DEVICE_PROGRAM_DHCP_CLIENT: Program<DHCPC_Data> = {
+export const DEVICE_PROGRAM_DHCP_CLIENT: Program<DHCPC_Data> = device_program_register({
     name: "dhcpc4",
     init(proc, [, ifid]) {
         process_print_messages(proc);
@@ -343,4 +344,4 @@ export const DEVICE_PROGRAM_DHCP_CLIENT: Program<DHCPC_Data> = {
 
         return ProcessSignal.__EXPLICIT__;
     }
-}
+})

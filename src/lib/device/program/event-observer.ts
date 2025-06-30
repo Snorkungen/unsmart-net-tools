@@ -1,6 +1,7 @@
 import { PacketCaptureEthernetReader, PacketCaptureRecordData } from "../../packet-capture";
 import { NetworkData, Process, ProcessSignal, Program } from "../device";
 import { BaseInterface } from "../interface";
+import { device_program_register } from "../internals/program";
 import { ioprintln } from "./helpers";
 
 export const DAEMON_EVENT_OBSERVER_FRAMES_STORE_KEY = "daemon_event_observer:frames";
@@ -50,7 +51,7 @@ function handle_process_message(proc: Process, type: string, message: string) {
 
 // !TODO: Allow configuration of what gets logged
 
-export const DAEMON_EVENT_OBSERVER: Program = {
+export const DAEMON_EVENT_OBSERVER: Program = device_program_register({
     name: "daemon_event_observer",
     description: "observes dispatched events",
     init(proc) {
@@ -65,7 +66,7 @@ export const DAEMON_EVENT_OBSERVER: Program = {
         return ProcessSignal.__EXPLICIT__;
     },
     __NODATA__: true
-}
+})
 
 export function process_print_messages(proc: Process) {
     proc.resources.create(proc.device.event_create("process_message", (_, type, msg) => {

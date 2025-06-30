@@ -6,6 +6,7 @@ import { ICMP_HEADER, ICMPV4_CODES, ICMPV4_TYPES, ICMPV6_CODES, ICMPV6_TYPES } f
 import { IPV4_HEADER, IPV4_PSEUDO_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
 import { UDP_HEADER } from "../../header/udp";
 import { Contact, DeviceResult, DeviceRoute, NetworkData, ProcessSignal, Program } from "../device";
+import { device_program_register } from "../internals/program";
 import { PPFactory, ProgramParameterDefinition } from "../internals/program-parameters";
 import { ioprint, ioprintln } from "./helpers";
 import { headless_ping_resolve_destination } from "./ping";
@@ -152,7 +153,7 @@ const pdef = new ProgramParameterDefinition([
 ])
 
 
-export const DEVICE_PROGRAM_TRACEROUTE: Program<TracerouteData> = {
+export const DEVICE_PROGRAM_TRACEROUTE: Program<TracerouteData> = device_program_register({
     name: "traceroute",
     description: "Tries to detect in the route to the destination",
     parameters: pdef,
@@ -265,4 +266,4 @@ export const DEVICE_PROGRAM_TRACEROUTE: Program<TracerouteData> = {
 
         return ProcessSignal.__EXPLICIT__;
     }
-}
+});

@@ -6,6 +6,7 @@ import { uint8_concat, uint8_equals, uint8_fromString } from "../../binary/uint8
 import { ICMP_ECHO_HEADER, ICMP_HEADER, ICMP_UNUSED_HEADER, ICMPV4_TYPES, ICMPV6_TYPES } from "../../header/icmp";
 import { IPV4_HEADER, IPV6_HEADER, IPV6_PSEUDO_HEADER, PROTOCOLS } from "../../header/ip";
 import { Contact, DeviceResult, DeviceRoute, NetworkData, Process, ProcessSignal, Program } from "../device";
+import { device_program_register } from "../internals/program";
 import { PPFactory, ProgramParameterDefinition } from "../internals/program-parameters";
 import { ioprint, ioprintln } from "./helpers";
 import { getaddress_by_host } from "./hostsinfo";
@@ -305,7 +306,7 @@ const pdef = new ProgramParameterDefinition([
 ])
 
 const DEFAULT_MAX_SENDCOUNT = 10;
-export const DEVICE_PROGRAM_PING: Program<PingData> = {
+export const DEVICE_PROGRAM_PING: Program<PingData> = device_program_register({
     name: "ping",
     description: "Sends icmp echo requests to target",
     parameters: pdef,
@@ -372,4 +373,4 @@ export const DEVICE_PROGRAM_PING: Program<PingData> = {
 
         return ProcessSignal.__EXPLICIT__;
     }
-}
+});
