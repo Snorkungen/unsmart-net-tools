@@ -3,7 +3,7 @@ import { MACAddress } from "../../address/mac";
 import { uint8_equals } from "../../binary/uint8-array";
 import { BPDU_C_HEADER, BPDU_TCN_HEADER } from "../../header/bpdu";
 import { ETHER_TYPES, ETHERNET_HEADER } from "../../header/ethernet";
-import { Program, ProcessSignal, Process, Contact, NetworkData } from "../device"
+import { Program, ProcessSignal, Process, Contact, NetworkData, Device } from "../device"
 import { EthernetInterface } from "../interface";
 import { DeviceResource } from "../internals/resources";
 import { storev_bigint, storev_boolean, storev_number, storev_Object, StoreValueT } from "../internals/store";
@@ -46,6 +46,9 @@ export const DAEMON_STP_SERVER: Program<STP_Server_Data> = {
             topology_change: false,
             topology_change_detected: false,
             topology_change_time: DEFAULT_FORWARD_DELAY + DEFAULT_MAX_AGE,
+
+            // allow for the preconfiguration of things ...
+            ...(device.store_get(DAEMON_STP_SERVER_STATE_STORE_KEY) || {}),
         });
 
         // create a contact & setup listener
@@ -59,20 +62,7 @@ export const DAEMON_STP_SERVER: Program<STP_Server_Data> = {
             let port = ports[port_no];
             device.interface_mcast_subscribe(port.iface, STP_DESTINATION);
 
-            (<STP_Port>port).port_id = create_port_identifier(port_no, DEFAULT_PORT_PRIORITY);
-            (<STP_Port>port).path_cost = DEFAULT_PATH_COST;
-            (<STP_Port>port).designated_root = state.designated_root;
-            (<STP_Port>port).designated_cost = state.root_path_cost;
-            (<STP_Port>port).designated_bridge = state.bridge_id;
-            (<STP_Port>port).designated_port = (<STP_Port>port).port_id;
-            (<STP_Port>port).change_detection_enabled = true;
-            (<STP_Port>port).topology_change_acknowledge = false;
-
-            if (!storev_stp_port.validate(port)) {
-                throw new Error("oops forgot to do something")
-            }
-
-            set_port_state(proc, port, state);
+            initialize_port(proc, port);
         }
 
         proc.handle(() => {
@@ -198,8 +188,6 @@ function receive(this: Process<STP_Server_Data>, _: Contact, data: NetworkData) 
     } else if (type === CONFIG_BPDU_TYPE) {
         let bpdu = BPDU_C_HEADER.from(payload);
         return receive_config(this, bpdu, port, state);
-    } else {
-        throw new Error("unrecognized bpdu type")
     }
 }
 
@@ -210,6 +198,18 @@ function receive_tcn(proc: Process<STP_Server_Data>, bpdu: typeof BPDU_TCN_HEADE
 
     if (!is_designated_port(port, state)) {
         return;
+    }
+
+    topology_change_detection(proc, state);
+
+    // acknowledge topology change
+    port.topology_change_acknowledge = true;
+    transmit_config(proc, port, state);
+}
+
+function topology_change_detection(proc: Process<STP_Server_Data>, state?: STP_State) {
+    if (!state) {
+        state = proc.device.store_get<STP_State>(DAEMON_STP_SERVER_STATE_STORE_KEY)!;
     }
 
     // topology change detection
@@ -224,10 +224,6 @@ function receive_tcn(proc: Process<STP_Server_Data>, bpdu: typeof BPDU_TCN_HEADE
     }
 
     state.topology_change_detected = false;
-
-    // acknowledge topology change
-    port.topology_change_acknowledge = true;
-    transmit_config(proc, port, state);
 }
 
 function receive_config(proc: Process<STP_Server_Data>, bpdu: typeof BPDU_C_HEADER, port: STP_Port, state: STP_State) {
@@ -265,43 +261,7 @@ function receive_config(proc: Process<STP_Server_Data>, bpdu: typeof BPDU_C_HEAD
         port.designated_port = port_id;
         // !TODO: message age timer not suported
 
-
-        // configuration update ...
-        // root selection and stuff 
-        let root_port = get_root_port(proc);
-        // set root port
-        if (!root_port) {
-            state.root_port_no = 0;
-            state.designated_root = state.bridge_id;
-            state.root_path_cost = 0;
-        } else {
-            state.root_port_no = root_port.port_no;
-            state.designated_root = root_port.designated_root
-            state.root_path_cost = (root_port.designated_cost + root_port.path_cost);
-        }
-
-        // port_state_selection & designated_port_selection
-        const ports = network_switch_get_ports(proc.device);
-        for (let key in ports) {
-            let port = ports[key];
-            if (!storev_stp_port.validate(port)) {
-                continue;
-            }
-
-            if (is_designated_port(port, state) || (port.designated_root != state.designated_root) || state.root_path_cost < port.designated_cost || (
-                state.root_path_cost == port.designated_cost && (
-                    state.bridge_id < port.designated_bridge || (state.bridge_id == port.designated_bridge && (
-                        port.port_id <= port.designated_port
-                    ))
-                ))) {
-                port.designated_root = state.designated_root;
-                port.designated_cost = state.root_path_cost;
-                port.designated_bridge = state.bridge_id;
-                port.designated_port = port.port_id;
-            }
-
-            set_port_state(proc, port, state);
-        }
+        update_configuration_and_ports(proc, state);
 
         if (state.bridge_id != state.designated_root && was_root_port) {
             stop_hello_timer(proc);
@@ -334,7 +294,47 @@ function receive_config(proc: Process<STP_Server_Data>, bpdu: typeof BPDU_C_HEAD
         network_switch_get_ports(proc.device);
         proc.device.store_set(DAEMON_STP_SERVER_STATE_STORE_KEY, state);
     } else if (is_designated_port(port, state)) {
+        proc_log(proc, "REPLYING")
         transmit_config(proc, port, state); // reply
+    }
+}
+
+function update_configuration_and_ports(proc: Process<STP_Server_Data>, state: STP_State) {
+    // configuration update ...
+    // root selection and stuff 
+    let root_port = get_root_port(proc);
+    // set root port
+    if (!root_port) {
+        state.root_port_no = 0;
+        state.designated_root = state.bridge_id;
+        state.root_path_cost = 0;
+    } else {
+        state.root_port_no = root_port.port_no;
+        state.designated_root = root_port.designated_root
+        state.root_path_cost = (root_port.designated_cost + root_port.path_cost);
+    }
+
+    // port_state_selection & designated_port_selection
+    const ports = network_switch_get_ports(proc.device);
+    for (let key in ports) {
+        let port = ports[key];
+        if (!storev_stp_port.validate(port)) {
+            continue;
+        }
+
+        if (is_designated_port(port, state) || (port.designated_root != state.designated_root) || state.root_path_cost < port.designated_cost || (
+            state.root_path_cost == port.designated_cost && (
+                state.bridge_id < port.designated_bridge || (state.bridge_id == port.designated_bridge && (
+                    port.port_id <= port.designated_port
+                ))
+            ))) {
+            port.designated_root = state.designated_root;
+            port.designated_cost = state.root_path_cost;
+            port.designated_bridge = state.bridge_id;
+            port.designated_port = port.port_id;
+        }
+
+        set_port_state(proc, port, state);
     }
 }
 
@@ -365,6 +365,31 @@ function get_root_port(proc: Process<STP_Server_Data>) {
     }
 
     return root_port;
+}
+
+function initialize_port(proc: Process<STP_Server_Data>, port: NetworkSwitchPort) {
+    const state = proc.device.store_get<STP_State>(DAEMON_STP_SERVER_STATE_STORE_KEY)!;
+
+    (<STP_Port>port).port_id = create_port_identifier(port.port_no, DEFAULT_PORT_PRIORITY);
+    (<STP_Port>port).path_cost = DEFAULT_PATH_COST;
+    (<STP_Port>port).designated_root = state.designated_root;
+    (<STP_Port>port).designated_cost = state.root_path_cost;
+    (<STP_Port>port).designated_bridge = state.bridge_id;
+    (<STP_Port>port).designated_port = (<STP_Port>port).port_id;
+    (<STP_Port>port).change_detection_enabled = false;
+    (<STP_Port>port).topology_change_acknowledge = false;
+
+    if (!storev_stp_port.validate(port)) {
+        throw new Error("oops forgot to do something")
+    }
+
+    port.state = NetworkSwitchPortState.BLOCKING;
+
+    // stop forward delay timer
+    proc.data.forward_delay_timers[port.port_no]?.close();
+    delete proc.data.forward_delay_timers[port.port_no]
+
+    set_port_state(proc, port, state);
 }
 
 function set_port_state(proc: Process<STP_Server_Data>, port: STP_Port, state: STP_State) {
@@ -441,37 +466,60 @@ function transmit_all_config(proc: Process<STP_Server_Data>) {
     }
 }
 
+function designated_for_some_port(proc: Process<STP_Server_Data>, state: STP_State) {
+
+    for (let port of Object.values(network_switch_get_ports(proc.device))) {
+        if (storev_stp_port.validate(port) && (port.designated_bridge == state.bridge_id)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function make_forwarding(proc: Process<STP_Server_Data>, port: NetworkSwitchPort) {
+    const state = proc.device.store_get<STP_State>(DAEMON_STP_SERVER_STATE_STORE_KEY)!;
     function _recurse() {
+        if (port.state == NetworkSwitchPortState.LISTENING) {
+            port.state = NetworkSwitchPortState.LEARNING;
+        } else if (port.state == NetworkSwitchPortState.LEARNING) {
+            port.state = NetworkSwitchPortState.FORWARDING;
+
+            if (!storev_stp_port.validate(port)) return;
+            if (designated_for_some_port(proc, state) && port.change_detection_enabled) {
+                topology_change_detection(proc, state);
+            }
+        } else {
+            return;
+        }
+
+        proc_log(proc, port.port_no + " state changed")
+
         proc.data.forward_delay_timers[port.port_no] = proc.resources.create(
-            proc.device.schedule(() => {
-                if (port.state == NetworkSwitchPortState.LISTENING) {
-                    port.state = NetworkSwitchPortState.LEARNING;
-                } else if (port.state == NetworkSwitchPortState.LEARNING) {
-                    port.state = NetworkSwitchPortState.FORWARDING;
-                } else {
-                    return;
-                }
-
-                proc_log(proc, port.port_no + " state changed")
-
-                _recurse();
-            }, DEFAULT_FORWARD_DELAY * 1000)
-        )
+            proc.device.schedule(_recurse, state.forward_delay * 1000));
     }
 
-    if (proc.data.forward_delay_timers[port.port_no]) {
-        proc.data.forward_delay_timers[port.port_no]?.close();
-    }
+    if (port.state === NetworkSwitchPortState.BLOCKING) {
+        port.state = NetworkSwitchPortState.LISTENING;
 
-    port.state = NetworkSwitchPortState.LISTENING;
-    _recurse();
+        if (proc.data.forward_delay_timers[port.port_no]) {
+            proc.data.forward_delay_timers[port.port_no]?.close();
+        }
+
+        proc.data.forward_delay_timers[port.port_no] = proc.resources.create(
+            proc.device.schedule(_recurse, state.forward_delay * 1000));
+    }
 }
 
 function make_blocking(proc: Process<STP_Server_Data>, port: NetworkSwitchPort) {
-    if (port.state != NetworkSwitchPortState.DISABLED) {
-        port.state = NetworkSwitchPortState.BLOCKING;
+    if (port.state != NetworkSwitchPortState.DISABLED && port.state != NetworkSwitchPortState.BLOCKING) {
+        if (!storev_stp_port.validate(port)) return;
+        if ((port.state == NetworkSwitchPortState.FORWARDING || port.state == NetworkSwitchPortState.LEARNING) && port.change_detection_enabled) {
+            topology_change_detection(proc)
+        }
     }
+
+    port.state = NetworkSwitchPortState.BLOCKING;
 
     proc.data.forward_delay_timers[port.port_no]?.close();
     delete proc.data.forward_delay_timers[port.port_no];
@@ -504,6 +552,7 @@ function start_hello_timer(proc: Process<STP_Server_Data>) {
         proc.data.hello_timer = proc.resources.create(proc.device.schedule(recurse, state.hello_time * 1000));
     }
 
+    proc.data.hello_timer?.close();
     proc.data.hello_timer = proc.resources.create(proc.device.schedule(recurse, state.hello_time * 1000));
 }
 
@@ -556,4 +605,53 @@ function create_bridge_identifier(addr: MACAddress, priority: number): bigint {
     result |= BigInt(addr.buffer[5])
 
     return result;
+}
+
+export function stp_enable_port(device: Device, port: NetworkSwitchPort) {
+    if (!storev_stp_port.validate(port)) return;
+    const proc = device.processes.items.find(p => p && p.program === DAEMON_STP_SERVER);
+    const state = device.store_get<STP_State>(DAEMON_STP_SERVER_STATE_STORE_KEY);
+    if (!proc || !state) return;
+
+    initialize_port(proc, port);
+}
+
+export function stp_disable_port(device: Device, port: NetworkSwitchPort) {
+    const proc = device.processes.items.find(p => p && p.program === DAEMON_STP_SERVER);
+    const state = device.store_get<STP_State>(DAEMON_STP_SERVER_STATE_STORE_KEY);
+    if (!proc || !state) {
+        port.state = NetworkSwitchPortState.DISABLED;
+        return;
+    };
+
+    if (!storev_stp_port.validate(port)) return;
+
+    let root = state.bridge_id == state.designated_root;
+
+    // become designated port
+    port.designated_root = state.designated_root;
+    port.designated_cost = state.root_path_cost;
+    port.designated_bridge = state.bridge_id;
+    port.designated_port = port.port_id;
+
+    port.state = NetworkSwitchPortState.DISABLED;
+    port.topology_change_acknowledge = false;
+
+    // stop_message_age_timer
+    // stop forward delay timer
+    proc.data.forward_delay_timers[port.port_no]?.close();
+    delete proc.data.forward_delay_timers[port.port_no];
+
+    update_configuration_and_ports(proc, state);
+
+    if (state.bridge_id == state.designated_root && !root) {
+        state.max_age = state.bridge_max_age;
+        state.hello_time = state.bridge_hello_time;
+        state.forward_delay = state.bridge_forward_delay;
+
+        topology_change_detection(proc, state);
+        stop_tcn_timer(proc);
+        transmit_all_config(proc);
+        start_hello_timer(proc);
+    }
 }

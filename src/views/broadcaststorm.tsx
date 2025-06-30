@@ -5,8 +5,8 @@ import { IPV4Address } from "../lib/address/ipv4";
 import { createMask } from "../lib/address/mask";
 import { Device, Process, ProcessSignal } from "../lib/device/device";
 import { BaseInterface, EthernetInterface } from "../lib/device/interface";
-import { NETWORK_SWITCH_PORTS_STORE_KEY, NETWORK_SWITCH_STP_DAEMON, NetworkSwitch, NetworkSwitchPortState } from "../lib/device/network-switch";
-import { DAEMON_STP_SERVER, DAEMON_STP_SERVER_STATE_STORE_KEY } from "../lib/device/program/stp-server";
+import { network_switch_get_ports, NETWORK_SWITCH_PORTS_STORE_KEY, NETWORK_SWITCH_STP_DAEMON, NetworkSwitch, NetworkSwitchPortState } from "../lib/device/network-switch";
+import { DAEMON_STP_SERVER, DAEMON_STP_SERVER_STATE_STORE_KEY, stp_disable_port, stp_enable_port } from "../lib/device/program/stp-server";
 
 function network_switch_set_port_state(device: Device, iface: BaseInterface, state: NetworkSwitchPortState) {
     if (!(device instanceof NetworkSwitch)) {
@@ -62,14 +62,14 @@ target_device.interface_address_set(target_iface, target_address, createMask(IPV
 function toggle_redundant_link() {
     // imitate the action of a non forwarding port ... 
     // actual program logic would have add support to the switch service
+    let sw2_sw3_port = Object.values(network_switch_get_ports(sw2)).find(p => p && p.iface == sw2_sw3_iface)!;
     if (redundant_connection()) {
         console.log("turning off redundant connection")
-        network_switch_set_port_state(sw2, sw2_sw3_iface, NetworkSwitchPortState.BLOCKING);
-        network_switch_set_port_state(sw3, sw3_sw2_iface, NetworkSwitchPortState.BLOCKING);
+
+        stp_disable_port(sw2, sw2_sw3_port);
     } else {
         console.log("turning on redundant connection")
-        network_switch_set_port_state(sw2, sw2_sw3_iface, NetworkSwitchPortState.FORWARDING);
-        network_switch_set_port_state(sw3, sw3_sw2_iface, NetworkSwitchPortState.FORWARDING);
+        stp_enable_port(sw2, sw2_sw3_port);
     }
 
     set_redundant_connection(v => !v);
