@@ -1,12 +1,14 @@
-#  ![](./src/assets/brand.svg) Unsmart Net-Tools
+#  ![](./assets/brand.svg) Unsmart Net-Tools
 
 An attempt at implementing the TCP/IP stack within a browser context.
 
+![](./assets/Screenshot%202025-07-01%20at%2012-38-13%20Unsmart%20Net-Tools.png)
+![](./assets/Screenshot%202025-07-01%20at%2012-38-18%20Unsmart%20Net-Tools.png)
+
 ## Tasks
 
-- Device
+- **`Device`**
   - [ ] add teardown method for `BaseInterface`
-  - [x] spawned programs able to return values to parent
   - [x] device: key value database
   - [ ] IPC, create a way for processes to send messages between each other
   - [ ] Investigate improving the device scheduler
@@ -23,12 +25,14 @@ An attempt at implementing the TCP/IP stack within a browser context.
   - [x] batch rendering for more efficient rendering
     - [ ] `TerminalRenderer` batch paints, i.e. requestAnimation frame for draw calls ...
   - [x] `TerminalRenderer` make rendering faster
-  - [x] *Auto resize `TerminaleRenderer` View* haven't decided on what this means
   - [ ] Enviroment Variables & Variable expansion `Shell.promptBuffer`
-  - [ ] When a progam is selected the lazy writer call a method on the function to reccomend text
+- `ProgramParameter`
+  - [ ] `ProgramParameter`.guess or something where it takes an input value and returns possible values.
 - [x] visualize `Struct`
 - [x] Remove `Buffer` from client build
 - [ ] Logically separate the code
   - [x] Seperate Address class from struct-type
 
-![a picture of the view network-map.tsx](./src/assets/Screenshot_20240209_124926.png)
+
+
+![a picture of the view network-map.tsx](./assets/Screenshot_20240209_124926.png)
