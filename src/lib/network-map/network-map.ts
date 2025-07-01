@@ -3,6 +3,7 @@
 import { Device, Process, ProcessSignal, Program } from "../device/device";
 import { BaseInterface, EthernetInterface } from "../device/interface";
 import { network_switch_get_ports, NETWORK_SWITCH_PORTS_STORE_KEY, NetworkSwitch, NetworkSwitchPortState } from "../device/network-switch";
+import { DAEMON_STP_SERVER_STATE_STORE_KEY, storev_stp_state } from "../device/program/stp-server";
 
 // special features zoom, pan, edit connection paths
 const INTERFACE_ANIM_DELAY = 420;
@@ -29,7 +30,7 @@ type NMShapeObject = {
             /** all objects positions are relative to the container , objects cannot be nested, order determines if things get over-drawn */
             objects: NMShapeObject[];
         } |
-        { type: "rect", width: number; height: number; fillColor: string } |
+        { type: "rect", width: number; height: number; fillColor: string, strokeColor?: string } |
         { type: "text", value: string; color: string }
     );
 
@@ -102,12 +103,45 @@ const DAEMON_NETWORK_MAP_DEVICE_MONITOR: Program<{
             ], () => network_map_device_refresh_interfaces(state, shape, proc.device, if_delay, dimensions.height, dimensions.ifsize, dimensions.ifpad))
         );
 
-        proc.resources.create(
-            proc.device.event_create("store_set",
-                () => network_map_device_refresh_interfaces(state, shape, proc.device, if_delay, dimensions.height, dimensions.ifsize, dimensions.ifpad),
-                NETWORK_SWITCH_PORTS_STORE_KEY
+        if (proc.device instanceof NetworkSwitch) {
+            proc.resources.create(
+                proc.device.event_create("store_set",
+                    () => network_map_device_refresh_interfaces(state, shape, proc.device, if_delay, dimensions.height, dimensions.ifsize, dimensions.ifpad),
+                    NETWORK_SWITCH_PORTS_STORE_KEY
+                )
             )
-        )
+
+            proc.resources.create(
+                proc.device.event_create("store_set", () => {
+                    let rect = shape.objects[0];
+                    if (rect.type != "rect") return;
+                    let stp_state = proc.device.store_get(DAEMON_STP_SERVER_STATE_STORE_KEY);
+                    if (!storev_stp_state.validate(stp_state)) return;
+
+                    if (stp_state?.bridge_id == stp_state?.designated_root) {
+                        rect.strokeColor = "#aaaaaa";
+                    } else {
+                        delete rect.strokeColor;
+
+                        // indicate root port
+                        let port = network_switch_get_ports(proc.device)[stp_state.root_port_no];
+                        if (port) {
+                            for (let so of shape.objects) {
+                                if (so.assob instanceof BaseInterface && so.type == "rect") {
+                                    if (so.assob == port.iface) {
+                                        so.strokeColor = "#eaeaea"
+                                    } else {
+                                        delete so.strokeColor
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    network_map_render(state)
+                }, DAEMON_STP_SERVER_STATE_STORE_KEY)
+            )
+        }
 
         return ProcessSignal.__EXPLICIT__;
     }
@@ -362,6 +396,14 @@ function network_map_init_element(so: NMShapeObject, element?: SVGElement): SVGE
         element.setAttribute("rx", (so.height * 0.0333).toString());
 
         element.setAttribute("fill", so.fillColor)
+
+        if (so.strokeColor) {
+            element.setAttribute("stroke-width", (((so.height * so.width) ** (1 / 2)) * 0.1) + "px");
+            element.setAttribute("stroke", so.strokeColor)
+        } else {
+            element.removeAttribute("stroke-width");
+            element.removeAttribute("stroke");
+        }
 
     } else if (so.type == "shape") {
         if (!element) {
