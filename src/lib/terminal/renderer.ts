@@ -119,7 +119,7 @@ function terminal_erase_in_line(state: TerminalRendererState, n: number) {
         if (rzm >= 0) {
             // delete the successive rows
             let n = state.resize_markers[rzm] - (state.cursor.y - rzm);
-            for (let y = state.cursor.y; y < (state.cursor.y + n); y++) {
+            for (let y = state.cursor.y + 1; y <= (state.cursor.y + n); y++) {
                 for (let x = 0; x < state.view_columns; x++) {
                     terminal_erase_cell(state, x, y);
                 }
